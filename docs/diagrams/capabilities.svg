@@ -61,7 +61,7 @@
   <g>
     <rect x="660" y="220" width="160" height="44" fill="url(#kGold)"><animate attributeName="width" values="160;224;160" keyTimes="0;0.5;1" dur="5s" repeatCount="indefinite"/></rect>
     <rect x="820" y="220" width="110" height="44" fill="url(#kSlate)"><animate attributeName="x" values="820;884;820" keyTimes="0;0.5;1" dur="5s" repeatCount="indefinite"/></rect>
-    <rect x="930" y="220" width="160" height="44" fill="url(#kTeal)"><animate attributeName="width" values="160;96;160" keyTimes="0;0.5;1" dur="5s" repeatCount="indefinite"/></rect>
+    <rect x="930" y="220" width="160" height="44" fill="url(#kTeal)"><animate attributeName="x" values="930;994;930" keyTimes="0;0.5;1" dur="5s" repeatCount="indefinite"/><animate attributeName="width" values="160;96;160" keyTimes="0;0.5;1" dur="5s" repeatCount="indefinite"/></rect>
     <rect x="660" y="220" width="430" height="44" rx="9" fill="none" stroke="#2A3A56" stroke-width="1.3"/>
     <text x="660" y="292" class="big">Every spare byte working</text>
     <text x="660" y="313" class="sm" fill="#5EEAD4">borrowed on loan, returned the instant the job needs it</text>
