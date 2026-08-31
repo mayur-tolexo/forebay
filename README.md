@@ -14,7 +14,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-Apache--2.0-4F46E5?style=flat-square"></a>
   <img alt="Status" src="https://img.shields.io/badge/status-design%20phase-F59E0B?style=flat-square">
-  <img alt="Code" src="https://img.shields.io/badge/code-none%20yet-64748B?style=flat-square">
+  <img alt="Go" src="https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square">
   <a href="docs/rfcs/README.md"><img alt="RFCs" src="https://img.shields.io/badge/RFCs-27%20open-14B8A6?style=flat-square"></a>
 </p>
 
@@ -22,9 +22,11 @@
   <img src="docs/diagrams/architecture.svg" alt="Forebay architecture" width="100%">
 </p>
 
-> **No code yet.** Forebay is being designed in the open, one RFC at a time. The most useful thing
-> you can do today is read [RFC-0001](docs/rfcs/0001-thesis-scope-and-non-goals.md) and tell us where
-> it is wrong. It even lists the five conditions under which we should give up.
+> **Not runnable yet.** The first packages exist and are tested, but nothing is wired to a device or
+> a cluster, so there is nothing to install. Forebay is still being designed in the open, one RFC at
+> a time, and the most useful thing you can do today is read
+> [RFC-0001](docs/rfcs/0001-thesis-scope-and-non-goals.md) and tell us where it is wrong. It lists
+> the five conditions under which we should give up.
 
 ## What it is
 
@@ -113,6 +115,20 @@ spec:
 
 The reclamation promise is a field, because a promise that is not written down is not a promise.
 
+## Building it
+
+```sh
+git clone https://github.com/mayur-tolexo/forebay && cd forebay
+make check     # gofmt, vet, race-enabled tests, 80% coverage gate
+make build     # binaries into bin/
+```
+
+`make check` is exactly what CI runs, so a green local check means a green pipeline. What exists so
+far is capacity accounting and the lease state machine from
+[RFC-0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md): the three-pool arithmetic, the three
+lease classes, the reclaim ladder and the never-worse-off invariant, all unit tested. The binaries
+build and report their version. Neither has a runtime.
+
 ## The honest part
 
 Forebay bets that node-local NVMe beats fetching from a fanned-out backend. In one measured
@@ -141,7 +157,7 @@ Full detail, with per-capability status, in [ROADMAP.md](ROADMAP.md).
 | **Disagree with the thesis** | [RFC-0001](docs/rfcs/0001-thesis-scope-and-non-goals.md) → open an [issue](../../issues/new/choose) |
 | **Understand the design** | [Architecture](docs/architecture.md) · [Platform surface](docs/platform.md) |
 | **Claim an RFC** | [0003 topology](docs/rfcs/0003-topology-model.md) · [0006 driver contract](docs/rfcs/0006-durable-backend-driver-contract.md) · [0022 data-aware scheduling](docs/rfcs/0022-data-aware-scheduling.md) · [0024 efficiency accounting](docs/rfcs/0024-efficiency-accounting.md) |
-| **Everything else** | [All 26 RFCs](docs/rfcs/README.md) · [Contributing](CONTRIBUTING.md) · [Governance](GOVERNANCE.md) · [Security](SECURITY.md) |
+| **Everything else** | [All 27 RFCs](docs/rfcs/README.md) · [Contributing](CONTRIBUTING.md) · [Governance](GOVERNANCE.md) · [Security](SECURITY.md) |
 
 If you have run large GPU clusters, operated Ceph at scale, or watched a checkpoint storm take out a
 filesystem, your objection is worth more than a patch.

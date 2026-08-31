@@ -3,13 +3,15 @@
 Forebay is a Kubernetes-native storage control plane for AI infrastructure. This document is both the
 plan and the honest status of it.
 
-**Nothing is shipped.** There is no code in this repository yet. Every row below carries a status, and
-today none of them says `Shipped`. That is deliberate: a roadmap that reads like a datasheet before
-the first commit is how open-source projects lose the people who would otherwise have helped.
+**Nothing is usable yet.** The first packages exist and are tested, but nothing is wired to a device
+or a cluster, so no row below says `Shipped`. That is deliberate: a roadmap that reads like a
+datasheet before anything runs is how open-source projects lose the people who would otherwise have
+helped.
 
 | Status | Meaning |
 | --- | --- |
 | `Shipped` | Exists, is tested, and you can use it |
+| `In progress` | Code exists and is tested, but nothing is wired up end to end |
 | `Designed` | An accepted RFC describes it in full |
 | `Specified` | An RFC is written and under discussion |
 | `Planned` | The problem and the questions are recorded, nobody has written the RFC |
@@ -107,8 +109,8 @@ cannot offer them, however good it is at everything above.
 
 | Capability | Status | RFC |
 | --- | --- | --- |
-| Elastic capacity leased from compute-node NVMe and returned on demand | Specified | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
-| Reclamation by deletion, never by migration | Designed | [0002](docs/rfcs/0002-architecture-overview.md) |
+| Elastic capacity leased from compute-node NVMe and returned on demand | In progress | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
+| Reclamation by deletion, never by migration | In progress | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
 | Placement that follows the accelerator, using GPU, NUMA, PCIe and NIC topology | Planned | [0003](docs/rfcs/0003-topology-model.md) |
 | Rack-local fast tier | Specified | [0007](docs/rfcs/0007-fast-tier-data-path.md) |
 | Shard-aware prefetch driven by dataset manifests | Planned | [0011](docs/rfcs/0011-prefetch-and-dataset-manifests.md) |
@@ -135,6 +137,7 @@ Writing the architecture down before there is code to defend.
 | --- | --- | --- |
 | RFC process | [0000](docs/rfcs/0000-rfc-process.md) | Specified |
 | Thesis, scope and non-goals | [0001](docs/rfcs/0001-thesis-scope-and-non-goals.md) | Specified |
+| Capacity pools and elastic leases | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) | Specified |
 | Architecture overview | [0002](docs/rfcs/0002-architecture-overview.md) | Specified |
 | Core design RFCs | 0003 to 0008 | Planned |
 
@@ -154,6 +157,11 @@ and S3 drivers ([0006](docs/rfcs/0006-durable-backend-driver-contract.md)), the 
 ([0008](docs/rfcs/0008-access-layer-pnfs.md)), Kubernetes integration
 ([0014](docs/rfcs/0014-kubernetes-integration.md)) and the falsification suite
 ([0018](docs/rfcs/0018-benchmark-and-falsification-suite.md)).
+
+**Started.** Capacity accounting and the lease state machine are implemented and tested in
+`internal/pool` and `internal/lease`. They are not wired to a device, an agent or a control plane,
+and the lease journal RFC-0005 requires does not exist yet, so an agent restart would forget what it
+lent.
 
 **Done when** a GPU job runs on a node whose spare NVMe is serving the fabric, capacity is reclaimed
 mid-job without the job noticing, and the benchmark reports a number either way.

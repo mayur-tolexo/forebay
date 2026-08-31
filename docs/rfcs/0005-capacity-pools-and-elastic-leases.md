@@ -113,6 +113,11 @@ flowchart TB
     class ok control
 ```
 
+Within a step of the ladder, already-expired leases go first because releasing them costs nothing at
+all, and the remainder are dropped oldest-first, age standing in as a proxy for coldness. Nothing
+better is available without hit-rate data per lease, which is a thing to revisit once RFC-0017 can
+supply it.
+
 The last box is the invariant that matters most, and it is stated here as a rule the implementation
 is held to:
 
@@ -122,7 +127,14 @@ If every reclaimable byte has been returned and compute still cannot be satisfie
 state it would have been in anyway, and the failure belongs to the cluster's capacity planning rather
 than to Forebay. A design that could exceed that bound, for instance by holding guaranteed leases
 covering most of a device, is a design that can take a node down. Guaranteed capacity is therefore
-capped as a fraction of the borrowed pool, and the cap is enforced by the agent at grant time.
+capped, and the cap is enforced by the agent at grant time.
+
+**The cap is a fraction of device capacity, not of the borrowed pool.** An earlier draft of this
+document said the borrowed pool, which is wrong: the borrowed pool shrinks as capacity is reclaimed,
+so a cap with that denominator would loosen at exactly the moment it needed to bind. A node under
+pressure would find its guarantee ceiling falling towards the guarantees it had already issued. The
+device is a stable denominator and bounds the real quantity, which is how much of a node can be
+pinned at once.
 
 ### Reclamation must be an unlink
 
@@ -182,8 +194,9 @@ filling a cache that is about to be dropped.
 
 Two mechanisms, both at the agent since it holds the facts:
 
-- **A minimum lease term.** Capacity accepted is held for at least that term before it is offered for
-  re-lease, so a reclaim followed immediately by a grant does not oscillate.
+- **A post-reclaim cooldown.** For a configured period after returning capacity, the agent declines
+  new grants, so a reclaim followed immediately by a grant cannot oscillate. It bounds only lending,
+  never reclamation, because compute is not made to wait for a cooldown.
 - **A churn budget.** The agent tracks reclamations per unit time and declines new grants once a node
   exceeds its budget, reporting itself as churning. The control plane routes cache elsewhere and
   RFC-0017 surfaces the node, since chronic churn is usually a scheduling problem wearing a storage
@@ -281,6 +294,8 @@ and RFC-0016 has to say so explicitly.
   deadline. RFC-0008 owns this and it is the largest external risk to this design.
 - Whether the guaranteed cap should be a fixed fraction or set by policy, and whether a node may
   refuse guaranteed leases entirely.
-- How the churn budget is chosen, and whether it should adapt rather than being configured.
+- How the churn budget and the cooldown are chosen, and whether either should adapt rather than
+  being configured. The shipped defaults are conservative guesses, not measurements.
+- Whether oldest-first is the right tiebreak within a class once per-lease hit rates exist.
 - Whether donated capacity should ever be reclaimable under extreme compute pressure. The current
   answer is no, and it is worth revisiting once operators have opinions.
