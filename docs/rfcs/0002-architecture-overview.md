@@ -18,7 +18,7 @@ one disagree, the later one is right.
 ## Design
 
 ```mermaid
-flowchart TB
+flowchart LR
     acc["ACCESS LAYER, protocols plug in here<br/>pNFS · NFSv4.2 · NFSv3 · S3 · CSI block"]
     fast["FAST TIER, owned outright and not pluggable<br/>borrowed NVMe · rack fabric · placement · prefetch"]
     drv["DURABLE BACKEND DRIVERS, capability negotiated"]
@@ -30,9 +30,9 @@ flowchart TB
     drv --> store
     cp -.->|leases and policy, granted ahead of time| fast
 
-    classDef control fill:#312E81,stroke:#6366F1,color:#E0E7FF
-    classDef owned fill:#134E4A,stroke:#14B8A6,color:#CCFBF1
-    classDef durable fill:#1E293B,stroke:#64748B,color:#E2E8F0
+    classDef control fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+    classDef owned fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
+    classDef durable fill:#E2E8F0,stroke:#475569,stroke-width:1.5px,color:#0F172A
     class cp,acc,drv control
     class fast owned
     class store durable
