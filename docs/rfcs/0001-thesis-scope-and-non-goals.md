@@ -85,11 +85,11 @@ would suggest, and pretending otherwise would only mean discovering it later.
 
 | System | What it is | Relationship to this thesis |
 | --- | --- | --- |
-| NetApp ONTAP | Mature enterprise array software | Sees only its own media. Cannot observe GPU utilisation or cache behaviour, so it cannot act on them. The gap is structural, not a missing feature |
+| Enterprise array platforms | Mature, general-purpose storage software on dedicated hardware | See only their own media. They cannot observe GPU utilisation or cache behaviour, so they cannot act on either. The gap is structural rather than a missing feature |
 | Ceph | Distributed block, file and object store | Excellent durable substrate and a planned Forebay backend. Its placement is failure-domain aware, not accelerator aware, and rebalance is a slow, heavy actuator |
 | WEKA | High-performance parallel filesystem, deployable converged on compute nodes | The closest commercial system to this idea. Converged mode already uses compute-node NVMe, though capacity and cores are provisioned to it rather than continuously arbitrated with the scheduler. This needs verifying against current documentation before the claim is relied upon |
 | VAST Data | Disaggregated shared-everything storage | Assumes dedicated storage enclosures. Different bet: separate the tiers well rather than converge them |
-| DDN, Pure, PowerScale | Enterprise and HPC storage platforms | Dedicated hardware. Same structural blindness to compute state as ONTAP |
+| HPC storage platforms | Parallel and scale-out storage for large clusters | Dedicated hardware, and the same structural blindness to compute state as the row above |
 | Lustre, BeeGFS | Parallel filesystems for HPC | Dedicated servers by default. BeeGFS On Demand builds an ad-hoc parallel filesystem across a job's compute nodes, which is genuine prior art for this thesis |
 | Cray DataWarp and burst buffers generally | Job-scoped fast tier between compute and durable storage | The oldest form of this idea. Job-scoped and statically staged rather than continuously arbitrated across a fleet |
 | Alluxio | Distributed cache over object storage | Closest in spirit on the caching side. Assumes the cache tier belongs to it, rather than being on loan and revocable mid-read |
@@ -140,7 +140,7 @@ priority work rather than as risks to be managed around.
 
 | Not doing | Why |
 | --- | --- |
-| Cloning ONTAP's feature set | Thirty years of accumulated features is not a race that can be won directly, and trying invites a comparison on the incumbent's terms |
+| Cloning a mature array platform's feature set | Thirty years of accumulated features is not a race that can be won directly, and trying invites a comparison on the incumbent's terms |
 | Durable data on borrowed capacity | It would make reclamation a migration, which is exactly the storm the design exists to avoid |
 | Writing a durable store | Ceph, OpenEBS and S3 exist, are good, and are already deployed where the users are |
 | Writing a client | Shipping and supporting a client across kernels and distributions is where storage projects bleed. The in-kernel pNFS client is the client |
