@@ -1,0 +1,37 @@
+name: Design feedback
+description: Argue with an RFC. This is the most useful thing you can file right now.
+labels: ["design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Forebay is in its design phase and the RFCs are unfinished on purpose. A well-argued
+        objection is worth more than a patch.
+  - type: input
+    id: rfc
+    attributes:
+      label: Which RFC
+      placeholder: RFC-0001
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: What you think is wrong
+      description: Quote the part you are disputing.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What makes you think so
+      description: >
+        Hardware, workloads and numbers you have seen carry the most weight here. Experience
+        counts too, so say what you have operated and at what scale.
+    validations:
+      required: true
+  - type: textarea
+    id: alternative
+    attributes:
+      label: What you would do instead
+      description: Optional. Naming the problem is already useful.

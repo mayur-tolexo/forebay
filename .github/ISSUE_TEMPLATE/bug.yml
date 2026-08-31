@@ -1,0 +1,30 @@
+name: Bug report
+description: Something behaves differently to how it is documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Forebay has not made a release yet, so bugs here will usually be in the documentation or the
+        RFCs. Security problems go to SECURITY.md instead, never to a public issue.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce it
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Versions, kernel, hardware, backend, and anything else that might matter.

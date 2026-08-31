@@ -1,0 +1,27 @@
+name: RFC proposal
+description: Propose a design decision that needs an RFC, or claim an unwritten one.
+labels: ["rfc"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Are you proposing a new RFC or claiming an existing one
+      options:
+        - Claiming an unwritten RFC from the index
+        - Proposing a new RFC
+    validations:
+      required: true
+  - type: input
+    id: which
+    attributes:
+      label: Which one
+      placeholder: RFC-0005, or a title if it is new
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What you intend to write
+      description: A paragraph is enough. The RFC itself is where the detail goes.
+    validations:
+      required: true
