@@ -52,9 +52,11 @@ Forebay is written in Go.
 - Every exported function, method and non-obvious flow carries a short comment explaining why it
   exists or what constraint it satisfies. Comments that restate the code are noise, and reviewers
   will ask you to remove them.
-- New code comes with tests. A change that cannot be tested should explain why in the pull request.
-- `go build ./... && go vet ./... && go test ./...` passes, and `gofmt` is clean, before you ask for
-  review.
+- New code comes with tests. Total statement coverage must stay at or above 80 percent, which
+  `make check` enforces. A change that cannot be tested should explain why in the pull request.
+- `make check` passes before you ask for review. It runs gofmt, vet, the race-enabled test
+  suite and the coverage gate, and CI runs exactly the same target so there are not two sets of
+  rules to keep in step.
 - No speculative code. Constants, helpers and struct fields that nothing references yet do not get
   merged, however likely they look to be needed later.
 
