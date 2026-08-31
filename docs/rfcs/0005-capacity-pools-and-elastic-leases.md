@@ -27,10 +27,10 @@ system into something that occasionally freezes a training job.
 
 | Assumption | Basis | Risk if wrong |
 | --- | --- | --- |
-| Unlinking preallocated extents returns capacity in well under a second | Reasoned, from filesystem behaviour on large files | The reclaim deadline cannot be met and the class deadlines need rethinking |
+| Unlinking preallocated extents returns capacity in well under a second | **Measured**, see below | The reclaim deadline cannot be met and the class deadlines need rethinking |
 | Kubernetes gives a usable early signal that a pod needs local storage | Unverified, and the subject of RFC-0014 | Reclamation becomes reactive to pressure rather than anticipatory, which is slower and worse |
 | A reclaim deadline of tens of seconds is compatible with pod admission | Unverified | The default is wrong and has to be derived from measurement |
-| Worst-case pNFS layout recall fits inside the elastic deadline | Unverified, and the subject of RFC-0008 | Reclamation cannot honour its contract while pNFS is the access path |
+| A client can be revoked without its cooperation, inside the deadline | **Measured against the specification**, see below | Reclamation cannot honour its contract while pNFS is the access path |
 | Regenerable data is genuinely regenerable, including partially written extents | Reasoned | A reclaimed extent could be served as valid, which is data corruption rather than a cache miss |
 
 The last one is the dangerous assumption in this document, and the design treats it as a correctness
@@ -135,6 +135,25 @@ so a cap with that denominator would loosen at exactly the moment it needed to b
 pressure would find its guarantee ceiling falling towards the guarantees it had already issued. The
 device is a stable denominator and bounds the real quantity, which is how much of a node can be
 pinned at once.
+
+### Measured: unlink is not the problem
+
+Reclaim latency was measured on a dev node on 2026-08-31, ext4 on LVM, Ubuntu 24.04, kernel
+6.8.0-137.
+
+| Case | Result |
+| --- | --- |
+| Unlink 4 GiB written with `O_DIRECT` | 2.6 ms |
+| Unlink 8 GiB across four files, under concurrent `O_DIRECT` write load | 2.5 ms |
+
+Four orders of magnitude inside a thirty second deadline, and concurrent write load made no
+measurable difference. The reclaim deadline is therefore not set by the filesystem, which means it is
+set by the access layer, and that is where the remaining risk lives.
+
+One caveat on that number: it measures how long the `unlink` call takes to return, not how quickly
+the freed capacity becomes observably available to a competing writer. Filesystems may free extents
+lazily. RFC-0018 should measure the second thing, since the second thing is what compute actually
+waits for.
 
 ### Reclamation must be an unlink
 
@@ -316,8 +335,11 @@ and RFC-0016 has to say so explicitly.
 
 - The default value of `reclaimWithin`. Thirty seconds appears in the API sketch and is currently a
   guess. It should be derived from pod admission behaviour and measured reclaim latency, not chosen.
-- Whether the forced revocation path required by pNFS layout recall is achievable inside the elastic
-  deadline. RFC-0008 owns this and it is the largest external risk to this design.
+- Whether tight coupling between our metadata server and our node agents is worth the control
+  protocol it requires, given it buys per-client revocation instead of fencing every reader of an
+  extent. See RFC-0008, where the spike findings are recorded.
+- How quickly freed capacity becomes observably available to a competing writer, as opposed to how
+  quickly `unlink` returns.
 - Whether the guaranteed cap should be a fixed fraction or set by policy, and whether a node may
   refuse guaranteed leases entirely.
 - How the churn budget and the cooldown are chosen, and whether either should adapt rather than
