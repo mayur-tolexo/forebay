@@ -204,10 +204,35 @@ Two mechanisms, both at the agent since it holds the facts:
 
 ### Surviving an agent restart
 
-Leases are journalled to local disk before they are honoured. On restart the agent replays the
-journal, reconciles it against what is actually on the device, expires anything past its deadline,
-and only then accepts new grants. Extents present on disk with no journal entry are unlinked, because
-capacity that nobody has a record of lending is capacity that has leaked.
+Leases are journalled to local disk before they are honoured. A grant that cannot be written is not
+honoured at all, because capacity lent with no record of the lending leaks the moment the agent comes
+back. On restart the agent replays the journal, reconciles it against what is actually on the device,
+expires anything past its deadline, and only then accepts new grants. Extents present on disk with no
+journal entry are unlinked, because capacity that nobody has a record of lending is capacity that has
+leaked.
+
+**The journal is rewritten whole rather than appended to.** A node holds tens of leases, so writing
+the entire set costs nothing, and it avoids torn records, replay ordering and compaction, none of
+which earn their keep at that volume. The write goes to a temporary file that is flushed and renamed
+over the target, with the directory flushed too, since a rename is only durable once its directory
+entry is.
+
+**A journal that cannot be read is recoverable rather than fatal.** Everything it describes is
+regenerable, so an agent that cannot parse its own journal discards the borrowed pool, starts empty
+and reports the failure. There is no repair path because there is nothing worth repairing. This is
+the regenerable-only rule paying for itself in code that does not have to exist.
+
+**Reconciliation drops as well as restores.** A lease whose term ran out while the node was down is
+gone. So is one the accounting can no longer fit, because the node's shape may have changed while it
+was away and compute keeps whatever it now needs. Duplicate identifiers are treated as corruption
+rather than collapsed, since lending for a record twice and keeping it once would leave the
+accounting permanently above the leases justifying it, with the difference unreclaimable.
+
+**A node that has not replayed its journal lends nothing.** Accepting a grant before the replay would
+count that capacity twice as soon as the replay caught up, so the refusal is enforced rather than
+left to whoever starts the agent. Reclamation is deliberately not gated the same way: handing
+capacity back to compute is safe from any state, and making compute wait on a replay would invert the
+rule the whole design rests on.
 
 ### Accounting
 

@@ -44,6 +44,21 @@ func (c Class) String() string {
 	}
 }
 
+// ParseClass turns a class name back into a Class, for reading state that was
+// written as text.
+func ParseClass(s string) (Class, error) {
+	switch s {
+	case "opportunistic":
+		return Opportunistic, nil
+	case "elastic":
+		return Elastic, nil
+	case "guaranteed":
+		return Guaranteed, nil
+	default:
+		return 0, fmt.Errorf("%w: %q", ErrBadClass, s)
+	}
+}
+
 // Valid reports whether c is a class this package knows how to reclaim.
 // Reclaiming an unknown class would mean guessing at its cost, so grants
 // carrying one are refused instead.
@@ -83,6 +98,11 @@ var (
 	ErrGuaranteeCap = errors.New("lease: guaranteed capacity would exceed its cap")
 	ErrChurning     = errors.New("lease: node is churning, not accepting grants")
 	ErrCooldown     = errors.New("lease: node is within its post-reclaim cooldown")
+	// ErrNotRestored is a grant arriving before the journal has been replayed.
+	// Accepting then would count capacity twice once the replay caught up, so
+	// a manager with a journal lends nothing until it knows what it already
+	// lent.
+	ErrNotRestored = errors.New("lease: journal has not been replayed yet")
 )
 
 // Config tunes how willingly a node lends and how hard it resists churn.
@@ -127,11 +147,107 @@ type Manager struct {
 	acct     pool.Accounting
 	leases   map[string]Lease
 	reclaims []time.Time
+	journal  Journal
+	// restored records whether the journal has been replayed. A manager with
+	// no journal has nothing to replay and starts ready.
+	restored bool
+}
+
+// Option configures a Manager at construction.
+type Option func(*Manager)
+
+// WithJournal persists lease state, so that an agent restart does not forget
+// what it lent. Without one a Manager keeps its leases in memory only, which
+// is useful in tests and wrong on a real node.
+func WithJournal(j Journal) Option {
+	return func(m *Manager) {
+		m.journal = j
+		m.restored = false
+	}
 }
 
 // New returns a manager for a node with the given starting accounting.
-func New(acct pool.Accounting, cfg Config) *Manager {
-	return &Manager{cfg: cfg, acct: acct, leases: make(map[string]Lease)}
+func New(acct pool.Accounting, cfg Config, opts ...Option) *Manager {
+	m := &Manager{cfg: cfg, acct: acct, leases: make(map[string]Lease), restored: true}
+	for _, o := range opts {
+		o(m)
+	}
+	return m
+}
+
+// persistLocked writes current state to the journal, if there is one.
+func (m *Manager) persistLocked() error {
+	if m.journal == nil {
+		return nil
+	}
+	return m.journal.Save(m.leasesLocked())
+}
+
+// Restored reports whether the manager knows what it already lent, and so
+// whether it will accept grants.
+func (m *Manager) Restored() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.restored
+}
+
+// Restore rebuilds lease state from the journal and reconciles it with the
+// accounting, returning what it had to drop.
+//
+// Until this has succeeded a manager with a journal refuses grants, because
+// accepting one before the replay would count that capacity twice as soon as
+// the replay caught up. Reclamation is never gated on it: handing capacity
+// back to compute is safe from any state, and making compute wait on a replay
+// would invert the one rule the whole design rests on.
+//
+// A journal it cannot read is not fatal. Everything recorded there is
+// regenerable, so the manager starts empty and the error is returned for the
+// caller to report rather than to recover from. Leases the accounting can no
+// longer fit are dropped for the same reason: the node's shape may have
+// changed while it was down, and compute keeps whatever it now needs.
+func (m *Manager) Restore(now time.Time) (Result, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	res := Result{}
+	if m.journal == nil {
+		return res, nil
+	}
+
+	loaded, err := m.journal.Load()
+	if err != nil {
+		m.leases = make(map[string]Lease)
+		m.acct.Borrowed = 0
+		if saveErr := m.persistLocked(); saveErr != nil {
+			// The reset could not be recorded, so the next restart would read
+			// the same unreadable file. Staying unrestored keeps the node from
+			// lending against a state it cannot persist.
+			return res, fmt.Errorf("%w (and could not reset it: %v)", err, saveErr)
+		}
+		m.restored = true
+		return res, err
+	}
+
+	m.leases = make(map[string]Lease, len(loaded))
+	m.acct.Borrowed = 0
+	for _, l := range loaded {
+		if l.Expired(now) {
+			res.Dropped = append(res.Dropped, l.ID)
+			continue
+		}
+		if lendErr := m.acct.Lend(l.Size); lendErr != nil {
+			res.Dropped = append(res.Dropped, l.ID)
+			continue
+		}
+		m.leases[l.ID] = l
+	}
+	if len(res.Dropped) > 0 {
+		if err := m.persistLocked(); err != nil {
+			return res, fmt.Errorf("lease: restored state could not be journalled: %w", err)
+		}
+	}
+	m.restored = true
+	return res, nil
 }
 
 // Accounting reports the node's current capacity split.
@@ -169,6 +285,9 @@ func (m *Manager) Accept(l Lease, now time.Time) error {
 	defer m.mu.Unlock()
 	m.prune(now)
 
+	if !m.restored {
+		return ErrNotRestored
+	}
 	if !l.Class.Valid() {
 		return fmt.Errorf("%w: %d", ErrBadClass, int(l.Class))
 	}
@@ -196,6 +315,16 @@ func (m *Manager) Accept(l Lease, now time.Time) error {
 	}
 	l.GrantedAt = now
 	m.leases[l.ID] = l
+
+	// Journalled before it is honoured. If the record cannot be written the
+	// grant is undone, because capacity lent with no record of the lending is
+	// capacity that leaks the moment the agent restarts.
+	if err := m.persistLocked(); err != nil {
+		if rollbackErr := m.releaseLocked(l); rollbackErr != nil {
+			return fmt.Errorf("%w (and rollback failed: %v)", err, rollbackErr)
+		}
+		return err
+	}
 	return nil
 }
 
@@ -210,10 +339,12 @@ type Result struct {
 	Shortfall pool.Bytes
 	// Dropped names the leases released, cheapest first.
 	Dropped []string
-	// Err is set when the accounting refused to release capacity a lease
-	// claimed to hold, which means the agent's books have diverged from what
-	// it believes it lent. Reclamation stops at that point rather than
-	// continuing over an accounting it can no longer trust.
+	// Err carries a failure from a method that returns only a Result, such as
+	// the accounting refusing to release capacity a lease claimed to hold,
+	// which means the agent's books have diverged from what it believes it
+	// lent. Work stops at that point rather than continuing over an accounting
+	// it can no longer trust. Methods that return an error use that instead,
+	// so a caller never has to check two places.
 	Err error
 }
 
@@ -264,6 +395,9 @@ func (m *Manager) Reclaim(need pool.Bytes, now time.Time) Result {
 	if len(res.Dropped) > 0 {
 		m.reclaims = append(m.reclaims, now)
 		m.prune(now)
+		if err := m.persistLocked(); err != nil && res.Err == nil {
+			res.Err = err
+		}
 	}
 	return res
 }
@@ -289,7 +423,13 @@ func (m *Manager) releaseLocked(l Lease) error {
 func (m *Manager) Expire(now time.Time) Result {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.expireLocked(now)
+	res := m.expireLocked(now)
+	if len(res.Dropped) > 0 {
+		if err := m.persistLocked(); err != nil && res.Err == nil {
+			res.Err = err
+		}
+	}
+	return res
 }
 
 // expireLocked is Expire without taking the mutex.

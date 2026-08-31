@@ -158,10 +158,12 @@ and S3 drivers ([0006](docs/rfcs/0006-durable-backend-driver-contract.md)), the 
 ([0014](docs/rfcs/0014-kubernetes-integration.md)) and the falsification suite
 ([0018](docs/rfcs/0018-benchmark-and-falsification-suite.md)).
 
-**Started.** Capacity accounting and the lease state machine are implemented and tested in
-`internal/pool` and `internal/lease`. They are not wired to a device, an agent or a control plane,
-and the lease journal RFC-0005 requires does not exist yet, so an agent restart would forget what it
-lent.
+**Started.** Capacity accounting, the lease state machine and the lease journal are implemented and
+tested in `internal/pool` and `internal/lease`. A node now survives a restart knowing what it lent.
+None of it is wired to a device, an agent or a control plane, so nothing reclaims real capacity yet,
+and the restore path has therefore only ever run under test. The first real caller will be the one to
+find whatever the unit tests did not, which is a thing for RFC-0004 to carry rather than assume
+settled.
 
 **Done when** a GPU job runs on a node whose spare NVMe is serving the fabric, capacity is reclaimed
 mid-job without the job noticing, and the benchmark reports a number either way.

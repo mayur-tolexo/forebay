@@ -124,9 +124,10 @@ make build     # binaries into bin/
 ```
 
 `make check` is exactly what CI runs, so a green local check means a green pipeline. What exists so
-far is capacity accounting and the lease state machine from
+far is capacity accounting, the lease state machine and the lease journal from
 [RFC-0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md): the three-pool arithmetic, the three
-lease classes, the reclaim ladder and the never-worse-off invariant, all unit tested. The binaries
+lease classes, the reclaim ladder, the never-worse-off invariant, and durable lease state so a
+restart does not forget what a node lent. All unit tested. The binaries
 build and report their version. Neither has a runtime.
 
 ## The honest part
