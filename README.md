@@ -16,7 +16,7 @@
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-Apache--2.0-4F46E5?style=flat-square"></a>
   <img alt="Status" src="https://img.shields.io/badge/status-design%20phase-F59E0B?style=flat-square">
   <img alt="Code" src="https://img.shields.io/badge/code-none%20yet-64748B?style=flat-square">
-  <a href="docs/rfcs/README.md"><img alt="RFCs" src="https://img.shields.io/badge/RFCs-19%20open-14B8A6?style=flat-square"></a>
+  <a href="docs/rfcs/README.md"><img alt="RFCs" src="https://img.shields.io/badge/RFCs-26%20open-14B8A6?style=flat-square"></a>
   <a href="CONTRIBUTING.md"><img alt="Contributions" src="https://img.shields.io/badge/contributions-wanted-6366F1?style=flat-square"></a>
 </p>
 
