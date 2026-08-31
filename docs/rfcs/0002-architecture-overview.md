@@ -80,9 +80,9 @@ flowchart LR
   drv --> store[(Ceph or OpenEBS or S3)]
   store -.->|async fill| fast
 
-  classDef cp fill:#312E81,stroke:#6366F1,color:#E0E7FF
-  classDef dp fill:#134E4A,stroke:#14B8A6,color:#CCFBF1
-  classDef st fill:#1E293B,stroke:#64748B,color:#E2E8F0
+  classDef cp fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+  classDef dp fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
+  classDef st fill:#E2E8F0,stroke:#475569,stroke-width:1.5px,color:#0F172A
   class acc,drv cp
   class fast,rack dp
   class store,pod st

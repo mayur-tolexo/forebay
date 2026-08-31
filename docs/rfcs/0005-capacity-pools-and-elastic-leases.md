@@ -89,7 +89,7 @@ and a guaranteed lease that cannot be granted is refused rather than downgraded 
 ### The reclaim ladder
 
 ```mermaid
-flowchart TB
+flowchart LR
     sig["Compute needs N bytes<br/>admission · ephemeral request · fs pressure"]
     o["Drop opportunistic leases<br/>immediate"]
     e["Expire elastic leases<br/>within reclaimWithin"]
@@ -104,9 +104,9 @@ flowchart TB
     e -->|enough| ok
     g --> no
 
-    classDef fast fill:#134E4A,stroke:#14B8A6,color:#CCFBF1
-    classDef control fill:#312E81,stroke:#6366F1,color:#E0E7FF
-    classDef warn fill:#422006,stroke:#F59E0B,color:#FDE68A
+    classDef fast fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
+    classDef control fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+    classDef warn fill:#FEF3C7,stroke:#B45309,stroke-width:1.5px,color:#451A03
     class o,e fast
     class sig control
     class g,no warn
@@ -166,6 +166,7 @@ That question is not settled here, and RFC-0008 cannot be accepted without answe
 
 ```mermaid
 stateDiagram-v2
+    direction LR
     [*] --> Free: capacity not lent
     Free --> Leased: agent accepts a grant
     Leased --> Serving: extents allocated and filled

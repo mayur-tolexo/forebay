@@ -38,10 +38,51 @@ On top of that sits the surface you expect from a real storage platform: file, o
 snapshots, clones, replication, encryption, QoS, quotas, multi-tenancy and audit. See
 **[the platform surface](docs/platform.md)** for all of it, compared honestly against a mature array.
 
+## High-level design
+
+```mermaid
+flowchart LR
+    job["Workloads<br/>training · inference · notebooks"]
+    acc["ACCESS LAYER, protocols plug in here<br/>pNFS · NFSv4.2 · S3 · CSI block"]
+    fast["FAST TIER, owned outright and not pluggable<br/>borrowed NVMe · rack fabric · placement · prefetch"]
+    drv["DURABLE BACKEND DRIVERS, capability negotiated"]
+    store[("Ceph · OpenEBS · S3 · the array you already own")]
+    cp["CONTROL PLANE<br/>intent · topology · leases · autonomy · tenancy"]
+
+    job --> acc
+    acc --> fast
+    fast --> drv
+    drv --> store
+    cp -.->|leases and policy, granted ahead of time| fast
+
+    classDef control fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+    classDef owned fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
+    classDef durable fill:#E2E8F0,stroke:#475569,stroke-width:1.5px,color:#0F172A
+    classDef compute fill:#FEF3C7,stroke:#B45309,stroke-width:1.5px,color:#451A03
+    class cp,acc,drv control
+    class fast owned
+    class store durable
+    class job compute
+```
+
+| Component | Responsibility | Runs as |
+| --- | --- | --- |
+| **Control plane** | Intent, topology, lease grants, tenancy, autonomy | Deployment |
+| **Node agent** | Discovery, pool accounting, lease enforcement, serving the fast tier | DaemonSet |
+| **Access layer** | Protocol termination, pNFS layouts and recall | With the agent |
+| **Backend drivers** | Durable storage behind a capability-negotiated contract | In the control plane |
+| **CSI driver** | Volumes and ephemeral volumes | DaemonSet plus controller |
+
+The control plane sits on no vertical edge above. It grants leases ahead of time, out of band, so
+losing it stops new grants while reads and reclamation carry on.
+
+Full design, with the deployment view, the lease and reclaim flows and the failure model, in
+**[docs/architecture.md](docs/architecture.md)**.
+
 ## How it works
 
 ```mermaid
-flowchart TB
+flowchart LR
     job["GPU workload"]
     acc["Access layer<br/>pNFS · NFSv4.2 · S3 · CSI block"]
     localTier["Fast tier on this node<br/>borrowed NVMe"]
@@ -56,10 +97,10 @@ flowchart TB
     store -.->|fills the tier| localTier
     cp -.->|leases and policy, out of band| localTier
 
-    classDef control fill:#312E81,stroke:#6366F1,color:#E0E7FF
-    classDef fast fill:#134E4A,stroke:#14B8A6,color:#CCFBF1
-    classDef durable fill:#1E293B,stroke:#64748B,color:#E2E8F0
-    classDef compute fill:#422006,stroke:#F59E0B,color:#FDE68A
+    classDef control fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+    classDef fast fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
+    classDef durable fill:#E2E8F0,stroke:#475569,stroke-width:1.5px,color:#0F172A
+    classDef compute fill:#FEF3C7,stroke:#B45309,stroke-width:1.5px,color:#451A03
     class cp,acc control
     class localTier,rackTier fast
     class store durable

@@ -43,7 +43,7 @@ That means the fast transport is available without writing a client, and the com
 RFC-0001 survives.
 
 ```mermaid
-flowchart TB
+flowchart LR
     q["Is the path fast enough?"]
     t["Transport bound?<br/>use RPC-over-RDMA"]
     r["Round-trip bound?<br/>batch the requests"]
@@ -55,9 +55,9 @@ flowchart TB
     q --> c
     q --> n
 
-    classDef control fill:#312E81,stroke:#6366F1,color:#E0E7FF
-    classDef fast fill:#134E4A,stroke:#14B8A6,color:#CCFBF1
-    classDef warn fill:#422006,stroke:#F59E0B,color:#FDE68A
+    classDef control fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+    classDef fast fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
+    classDef warn fill:#FEF3C7,stroke:#B45309,stroke-width:1.5px,color:#451A03
     class q control
     class t,r,c fast
     class n warn
