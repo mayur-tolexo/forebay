@@ -24,7 +24,7 @@ edited away, which is the point of keeping these.
 | [0002](0002-architecture-overview.md) | Architecture overview | Draft | 0 | 0001 |
 | [0003](0003-topology-model.md) | Topology model | Not started | 1 | 0002 |
 | [0004](0004-node-agent.md) | Node agent | Not started | 1 | 0002, 0003 |
-| [0005](0005-capacity-pools-and-elastic-leases.md) | Capacity pools and elastic leases | Not started | 1 | 0004 |
+| [0005](0005-capacity-pools-and-elastic-leases.md) | Capacity pools and elastic leases | Draft | 1 | 0002, 0004 |
 | [0006](0006-durable-backend-driver-contract.md) | Durable backend driver contract | Not started | 1 | 0002 |
 | [0007](0007-fast-tier-data-path.md) | Fast tier data path | Not started | 1 | 0005, 0006 |
 | [0008](0008-access-layer-pnfs.md) | Access layer over pNFS | Not started | 1 | 0007 |
