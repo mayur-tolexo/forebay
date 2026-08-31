@@ -54,7 +54,7 @@ export of a quiesced snapshot. Forebay offers the third, and says so.
 One canonical store, several views.
 
 ```mermaid
-flowchart TB
+flowchart LR
     bytes[("Canonical extents<br/>written once")]
     meta["Dataset metadata<br/>names · versions · lineage"]
     v1["File view<br/>pNFS · NFSv4.2"]
@@ -66,9 +66,9 @@ flowchart TB
     meta --> v2
     bytes -. "snapshot export, an explicit operation" .-> v3
 
-    classDef store fill:#1E293B,stroke:#64748B,color:#E2E8F0
-    classDef control fill:#312E81,stroke:#6366F1,color:#E0E7FF
-    classDef fast fill:#134E4A,stroke:#14B8A6,color:#CCFBF1
+    classDef store fill:#E2E8F0,stroke:#475569,stroke-width:1.5px,color:#0F172A
+    classDef control fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+    classDef fast fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
     class bytes store
     class meta control
     class v1,v2 fast
