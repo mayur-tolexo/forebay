@@ -1,211 +1,135 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 840" width="1240" height="840" role="img" aria-label="Forebay architecture: standard clients reach an access layer over pNFS, a fast tier built from borrowed NVMe on GPU nodes serves them, pluggable durable backends sit underneath, and a control plane grants leases out of band.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" role="img" aria-label="Forebay: every GPU node's NVMe is split into compute, donated and borrowed pools. The borrowed pool grows when the node is idle and is returned instantly when the job needs it, feeding the GPUs above it from durable backends below.">
 <defs>
-  <linearGradient id="cardG" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="260">
-    <stop offset="0" stop-color="#111B2E"/><stop offset="1" stop-color="#0A1120"/>
-  </linearGradient>
-  <linearGradient id="cpG" gradientUnits="userSpaceOnUse" x1="48" y1="120" x2="1192" y2="232">
-    <stop offset="0" stop-color="#221F5C"/><stop offset="1" stop-color="#141338"/>
-  </linearGradient>
-  <linearGradient id="axG" gradientUnits="userSpaceOnUse" x1="280" y1="268" x2="1192" y2="332">
-    <stop offset="0" stop-color="#0C2A2A"/><stop offset="1" stop-color="#0A1A22"/>
-  </linearGradient>
-  <linearGradient id="stG" gradientUnits="userSpaceOnUse" x1="48" y1="664" x2="1192" y2="764">
-    <stop offset="0" stop-color="#141C2B"/><stop offset="1" stop-color="#0C1320"/>
-  </linearGradient>
-  <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBBF24"/><stop offset="1" stop-color="#B45309"/></linearGradient>
-  <linearGradient id="slate" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#64748B"/><stop offset="1" stop-color="#334155"/></linearGradient>
-  <linearGradient id="teal" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0F766E"/></linearGradient>
-  <linearGradient id="hair" gradientUnits="userSpaceOnUse" x1="48" y1="0" x2="1192" y2="0">
-    <stop offset="0" stop-color="#1E293B" stop-opacity="0"/><stop offset="0.5" stop-color="#475569"/><stop offset="1" stop-color="#1E293B" stop-opacity="0"/>
-  </linearGradient>
-  <radialGradient id="glowI" cx="0.5" cy="0.5" r="0.5">
-    <stop offset="0" stop-color="#6366F1" stop-opacity="0.20"/><stop offset="1" stop-color="#6366F1" stop-opacity="0"/>
-  </radialGradient>
-  <radialGradient id="glowT" cx="0.5" cy="0.5" r="0.5">
-    <stop offset="0" stop-color="#14B8A6" stop-opacity="0.16"/><stop offset="1" stop-color="#14B8A6" stop-opacity="0"/>
-  </radialGradient>
-  <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
-    <circle cx="1.5" cy="1.5" r="1.1" fill="#1B2740"/>
-  </pattern>
-  <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
-    <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.45"/>
-  </filter>
-  <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748B"/></marker>
-  <marker id="at" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2DD4BF"/></marker>
-  <marker id="ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#818CF8"/></marker>
-  <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#FBBF24"/></marker>
-  <clipPath id="bar1"><rect x="72" y="500" width="296" height="38" rx="7"/></clipPath>
-  <clipPath id="bar2"><rect x="472" y="500" width="296" height="38" rx="7"/></clipPath>
-  <clipPath id="bar3"><rect x="872" y="500" width="296" height="38" rx="7"/></clipPath>
+  <linearGradient id="gGold" gradientUnits="userSpaceOnUse" x1="0" y1="250" x2="0" y2="350"><stop offset="0" stop-color="#FBBF24"/><stop offset="1" stop-color="#B45309"/></linearGradient>
+  <linearGradient id="gSlate" gradientUnits="userSpaceOnUse" x1="0" y1="250" x2="0" y2="350"><stop offset="0" stop-color="#64748B"/><stop offset="1" stop-color="#334155"/></linearGradient>
+  <linearGradient id="gTeal" gradientUnits="userSpaceOnUse" x1="0" y1="250" x2="0" y2="350"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0D9488"/></linearGradient>
+  <linearGradient id="gStore" gradientUnits="userSpaceOnUse" x1="100" y1="480" x2="1100" y2="560"><stop offset="0" stop-color="#141C2B"/><stop offset="1" stop-color="#0C1320"/></linearGradient>
+  <radialGradient id="gGlowT" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#14B8A6" stop-opacity="0.22"/><stop offset="1" stop-color="#14B8A6" stop-opacity="0"/></radialGradient>
+  <radialGradient id="gGlowI" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#6366F1" stop-opacity="0.20"/><stop offset="1" stop-color="#6366F1" stop-opacity="0"/></radialGradient>
+  <pattern id="pDots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="#182339"/></pattern>
+  <filter id="fGlow" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <clipPath id="cBar"><rect x="100" y="250" width="1000" height="100" rx="14"/></clipPath>
+  <marker id="mUp" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2DD4BF"/></marker>
   <style>
     .f{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-    .wm{font-size:29px;font-weight:700;fill:#F1F5F9;letter-spacing:-0.5px}
-    .tag{font-size:14.5px;fill:#8A9AB4}
-    .band{font-size:10.5px;font-weight:700;letter-spacing:1.9px}
-    .lead{font-size:18.5px;fill:#E6EDF7}
-    .chip{font-size:12px;font-weight:600}
-    .pill{font-size:11.5px;font-weight:600}
-    .cap{font-size:10px;fill:#5A6B85;letter-spacing:1.3px;font-weight:700}
-    .seg{font-size:10px;font-weight:700;letter-spacing:0.5px}
-    .note{font-size:11.5px;fill:#8A9AB4}
-    .tiny{font-size:10.5px;fill:#6B7C96}
-    .gpu{font-size:12.5px;font-weight:700}
+    .lbl{font-size:14px;font-weight:700;letter-spacing:1.4px}
+    .sub{font-size:12.5px;fill:#7C8CA6}
+    .cap{font-size:11px;fill:#5A6B85;letter-spacing:1.5px;font-weight:700}
+    .story{font-size:19px;fill:#E6EDF7}
+    .pill{font-size:13px;font-weight:600}
+    .foot{font-size:11.5px;fill:#4E5E78}
   </style>
 </defs>
 
-<rect width="1240" height="840" rx="20" fill="#070C16"/>
-<rect width="1240" height="840" rx="20" fill="url(#dots)" opacity="0.55"/>
-<ellipse cx="360" cy="150" rx="620" ry="300" fill="url(#glowI)"/>
-<ellipse cx="900" cy="520" rx="640" ry="330" fill="url(#glowT)"/>
+<rect width="1200" height="600" rx="18" fill="#070C16"/>
+<rect width="1200" height="600" rx="18" fill="url(#pDots)" opacity="0.6"/>
+<ellipse cx="600" cy="300" rx="620" ry="260" fill="url(#gGlowT)"/>
+<ellipse cx="600" cy="70" rx="520" ry="180" fill="url(#gGlowI)"/>
 
-<!-- header -->
+<!-- accelerators -->
 <g class="f">
-  <g transform="translate(48,30) scale(0.62)">
-    <path d="M10 10 H54 L44 39 A8 8 0 0 1 36.5 44.5 H27.5 A8 8 0 0 1 20 39 Z" fill="none" stroke="#818CF8" stroke-width="5" stroke-linejoin="round"/>
-    <path d="M23.5 49 H40.5 L32 60 Z" fill="#FBBF24"/>
-    <path d="M22 28 H52 L44 39 A8 8 0 0 1 36.5 44.5 H27.5 A8 8 0 0 1 20 39 Z" fill="#14B8A6" opacity="0.9"/>
+  <text x="100" y="46" class="cap">ACCELERATORS</text>
+    <text x="1100" y="46" font-size="12.5" fill="#A5B4FC" text-anchor="end">the control plane grants the lease, then stays out of the IO path</text>
+  <g>
+    <rect x="180" y="58" width="120" height="54" rx="11" fill="#3B2408" stroke="#F59E0B" stroke-width="1.6"/>
+    <text x="240" y="92" font-size="17" font-weight="700" fill="#FCD34D" text-anchor="middle">GPU</text>
+    <rect x="180" y="58" width="120" height="54" rx="11" fill="none" stroke="#FCD34D" stroke-width="2" opacity="0" filter="url(#fGlow)">
+      <animate attributeName="opacity" values="0;0.85;0" dur="2.4s" begin="0s" repeatCount="indefinite"/></rect>
   </g>
-  <text x="96" y="62" class="wm">forebay</text>
-  <text x="1192" y="52" class="tag" text-anchor="end">Write once. Read it any way. Copy it never.</text>
-  <text x="1192" y="72" class="tag" text-anchor="end" fill="#2DD4BF">The open storage control plane for AI infrastructure.</text>
-  <rect x="48" y="92" width="1144" height="1" fill="url(#hair)"/>
-</g>
-
-<!-- control plane -->
-<g class="f" filter="url(#soft)">
-  <rect x="48" y="120" width="1144" height="112" rx="16" fill="url(#cpG)" stroke="#4F46E5" stroke-width="1.4"/>
-  <rect x="64" y="121" width="1112" height="1" fill="#818CF8" opacity="0.35"/>
-</g>
-<g class="f">
-  <text x="76" y="152" class="band" fill="#A5B4FC">CONTROL PLANE</text>
-  <text x="76" y="181" class="lead">You declare what you need. It decides how, continuously.</text>
-  <g class="chip" fill="#C7D2FE">
-    <rect x="76"  y="196" width="112" height="24" rx="12" fill="#312E81" stroke="#4F46E5" stroke-width="1"/><text x="132" y="212" text-anchor="middle">intent</text>
-    <rect x="196" y="196" width="128" height="24" rx="12" fill="#312E81" stroke="#4F46E5" stroke-width="1"/><text x="260" y="212" text-anchor="middle">topology</text>
-    <rect x="332" y="196" width="140" height="24" rx="12" fill="#312E81" stroke="#4F46E5" stroke-width="1"/><text x="402" y="212" text-anchor="middle">elastic leases</text>
-    <rect x="480" y="196" width="126" height="24" rx="12" fill="#312E81" stroke="#4F46E5" stroke-width="1"/><text x="543" y="212" text-anchor="middle">autonomy</text>
+  <g>
+    <rect x="324" y="58" width="120" height="54" rx="11" fill="#3B2408" stroke="#F59E0B" stroke-width="1.6"/>
+    <text x="384" y="92" font-size="17" font-weight="700" fill="#FCD34D" text-anchor="middle">GPU</text>
+    <rect x="324" y="58" width="120" height="54" rx="11" fill="none" stroke="#FCD34D" stroke-width="2" opacity="0" filter="url(#fGlow)">
+      <animate attributeName="opacity" values="0;0.85;0" dur="2.4s" begin="0.4s" repeatCount="indefinite"/></rect>
   </g>
-  <rect x="962" y="160" width="212" height="30" rx="15" fill="#1E1B4B" stroke="#6366F1" stroke-width="1.2"/>
-  <text x="1068" y="180" class="pill" fill="#C7D2FE" text-anchor="middle">never in the IO path</text>
-  <text x="1174" y="212" class="tiny" text-anchor="end">it sees the GPUs, not just the disks</text>
-</g>
-
-<!-- out of band lease line -->
-<g class="f">
-  <path d="M164 232 V352" stroke="#818CF8" stroke-width="1.6" stroke-dasharray="5 6" marker-end="url(#ai)"/>
-  <text x="52" y="278" class="tiny" fill="#818CF8">leases and policy</text>
-  <text x="52" y="294" class="tiny" fill="#818CF8">granted ahead of time</text>
-  <text x="52" y="310" class="tiny" fill="#818CF8">out of band</text>
-</g>
-
-<!-- access layer -->
-<g class="f" filter="url(#soft)">
-  <rect x="280" y="268" width="912" height="66" rx="14" fill="url(#axG)" stroke="#0D9488" stroke-width="1.3"/>
-</g>
-<g class="f">
-  <text x="304" y="294" class="band" fill="#5EEAD4">ACCESS LAYER</text>
-  <text x="304" y="318" class="lead" font-size="16" fill="#CCFBF1">pNFS &#183; NFSv4.2 &#183; NFSv3 &#183; S3 &#183; CSI block</text>
-  <rect x="924" y="286" width="250" height="30" rx="15" fill="#0F2E2E" stroke="#14B8A6" stroke-width="1.2"/>
-  <text x="1049" y="306" class="pill" fill="#99F6E4" text-anchor="middle">standard clients, nothing to install</text>
-</g>
-<path d="M736 334 V362" stroke="#64748B" stroke-width="1.5" marker-end="url(#ar)"/>
-
-<!-- node cards -->
-<g class="f">
-  <!-- card 1 -->
-  <g filter="url(#soft)"><rect x="48" y="364" width="344" height="250" rx="16" fill="url(#cardG)" stroke="#1D2942" stroke-width="1.3"/></g>
-  <rect x="64" y="365" width="312" height="1" fill="#FFFFFF" opacity="0.06"/>
-  <text x="72" y="392" class="cap">GPU NODE &#183; BUSY</text>
-  <rect x="72" y="404" width="86" height="34" rx="9" fill="#3B2408" stroke="#F59E0B" stroke-width="1.3"/>
-  <text x="115" y="426" class="gpu" fill="#FCD34D" text-anchor="middle">GPU</text>
-  <text x="170" y="426" class="tiny">400G NIC</text>
-  <path d="M115 494 V444" stroke="#2DD4BF" stroke-width="2.2" marker-end="url(#at)"/>
-  <text x="130" y="470" class="note" fill="#2DD4BF">feeds</text>
-  <text x="72" y="490" class="cap">LOCAL NVMe</text>
-  <g clip-path="url(#bar1)">
-    <rect x="72"  y="500" width="104" height="38" fill="url(#gold)"/>
-    <rect x="176" y="500" width="90"  height="38" fill="url(#slate)"/>
-    <rect x="266" y="500" width="102" height="38" fill="url(#teal)"/>
-    <rect x="72"  y="500" width="296" height="12" fill="#FFFFFF" opacity="0.08"/>
+  <g>
+    <rect x="468" y="58" width="120" height="54" rx="11" fill="#3B2408" stroke="#F59E0B" stroke-width="1.6"/>
+    <text x="528" y="92" font-size="17" font-weight="700" fill="#FCD34D" text-anchor="middle">GPU</text>
+    <rect x="468" y="58" width="120" height="54" rx="11" fill="none" stroke="#FCD34D" stroke-width="2" opacity="0" filter="url(#fGlow)">
+      <animate attributeName="opacity" values="0;0.85;0" dur="2.4s" begin="0.8s" repeatCount="indefinite"/></rect>
   </g>
-  <rect x="72" y="500" width="296" height="38" rx="7" fill="none" stroke="#233149" stroke-width="1"/>
-  <text x="124" y="558" class="seg" fill="#FBBF24" text-anchor="middle">COMPUTE</text>
-  <text x="221" y="558" class="seg" fill="#94A3B8" text-anchor="middle">DONATED</text>
-  <text x="317" y="558" class="seg" fill="#2DD4BF" text-anchor="middle">BORROWED</text>
-  <text x="124" y="575" class="tiny" text-anchor="middle">the job owns it</text>
-  <text x="221" y="575" class="tiny" text-anchor="middle">durable</text>
-  <text x="317" y="575" class="tiny" text-anchor="middle">regenerable</text>
-  <text x="72" y="600" class="tiny" fill="#8A9AB4">Three pools. Only one is ever taken back.</text>
-
-  <!-- card 2 -->
-  <g filter="url(#soft)"><rect x="448" y="364" width="344" height="250" rx="16" fill="url(#cardG)" stroke="#1D2942" stroke-width="1.3"/></g>
-  <rect x="464" y="365" width="312" height="1" fill="#FFFFFF" opacity="0.06"/>
-  <text x="472" y="392" class="cap">GPU NODE &#183; JOB GREW</text>
-  <rect x="472" y="404" width="86" height="34" rx="9" fill="#3B2408" stroke="#F59E0B" stroke-width="1.3"/>
-  <text x="515" y="426" class="gpu" fill="#FCD34D" text-anchor="middle">GPU</text>
-  <text x="570" y="426" class="tiny">wants its disk back</text>
-  <path d="M700 470 H620" stroke="#FBBF24" stroke-width="2" marker-end="url(#ag)"/>
-  <text x="768" y="466" class="note" fill="#FBBF24" text-anchor="end" font-size="11">reclaimed in place</text>
-  <text x="472" y="490" class="cap">LOCAL NVMe</text>
-  <g clip-path="url(#bar2)">
-    <rect x="472" y="500" width="176" height="38" fill="url(#gold)"/>
-    <rect x="648" y="500" width="90"  height="38" fill="url(#slate)"/>
-    <rect x="738" y="500" width="30"  height="38" fill="url(#teal)"/>
-    <rect x="472" y="500" width="296" height="12" fill="#FFFFFF" opacity="0.08"/>
+  <g>
+    <rect x="612" y="58" width="120" height="54" rx="11" fill="#3B2408" stroke="#F59E0B" stroke-width="1.6"/>
+    <text x="672" y="92" font-size="17" font-weight="700" fill="#FCD34D" text-anchor="middle">GPU</text>
+    <rect x="612" y="58" width="120" height="54" rx="11" fill="none" stroke="#FCD34D" stroke-width="2" opacity="0" filter="url(#fGlow)">
+      <animate attributeName="opacity" values="0;0.85;0" dur="2.4s" begin="1.2s" repeatCount="indefinite"/></rect>
   </g>
-  <rect x="472" y="500" width="296" height="38" rx="7" fill="none" stroke="#233149" stroke-width="1"/>
-  <text x="472" y="562" class="note" font-size="11.5" fill="#E6EDF7">No migration. No rebalance. No waiting.</text>
-  <text x="472" y="582" class="tiny">Borrowed data was regenerable, so it was simply dropped.</text>
-  <text x="472" y="600" class="tiny" fill="#FBBF24">The job never noticed.</text>
-
-  <!-- card 3 -->
-  <g filter="url(#soft)"><rect x="848" y="364" width="344" height="250" rx="16" fill="url(#cardG)" stroke="#1D2942" stroke-width="1.3"/></g>
-  <rect x="864" y="365" width="312" height="1" fill="#FFFFFF" opacity="0.06"/>
-  <text x="872" y="392" class="cap">GPU NODE &#183; IDLE</text>
-  <rect x="872" y="404" width="86" height="34" rx="9" fill="#151E2E" stroke="#3B4A63" stroke-width="1.3"/>
-  <text x="915" y="426" class="gpu" fill="#5A6B85" text-anchor="middle">GPU</text>
-  <text x="970" y="426" class="tiny">between jobs</text>
-  <path d="M1000 470 H1168" stroke="#2DD4BF" stroke-width="2" marker-end="url(#at)"/>
-  <text x="996" y="466" class="note" fill="#2DD4BF" text-anchor="end" font-size="11">lent to the fabric</text>
-  <text x="872" y="490" class="cap">LOCAL NVMe</text>
-  <g clip-path="url(#bar3)">
-    <rect x="872"  y="500" width="56"  height="38" fill="url(#gold)"/>
-    <rect x="928"  y="500" width="90"  height="38" fill="url(#slate)"/>
-    <rect x="1018" y="500" width="150" height="38" fill="url(#teal)"/>
-    <rect x="872"  y="500" width="296" height="12" fill="#FFFFFF" opacity="0.08"/>
+  <g>
+    <rect x="756" y="58" width="120" height="54" rx="11" fill="#3B2408" stroke="#F59E0B" stroke-width="1.6"/>
+    <text x="816" y="92" font-size="17" font-weight="700" fill="#FCD34D" text-anchor="middle">GPU</text>
+    <rect x="756" y="58" width="120" height="54" rx="11" fill="none" stroke="#FCD34D" stroke-width="2" opacity="0" filter="url(#fGlow)">
+      <animate attributeName="opacity" values="0;0.85;0" dur="2.4s" begin="1.6s" repeatCount="indefinite"/></rect>
   </g>
-  <rect x="872" y="500" width="296" height="38" rx="7" fill="none" stroke="#233149" stroke-width="1"/>
-  <text x="872" y="562" class="note" font-size="11.5" fill="#E6EDF7">Capacity you already own, working.</text>
-  <text x="872" y="582" class="tiny">An idle node becomes cache and prefetch for its whole rack.</text>
-  <text x="872" y="600" class="tiny" fill="#2DD4BF">No purchase order required.</text>
-
-  <!-- rack peer links -->
-  <path d="M400 470 H440" stroke="#2DD4BF" stroke-width="1.8" marker-start="url(#at)" marker-end="url(#at)" opacity="0.9"/>
-  <path d="M800 470 H840" stroke="#2DD4BF" stroke-width="1.8" marker-start="url(#at)" marker-end="url(#at)" opacity="0.9"/>
-  <text x="420" y="458" class="tiny" fill="#2DD4BF" text-anchor="middle" font-size="9.5">rack</text>
-  <text x="820" y="458" class="tiny" fill="#2DD4BF" text-anchor="middle" font-size="9.5">rack</text>
+  <g>
+    <rect x="900" y="58" width="120" height="54" rx="11" fill="#3B2408" stroke="#F59E0B" stroke-width="1.6"/>
+    <text x="960" y="92" font-size="17" font-weight="700" fill="#FCD34D" text-anchor="middle">GPU</text>
+    <rect x="900" y="58" width="120" height="54" rx="11" fill="none" stroke="#FCD34D" stroke-width="2" opacity="0" filter="url(#fGlow)">
+      <animate attributeName="opacity" values="0;0.85;0" dur="2.4s" begin="2s" repeatCount="indefinite"/></rect>
+  </g>
 </g>
 
-<path d="M620 614 V662" stroke="#64748B" stroke-width="1.5" marker-end="url(#ar)"/>
-<text x="636" y="644" class="f note">on a miss, or for durability</text>
+<!-- data rising into the accelerators -->
+<g stroke="#2DD4BF" stroke-width="2.4" stroke-linecap="round" marker-end="url(#mUp)" opacity="0.9">
+  <path d="M240 244 V120" stroke-dasharray="10 14"><animate attributeName="stroke-dashoffset" values="72;0" dur="1.6s" repeatCount="indefinite"/></path>
+  <path d="M384 244 V120" stroke-dasharray="10 14"><animate attributeName="stroke-dashoffset" values="72;0" dur="1.6s" begin="0.2s" repeatCount="indefinite"/></path>
+  <path d="M528 244 V120" stroke-dasharray="10 14"><animate attributeName="stroke-dashoffset" values="72;0" dur="1.6s" begin="0.4s" repeatCount="indefinite"/></path>
+  <path d="M672 244 V120" stroke-dasharray="10 14"><animate attributeName="stroke-dashoffset" values="72;0" dur="1.6s" begin="0.6s" repeatCount="indefinite"/></path>
+  <path d="M816 244 V120" stroke-dasharray="10 14"><animate attributeName="stroke-dashoffset" values="72;0" dur="1.6s" begin="0.8s" repeatCount="indefinite"/></path>
+  <path d="M960 244 V120" stroke-dasharray="10 14"><animate attributeName="stroke-dashoffset" values="72;0" dur="1.6s" begin="1s" repeatCount="indefinite"/></path>
+</g>
+
+<!-- the bar: every node's local NVMe -->
+
+<g clip-path="url(#cBar)">
+  <rect x="100" y="250" width="380" height="100" fill="url(#gGold)">
+    <animate attributeName="width" values="380;380;620;620;380" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/>
+  </rect>
+  <rect x="480" y="250" width="200" height="100" fill="url(#gSlate)">
+    <animate attributeName="x" values="480;480;720;720;480" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/>
+  </rect>
+  <rect x="680" y="250" width="420" height="100" fill="url(#gTeal)">
+    <animate attributeName="x" values="680;680;920;920;680" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/>
+    <animate attributeName="width" values="420;420;180;180;420" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/>
+  </rect>
+  <rect x="100" y="250" width="1000" height="26" fill="#FFFFFF" opacity="0.09"/>
+</g>
+<rect x="100" y="250" width="1000" height="100" rx="14" fill="none" stroke="#2A3A56" stroke-width="1.4"/>
+
+<!-- segment labels track their segments -->
+<g class="f" text-anchor="middle">
+  <text x="290" y="378" class="lbl" fill="#FBBF24">COMPUTE
+    <animate attributeName="x" values="290;290;410;410;290" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+  <text x="290" y="398" class="sub">the job owns it
+    <animate attributeName="x" values="290;290;410;410;290" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+
+  <text x="580" y="378" class="lbl" fill="#94A3B8">DONATED
+    <animate attributeName="x" values="580;580;820;820;580" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+  <text x="580" y="398" class="sub">durable, permanent
+    <animate attributeName="x" values="580;580;820;820;580" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+
+  <text x="890" y="378" class="lbl" fill="#2DD4BF">BORROWED
+    <animate attributeName="x" values="890;890;1010;1010;890" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+  <text x="890" y="398" class="sub">regenerable only
+    <animate attributeName="x" values="890;890;1010;1010;890" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+</g>
+
+<!-- the story, cross-faded with the animation -->
+<g class="f" text-anchor="middle">
+  <text x="600" y="440" class="story" fill="#5EEAD4">Every node&#8217;s local NVMe. This one is between jobs, so its spare capacity serves the rack.
+    <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.32;0.44;0.84;1" dur="11s" repeatCount="indefinite"/></text>
+  <text x="600" y="440" class="story" fill="#FBBF24" opacity="0">The job grew. Capacity came back instantly, dropped and never migrated.
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.36;0.48;0.8;1" dur="11s" repeatCount="indefinite"/></text>
+</g>
 
 <!-- durable backends -->
-<g class="f" filter="url(#soft)">
-  <rect x="48" y="664" width="1144" height="100" rx="16" fill="url(#stG)" stroke="#334155" stroke-width="1.3"/>
+<rect x="100" y="480" width="1000" height="72" rx="14" fill="url(#gStore)" stroke="#2A3A56" stroke-width="1.4"/>
+<text x="126" y="508" class="f cap">DURABLE, WHEREVER YOU ALREADY KEEP IT</text>
+<g class="f pill" fill="#CBD5E1">
+  <rect x="126" y="518" width="78"  height="26" rx="13" fill="#1B2537" stroke="#3B4A63"/><text x="165" y="536" text-anchor="middle">Ceph</text>
+  <rect x="212" y="518" width="104" height="26" rx="13" fill="#1B2537" stroke="#3B4A63"/><text x="264" y="536" text-anchor="middle">OpenEBS</text>
+  <rect x="324" y="518" width="62"  height="26" rx="13" fill="#1B2537" stroke="#3B4A63"/><text x="355" y="536" text-anchor="middle">S3</text>
+  <rect x="394" y="518" width="196" height="26" rx="13" fill="#1B2537" stroke="#3B4A63"/><text x="492" y="536" text-anchor="middle">the array you already own</text>
 </g>
-<g class="f">
-  <text x="76" y="694" class="band" fill="#94A3B8">PLUGGABLE DURABLE BACKENDS</text>
-  <g class="chip" fill="#CBD5E1">
-    <rect x="76"  y="710" width="86"  height="28" rx="14" fill="#1B2537" stroke="#3B4A63" stroke-width="1"/><text x="119" y="729" text-anchor="middle">Ceph</text>
-    <rect x="170" y="710" width="112" height="28" rx="14" fill="#1B2537" stroke="#3B4A63" stroke-width="1"/><text x="226" y="729" text-anchor="middle">OpenEBS</text>
-    <rect x="290" y="710" width="70"  height="28" rx="14" fill="#1B2537" stroke="#3B4A63" stroke-width="1"/><text x="325" y="729" text-anchor="middle">S3</text>
-    <rect x="368" y="710" width="212" height="28" rx="14" fill="#1B2537" stroke="#3B4A63" stroke-width="1"/><text x="474" y="729" text-anchor="middle">the array you already own</text>
-  </g>
-  <rect x="962" y="700" width="212" height="30" rx="15" fill="#1B2537" stroke="#475569" stroke-width="1.2"/>
-  <text x="1068" y="720" class="pill" fill="#CBD5E1" text-anchor="middle">no rip and replace</text>
-  <text x="1174" y="750" class="tiny" text-anchor="end">drivers declare what they can do, so nothing degrades silently</text>
-</g>
-
-<text x="48" y="805" class="f tiny" fill="#5A6B85">Design phase. Performance claims are unproven until measured.</text>
-<text x="1192" y="805" class="f tiny" fill="#5A6B85" text-anchor="end">github.com/mayur-tolexo/forebay</text>
+<text x="100" y="584" class="f foot">Design phase. Performance claims unproven until measured.</text>
+<text x="1100" y="584" class="f foot" text-anchor="end">github.com/mayur-tolexo/forebay</text>
 </svg>

@@ -201,9 +201,19 @@ non-goal in RFC-0001. That reversal is recorded rather than edited away.
 </p>
 
 You describe an outcome. Forebay decides how to reach it, continuously, from what it observes on both
-the storage and the compute side. The work that disappears is the work that used to be yours: sizing
-a cache tier by hand, migrating data to free up space, buying capacity the fleet already has, and
-guessing why a GPU is waiting.
+the storage and the compute side.
+
+| You declare | Forebay decides, continuously | You never have to |
+| --- | --- | --- |
+| Survive a rack failure | Where replicas actually live | Size a cache tier by hand |
+| Keep this dataset near the GPUs | What to cache, and on which node | Migrate data to free up space |
+| Durable within sixty seconds | How much NVMe to borrow right now | Buy capacity the fleet already has |
+| This scratch may vanish | When to hand it straight back | Stop a training run to upgrade |
+| Clone dataset v17 for a run | What the job will read next | Hand-place a single replica |
+| Cheapest that still meets this | Which backend can honour it | Guess why a GPU is waiting |
+
+If nothing can satisfy what you declared, you are told, loudly. Every decision the control plane
+makes is recorded, because autonomy nobody can audit is autonomy that gets switched off.
 
 <details>
 <summary><b>The read path in detail</b></summary>

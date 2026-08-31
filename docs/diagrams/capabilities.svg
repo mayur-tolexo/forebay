@@ -1,123 +1,91 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 800" width="1240" height="800" role="img" aria-label="Forebay capabilities: what you declare, what Forebay decides continuously, what you never have to do, plus table stakes against capabilities that require seeing the compute.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500" width="1200" height="500" role="img" aria-label="Without Forebay: four copies of the same dataset, NVMe sitting idle, and a GPU waiting on data. With Forebay: one copy read as file or object, every spare byte working, and the GPU fed.">
 <defs>
-  <linearGradient id="c1" gradientUnits="userSpaceOnUse" x1="0" y1="130" x2="0" y2="470"><stop offset="0" stop-color="#1C1A4A"/><stop offset="1" stop-color="#0C1020"/></linearGradient>
-  <linearGradient id="c2" gradientUnits="userSpaceOnUse" x1="0" y1="130" x2="0" y2="470"><stop offset="0" stop-color="#0C2A2A"/><stop offset="1" stop-color="#0A1420"/></linearGradient>
-  <linearGradient id="c3" gradientUnits="userSpaceOnUse" x1="0" y1="130" x2="0" y2="470"><stop offset="0" stop-color="#161E2E"/><stop offset="1" stop-color="#0B1120"/></linearGradient>
-  <linearGradient id="b1" gradientUnits="userSpaceOnUse" x1="0" y1="520" x2="0" y2="700"><stop offset="0" stop-color="#141C2B"/><stop offset="1" stop-color="#0B1120"/></linearGradient>
-  <linearGradient id="b2" gradientUnits="userSpaceOnUse" x1="0" y1="520" x2="0" y2="700"><stop offset="0" stop-color="#10322F"/><stop offset="1" stop-color="#0A1620"/></linearGradient>
-  <linearGradient id="hair2" gradientUnits="userSpaceOnUse" x1="48" y1="0" x2="1192" y2="0">
-    <stop offset="0" stop-color="#1E293B" stop-opacity="0"/><stop offset="0.5" stop-color="#475569"/><stop offset="1" stop-color="#1E293B" stop-opacity="0"/>
-  </linearGradient>
-  <radialGradient id="g1" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#6366F1" stop-opacity="0.16"/><stop offset="1" stop-color="#6366F1" stop-opacity="0"/></radialGradient>
-  <radialGradient id="g2" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#14B8A6" stop-opacity="0.15"/><stop offset="1" stop-color="#14B8A6" stop-opacity="0"/></radialGradient>
-  <pattern id="dots2" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="#1B2740"/></pattern>
-  <filter id="soft2" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.45"/></filter>
-  <marker id="c_ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker>
+  <linearGradient id="kGold" gradientUnits="userSpaceOnUse" x1="0" y1="220" x2="0" y2="264"><stop offset="0" stop-color="#FBBF24"/><stop offset="1" stop-color="#B45309"/></linearGradient>
+  <linearGradient id="kSlate" gradientUnits="userSpaceOnUse" x1="0" y1="220" x2="0" y2="264"><stop offset="0" stop-color="#64748B"/><stop offset="1" stop-color="#334155"/></linearGradient>
+  <linearGradient id="kTeal" gradientUnits="userSpaceOnUse" x1="0" y1="220" x2="0" y2="264"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0D9488"/></linearGradient>
+  <linearGradient id="kDead" gradientUnits="userSpaceOnUse" x1="0" y1="220" x2="0" y2="264"><stop offset="0" stop-color="#2B3548"/><stop offset="1" stop-color="#1A2231"/></linearGradient>
+  <radialGradient id="kGlowT" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#14B8A6" stop-opacity="0.20"/><stop offset="1" stop-color="#14B8A6" stop-opacity="0"/></radialGradient>
+  <pattern id="kDots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="#182339"/></pattern>
+  <filter id="kGlow" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <marker id="kAr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5EEAD4"/></marker>
   <style>
     .f{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-    .h1{font-size:27px;font-weight:700;fill:#F1F5F9;letter-spacing:-0.4px}
-    .sub{font-size:14.5px;fill:#8A9AB4}
-    .col{font-size:10.5px;font-weight:700;letter-spacing:1.9px}
-    .colsub{font-size:12.5px;fill:#8A9AB4}
-    .item{font-size:13.5px;fill:#DCE6F4}
-    .item2{font-size:13px;fill:#B6C4D8}
-    .band{font-size:10.5px;font-weight:700;letter-spacing:1.7px}
-    .bl{font-size:16px;fill:#E6EDF7}
-    .tiny{font-size:10.5px;fill:#6B7C96}
-    .note{font-size:11.5px;fill:#8A9AB4}
+    .hd{font-size:13px;font-weight:700;letter-spacing:2.2px}
+    .big{font-size:17px;fill:#E6EDF7}
+    .dim{font-size:17px;fill:#8494AC}
+    .sm{font-size:12.5px;fill:#65758E}
+    .chip{font-size:13px;font-weight:700}
+    .foot{font-size:11.5px;fill:#4E5E78}
   </style>
 </defs>
 
-<rect width="1240" height="800" rx="20" fill="#070C16"/>
-<rect width="1240" height="800" rx="20" fill="url(#dots2)" opacity="0.55"/>
-<ellipse cx="300" cy="200" rx="600" ry="300" fill="url(#g1)"/>
-<ellipse cx="950" cy="620" rx="620" ry="320" fill="url(#g2)"/>
+<rect width="1200" height="500" rx="18" fill="#070C16"/>
+<rect width="1200" height="500" rx="18" fill="url(#kDots)" opacity="0.6"/>
+<ellipse cx="880" cy="250" rx="480" ry="260" fill="url(#kGlowT)"/>
+
+<rect x="40" y="40" width="530" height="400" rx="16" fill="#0C111C" stroke="#1E2637" stroke-width="1.3"/>
+<rect x="630" y="40" width="530" height="400" rx="16" fill="#0B1524" stroke="#14B8A6" stroke-width="1.4"/>
 
 <g class="f">
-  <text x="48" y="58" class="h1">What Forebay does for you</text>
-  <text x="48" y="82" class="sub">Storage you describe by outcome, running on hardware you have already bought.</text>
-  <rect x="48" y="104" width="1144" height="1" fill="url(#hair2)"/>
-</g>
+  <text x="70" y="82" class="hd" fill="#5A6B85">WITHOUT</text>
+  <text x="660" y="82" class="hd" fill="#5EEAD4">WITH FOREBAY</text>
 
-<!-- column 1 -->
-<g class="f">
-  <g filter="url(#soft2)"><rect x="48" y="130" width="344" height="340" rx="16" fill="url(#c1)" stroke="#4F46E5" stroke-width="1.3"/></g>
-  <rect x="64" y="131" width="312" height="1" fill="#818CF8" opacity="0.3"/>
-  <text x="72" y="162" class="col" fill="#A5B4FC">YOU DECLARE</text>
-  <text x="72" y="184" class="colsub">An outcome, not a mechanism.</text>
-  <g class="item">
-    <circle cx="79" cy="219" r="3.5" fill="#818CF8"/><text x="94" y="224">Survive a rack failure</text>
-    <circle cx="79" cy="257" r="3.5" fill="#818CF8"/><text x="94" y="262">Keep this dataset near the GPUs</text>
-    <circle cx="79" cy="295" r="3.5" fill="#818CF8"/><text x="94" y="300">Durable within sixty seconds</text>
-    <circle cx="79" cy="333" r="3.5" fill="#818CF8"/><text x="94" y="338">This scratch may vanish</text>
-    <circle cx="79" cy="371" r="3.5" fill="#818CF8"/><text x="94" y="376">Clone dataset v17 for a run</text>
-    <circle cx="79" cy="409" r="3.5" fill="#818CF8"/><text x="94" y="414">Cheapest that still meets this</text>
+  <!-- row 1: copies -->
+  <g>
+    <rect x="70"  y="104" width="150" height="30" rx="6" fill="#1A2231" stroke="#2B3548"/>
+    <rect x="84"  y="118" width="150" height="30" rx="6" fill="#1A2231" stroke="#2B3548"/>
+    <rect x="98"  y="132" width="150" height="30" rx="6" fill="#1A2231" stroke="#2B3548"/>
+    <rect x="112" y="146" width="150" height="30" rx="6" fill="#202A3C" stroke="#3B4A63"/>
+    <text x="187" y="166" class="chip" fill="#8494AC" text-anchor="middle">dataset v17</text>
+    <text x="290" y="134" class="dim">Four copies of the same bytes</text>
+    <text x="290" y="156" class="sm">one per protocol, one per clone, one per tier</text>
   </g>
-  <text x="72" y="450" class="tiny">If nothing can satisfy it, you are told. Loudly.</text>
-</g>
-
-<!-- column 2 -->
-<g class="f">
-  <g filter="url(#soft2)"><rect x="448" y="130" width="344" height="340" rx="16" fill="url(#c2)" stroke="#0D9488" stroke-width="1.3"/></g>
-  <rect x="464" y="131" width="312" height="1" fill="#5EEAD4" opacity="0.3"/>
-  <text x="472" y="162" class="col" fill="#5EEAD4">FOREBAY DECIDES</text>
-  <text x="472" y="184" class="colsub">Continuously, from what it observes.</text>
-  <g class="item">
-    <circle cx="479" cy="219" r="3.5" fill="#2DD4BF"/><text x="494" y="224">Where replicas actually live</text>
-    <circle cx="479" cy="257" r="3.5" fill="#2DD4BF"/><text x="494" y="262">What to cache, and on which node</text>
-    <circle cx="479" cy="295" r="3.5" fill="#2DD4BF"/><text x="494" y="300">How much NVMe to borrow now</text>
-    <circle cx="479" cy="333" r="3.5" fill="#2DD4BF"/><text x="494" y="338">When to hand it straight back</text>
-    <circle cx="479" cy="371" r="3.5" fill="#2DD4BF"/><text x="494" y="376">What the job will read next</text>
-    <circle cx="479" cy="409" r="3.5" fill="#2DD4BF"/><text x="494" y="414">Which backend can honour it</text>
+  <g>
+    <rect x="660" y="118" width="150" height="34" rx="7" fill="#312E81" stroke="#6366F1" stroke-width="1.4"/>
+    <text x="735" y="140" class="chip" fill="#C7D2FE" text-anchor="middle">dataset v17</text>
+    <path d="M816 128 H862" stroke="#5EEAD4" stroke-width="1.8" marker-end="url(#kAr)"/>
+    <path d="M816 146 H862" stroke="#5EEAD4" stroke-width="1.8" marker-end="url(#kAr)"/>
+    <rect x="870" y="112" width="96"  height="26" rx="13" fill="#0F2E2E" stroke="#14B8A6"/><text x="918" y="130" class="chip" fill="#99F6E4" text-anchor="middle">file</text>
+    <rect x="870" y="146" width="96"  height="26" rx="13" fill="#0F2E2E" stroke="#14B8A6"/><text x="918" y="164" class="chip" fill="#99F6E4" text-anchor="middle">object</text>
+    <text x="990" y="134" class="big">Written once.</text>
+    <text x="990" y="156" class="sm" fill="#5EEAD4">Read any way. Copied never.</text>
   </g>
-  <text x="472" y="450" class="tiny">Every decision is recorded, so you can see why.</text>
-</g>
 
-<!-- column 3 -->
-<g class="f">
-  <g filter="url(#soft2)"><rect x="848" y="130" width="344" height="340" rx="16" fill="url(#c3)" stroke="#334155" stroke-width="1.3"/></g>
-  <rect x="864" y="131" width="312" height="1" fill="#FFFFFF" opacity="0.06"/>
-  <text x="872" y="162" class="col" fill="#94A3B8">YOU NEVER HAVE TO</text>
-  <text x="872" y="184" class="colsub">The work that used to be yours.</text>
-  <g class="item2">
-    <path d="M876 215 l7 7 M883 215 l-7 7" stroke="#64748B" stroke-width="1.8" stroke-linecap="round"/><text x="894" y="224">Size a cache tier by hand</text>
-    <path d="M876 253 l7 7 M883 253 l-7 7" stroke="#64748B" stroke-width="1.8" stroke-linecap="round"/><text x="894" y="262">Migrate data to free up space</text>
-    <path d="M876 291 l7 7 M883 291 l-7 7" stroke="#64748B" stroke-width="1.8" stroke-linecap="round"/><text x="894" y="300">Buy capacity the fleet already has</text>
-    <path d="M876 329 l7 7 M883 329 l-7 7" stroke="#64748B" stroke-width="1.8" stroke-linecap="round"/><text x="894" y="338">Stop a training run to upgrade</text>
-    <path d="M876 367 l7 7 M883 367 l-7 7" stroke="#64748B" stroke-width="1.8" stroke-linecap="round"/><text x="894" y="376">Hand-place a single replica</text>
-    <path d="M876 405 l7 7 M883 405 l-7 7" stroke="#64748B" stroke-width="1.8" stroke-linecap="round"/><text x="894" y="414">Guess why a GPU is waiting</text>
+  <!-- row 2: nvme -->
+  <g>
+    <rect x="70" y="220" width="430" height="44" rx="9" fill="url(#kDead)" stroke="#2B3548"/>
+    <rect x="70" y="220" width="96"  height="44" rx="9" fill="#3A2A12"/>
+    <text x="70" y="292" class="dim">NVMe sitting idle</text>
+    <text x="70" y="313" class="sm">bought, powered, doing nothing</text>
   </g>
-  <text x="872" y="450" class="tiny">Toil removed is the only honest measure of a control plane.</text>
-</g>
-
-<path d="M400 300 H440" stroke="#475569" stroke-width="1.4" marker-end="url(#c_ar)"/>
-<path d="M800 300 H840" stroke="#475569" stroke-width="1.4" marker-end="url(#c_ar)"/>
-
-<!-- lower bands -->
-<g class="f">
-  <g filter="url(#soft2)"><rect x="48" y="520" width="556" height="184" rx="16" fill="url(#b1)" stroke="#334155" stroke-width="1.3"/></g>
-  <text x="72" y="552" class="band" fill="#94A3B8">TABLE STAKES</text>
-  <text x="72" y="578" class="bl">What any serious storage platform must have</text>
-  <g class="item2" font-size="12.5">
-    <text x="72" y="606">Snapshots &#183; instant clones &#183; replication &#183; QoS</text>
-    <text x="72" y="628">Quotas &#183; multi-tenancy &#183; capacity reporting &#183; audit</text>
-    <text x="72" y="650">Non-disruptive upgrade &#183; encryption &#183; DR</text>
+  <g>
+    <rect x="660" y="220" width="160" height="44" fill="url(#kGold)"/>
+    <rect x="820" y="220" width="110" height="44" fill="url(#kSlate)"/>
+    <rect x="930" y="220" width="160" height="44" fill="url(#kTeal)"/>
+    <rect x="660" y="220" width="430" height="44" rx="9" fill="none" stroke="#2A3A56" stroke-width="1.3"/>
+    <text x="660" y="292" class="big">Every spare byte working</text>
+    <text x="660" y="313" class="sm" fill="#5EEAD4">borrowed on loan, returned the instant the job needs it</text>
   </g>
-  <text x="72" y="682" class="tiny">Unglamorous, unavoidable, and the reason storage gets trusted. Phases 2 to 4.</text>
-</g>
-<g class="f">
-  <g filter="url(#soft2)"><rect x="636" y="520" width="556" height="184" rx="16" fill="url(#b2)" stroke="#14B8A6" stroke-width="1.3"/></g>
-  <rect x="652" y="521" width="524" height="1" fill="#5EEAD4" opacity="0.3"/>
-  <text x="660" y="552" class="band" fill="#5EEAD4">WHAT NEEDS TO SEE THE COMPUTE</text>
-  <text x="660" y="578" class="bl">Capabilities a storage system alone cannot offer</text>
-  <g class="item" font-size="12.5" fill="#CCFBF1">
-    <text x="660" y="606">Capacity that appears from idle nodes, and returns itself</text>
-    <text x="660" y="628">Placement that follows the accelerator, not the failure domain</text>
-    <text x="660" y="650">GB per second per GPU as the unit of management</text>
+
+  <!-- row 3: the gpu -->
+  <g>
+    <rect x="70" y="348" width="120" height="50" rx="11" fill="#151E2E" stroke="#3B4A63" stroke-width="1.5"/>
+    <text x="130" y="379" font-size="17" font-weight="700" fill="#5A6B85" text-anchor="middle">GPU</text>
+    <text x="208" y="372" class="dim">Waiting on data</text>
+    <text x="208" y="393" class="sm">the most expensive idle resource you own</text>
   </g>
-  <text x="660" y="682" class="tiny" fill="#5EEAD4">An array cannot know a GPU is starving. It cannot see one.</text>
+  <g>
+    <rect x="660" y="348" width="120" height="50" rx="11" fill="#3B2408" stroke="#F59E0B" stroke-width="1.6"/>
+    <text x="720" y="379" font-size="17" font-weight="700" fill="#FCD34D" text-anchor="middle">GPU</text>
+    <rect x="660" y="348" width="120" height="50" rx="11" fill="none" stroke="#FCD34D" stroke-width="2" opacity="0" filter="url(#kGlow)">
+      <animate attributeName="opacity" values="0;0.9;0" dur="2.4s" repeatCount="indefinite"/></rect>
+    <text x="798" y="372" class="big">Fed</text>
+    <text x="798" y="393" class="sm" fill="#FBBF24">and you never had to size a cache, or migrate a byte</text>
+  </g>
 </g>
 
-<text x="48" y="762" class="f tiny" fill="#5A6B85">Design phase. Nothing here is shipped, and performance claims are unproven until measured.</text>
-<text x="1192" y="762" class="f tiny" fill="#5A6B85" text-anchor="end">github.com/mayur-tolexo/forebay</text>
+<path d="M578 232 L604 250 L578 268" fill="none" stroke="#5EEAD4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+
+<text x="40" y="478" class="f foot">Design phase. Nothing here is shipped, and performance claims are unproven until measured.</text>
+<text x="1160" y="478" class="f foot" text-anchor="end">github.com/mayur-tolexo/forebay</text>
 </svg>
