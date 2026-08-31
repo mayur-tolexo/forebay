@@ -1,122 +1,211 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 690" width="1200" height="690" role="img" aria-label="Forebay architecture: a control plane grants leases out of band while GPU nodes split local NVMe into compute, donated and borrowed pools, with pluggable durable backends underneath.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 840" width="1240" height="840" role="img" aria-label="Forebay architecture: standard clients reach an access layer over pNFS, a fast tier built from borrowed NVMe on GPU nodes serves them, pluggable durable backends sit underneath, and a control plane grants leases out of band.">
+<defs>
+  <linearGradient id="cardG" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="260">
+    <stop offset="0" stop-color="#111B2E"/><stop offset="1" stop-color="#0A1120"/>
+  </linearGradient>
+  <linearGradient id="cpG" gradientUnits="userSpaceOnUse" x1="48" y1="120" x2="1192" y2="232">
+    <stop offset="0" stop-color="#221F5C"/><stop offset="1" stop-color="#141338"/>
+  </linearGradient>
+  <linearGradient id="axG" gradientUnits="userSpaceOnUse" x1="280" y1="268" x2="1192" y2="332">
+    <stop offset="0" stop-color="#0C2A2A"/><stop offset="1" stop-color="#0A1A22"/>
+  </linearGradient>
+  <linearGradient id="stG" gradientUnits="userSpaceOnUse" x1="48" y1="664" x2="1192" y2="764">
+    <stop offset="0" stop-color="#141C2B"/><stop offset="1" stop-color="#0C1320"/>
+  </linearGradient>
+  <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBBF24"/><stop offset="1" stop-color="#B45309"/></linearGradient>
+  <linearGradient id="slate" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#64748B"/><stop offset="1" stop-color="#334155"/></linearGradient>
+  <linearGradient id="teal" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0F766E"/></linearGradient>
+  <linearGradient id="hair" gradientUnits="userSpaceOnUse" x1="48" y1="0" x2="1192" y2="0">
+    <stop offset="0" stop-color="#1E293B" stop-opacity="0"/><stop offset="0.5" stop-color="#475569"/><stop offset="1" stop-color="#1E293B" stop-opacity="0"/>
+  </linearGradient>
+  <radialGradient id="glowI" cx="0.5" cy="0.5" r="0.5">
+    <stop offset="0" stop-color="#6366F1" stop-opacity="0.20"/><stop offset="1" stop-color="#6366F1" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="glowT" cx="0.5" cy="0.5" r="0.5">
+    <stop offset="0" stop-color="#14B8A6" stop-opacity="0.16"/><stop offset="1" stop-color="#14B8A6" stop-opacity="0"/>
+  </radialGradient>
+  <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+    <circle cx="1.5" cy="1.5" r="1.1" fill="#1B2740"/>
+  </pattern>
+  <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+    <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.45"/>
+  </filter>
+  <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748B"/></marker>
+  <marker id="at" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2DD4BF"/></marker>
+  <marker id="ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#818CF8"/></marker>
+  <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#FBBF24"/></marker>
+  <clipPath id="bar1"><rect x="72" y="500" width="296" height="38" rx="7"/></clipPath>
+  <clipPath id="bar2"><rect x="472" y="500" width="296" height="38" rx="7"/></clipPath>
+  <clipPath id="bar3"><rect x="872" y="500" width="296" height="38" rx="7"/></clipPath>
   <style>
-    .f    { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    .wm   { font-size: 27px; font-weight: 700; fill: #F1F5F9; letter-spacing: -0.4px; }
-    .tag  { font-size: 15px; fill: #94A3B8; }
-    .band { font-size: 11px; font-weight: 700; letter-spacing: 1.6px; }
-    .lead { font-size: 19px; fill: #E0E7FF; }
-    .pill { font-size: 11.5px; font-weight: 600; }
-    .cap  { font-size: 11px; fill: #64748B; letter-spacing: 1.2px; font-weight: 600; }
-    .seg  { font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; }
-    .note { font-size: 11.5px; fill: #94A3B8; }
-    .chip { font-size: 12.5px; font-weight: 700; }
-    .foot { font-size: 11px; fill: #475569; }
+    .f{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+    .wm{font-size:29px;font-weight:700;fill:#F1F5F9;letter-spacing:-0.5px}
+    .tag{font-size:14.5px;fill:#8A9AB4}
+    .band{font-size:10.5px;font-weight:700;letter-spacing:1.9px}
+    .lead{font-size:18.5px;fill:#E6EDF7}
+    .chip{font-size:12px;font-weight:600}
+    .pill{font-size:11.5px;font-weight:600}
+    .cap{font-size:10px;fill:#5A6B85;letter-spacing:1.3px;font-weight:700}
+    .seg{font-size:10px;font-weight:700;letter-spacing:0.5px}
+    .note{font-size:11.5px;fill:#8A9AB4}
+    .tiny{font-size:10.5px;fill:#6B7C96}
+    .gpu{font-size:12.5px;font-weight:700}
   </style>
-  <defs>
-    <marker id="aT" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#2DD4BF"/>
-    </marker>
-    <marker id="aS" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#64748B"/>
-    </marker>
-    <marker id="aI" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#6366F1"/>
-    </marker>
-  </defs>
+</defs>
 
-  <rect width="1200" height="690" rx="18" fill="#0B1220"/>
+<rect width="1240" height="840" rx="20" fill="#070C16"/>
+<rect width="1240" height="840" rx="20" fill="url(#dots)" opacity="0.55"/>
+<ellipse cx="360" cy="150" rx="620" ry="300" fill="url(#glowI)"/>
+<ellipse cx="900" cy="520" rx="640" ry="330" fill="url(#glowT)"/>
 
-  <!-- header -->
-  <g class="f">
-    <text x="48" y="58" class="wm">forebay</text>
-    <text x="1152" y="57" class="tag" text-anchor="end">idle NVMe on your GPU nodes &#8594; the tier that keeps them fed</text>
+<!-- header -->
+<g class="f">
+  <g transform="translate(48,30) scale(0.62)">
+    <path d="M10 10 H54 L44 39 A8 8 0 0 1 36.5 44.5 H27.5 A8 8 0 0 1 20 39 Z" fill="none" stroke="#818CF8" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M23.5 49 H40.5 L32 60 Z" fill="#FBBF24"/>
+    <path d="M22 28 H52 L44 39 A8 8 0 0 1 36.5 44.5 H27.5 A8 8 0 0 1 20 39 Z" fill="#14B8A6" opacity="0.9"/>
   </g>
+  <text x="96" y="62" class="wm">forebay</text>
+  <text x="1192" y="52" class="tag" text-anchor="end">The NVMe in your GPU nodes is already paid for.</text>
+  <text x="1192" y="72" class="tag" text-anchor="end" fill="#2DD4BF">Forebay makes it the tier that keeps them fed.</text>
+  <rect x="48" y="92" width="1144" height="1" fill="url(#hair)"/>
+</g>
 
-  <!-- control plane -->
-  <g class="f">
-    <rect x="48" y="94" width="1104" height="98" rx="14" fill="#1E1B4B" stroke="#4F46E5" stroke-width="1.5"/>
-    <text x="76" y="126" class="band" fill="#A5B4FC">CONTROL PLANE</text>
-    <text x="76" y="158" class="lead">intent &#183; topology &#183; capacity leases &#183; autonomy</text>
-    <rect x="906" y="126" width="218" height="30" rx="15" fill="#312E81" stroke="#6366F1" stroke-width="1.2"/>
-    <text x="1015" y="146" class="pill" fill="#C7D2FE" text-anchor="middle">never in the IO path</text>
+<!-- control plane -->
+<g class="f" filter="url(#soft)">
+  <rect x="48" y="120" width="1144" height="112" rx="16" fill="url(#cpG)" stroke="#4F46E5" stroke-width="1.4"/>
+  <rect x="64" y="121" width="1112" height="1" fill="#818CF8" opacity="0.35"/>
+</g>
+<g class="f">
+  <text x="76" y="152" class="band" fill="#A5B4FC">CONTROL PLANE</text>
+  <text x="76" y="181" class="lead">You declare what you need. It decides how, continuously.</text>
+  <g class="chip" fill="#C7D2FE">
+    <rect x="76"  y="196" width="112" height="24" rx="12" fill="#312E81" stroke="#4F46E5" stroke-width="1"/><text x="132" y="212" text-anchor="middle">intent</text>
+    <rect x="196" y="196" width="128" height="24" rx="12" fill="#312E81" stroke="#4F46E5" stroke-width="1"/><text x="260" y="212" text-anchor="middle">topology</text>
+    <rect x="332" y="196" width="140" height="24" rx="12" fill="#312E81" stroke="#4F46E5" stroke-width="1"/><text x="402" y="212" text-anchor="middle">elastic leases</text>
+    <rect x="480" y="196" width="126" height="24" rx="12" fill="#312E81" stroke="#4F46E5" stroke-width="1"/><text x="543" y="212" text-anchor="middle">autonomy</text>
   </g>
+  <rect x="962" y="160" width="212" height="30" rx="15" fill="#1E1B4B" stroke="#6366F1" stroke-width="1.2"/>
+  <text x="1068" y="180" class="pill" fill="#C7D2FE" text-anchor="middle">never in the IO path</text>
+  <text x="1174" y="212" class="tiny" text-anchor="end">it sees the GPUs, not just the disks</text>
+</g>
 
-  <!-- cp to nodes -->
-  <g class="f">
-    <line x1="600" y1="192" x2="600" y2="246" stroke="#6366F1" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#aI)"/>
-    <text x="616" y="224" class="note" fill="#818CF8">policy and lease grants, out of band</text>
+<!-- out of band lease line -->
+<g class="f">
+  <path d="M164 232 V352" stroke="#818CF8" stroke-width="1.6" stroke-dasharray="5 6" marker-end="url(#ai)"/>
+  <text x="52" y="278" class="tiny" fill="#818CF8">leases and policy</text>
+  <text x="52" y="294" class="tiny" fill="#818CF8">granted ahead of time</text>
+  <text x="52" y="310" class="tiny" fill="#818CF8">out of band</text>
+</g>
+
+<!-- access layer -->
+<g class="f" filter="url(#soft)">
+  <rect x="280" y="268" width="912" height="66" rx="14" fill="url(#axG)" stroke="#0D9488" stroke-width="1.3"/>
+</g>
+<g class="f">
+  <text x="304" y="294" class="band" fill="#5EEAD4">ACCESS LAYER</text>
+  <text x="304" y="318" class="lead" font-size="16" fill="#CCFBF1">pNFS &#183; NFSv4.2 &#183; NFSv3 &#183; S3 &#183; CSI block</text>
+  <rect x="924" y="286" width="250" height="30" rx="15" fill="#0F2E2E" stroke="#14B8A6" stroke-width="1.2"/>
+  <text x="1049" y="306" class="pill" fill="#99F6E4" text-anchor="middle">standard clients, nothing to install</text>
+</g>
+<path d="M736 334 V362" stroke="#64748B" stroke-width="1.5" marker-end="url(#ar)"/>
+
+<!-- node cards -->
+<g class="f">
+  <!-- card 1 -->
+  <g filter="url(#soft)"><rect x="48" y="364" width="344" height="250" rx="16" fill="url(#cardG)" stroke="#1D2942" stroke-width="1.3"/></g>
+  <rect x="64" y="365" width="312" height="1" fill="#FFFFFF" opacity="0.06"/>
+  <text x="72" y="392" class="cap">GPU NODE &#183; BUSY</text>
+  <rect x="72" y="404" width="86" height="34" rx="9" fill="#3B2408" stroke="#F59E0B" stroke-width="1.3"/>
+  <text x="115" y="426" class="gpu" fill="#FCD34D" text-anchor="middle">GPU</text>
+  <text x="170" y="426" class="tiny">400G NIC</text>
+  <path d="M115 494 V444" stroke="#2DD4BF" stroke-width="2.2" marker-end="url(#at)"/>
+  <text x="130" y="470" class="note" fill="#2DD4BF">feeds</text>
+  <text x="72" y="490" class="cap">LOCAL NVMe</text>
+  <g clip-path="url(#bar1)">
+    <rect x="72"  y="500" width="104" height="38" fill="url(#gold)"/>
+    <rect x="176" y="500" width="90"  height="38" fill="url(#slate)"/>
+    <rect x="266" y="500" width="102" height="38" fill="url(#teal)"/>
+    <rect x="72"  y="500" width="296" height="12" fill="#FFFFFF" opacity="0.08"/>
   </g>
+  <rect x="72" y="500" width="296" height="38" rx="7" fill="none" stroke="#233149" stroke-width="1"/>
+  <text x="124" y="558" class="seg" fill="#FBBF24" text-anchor="middle">COMPUTE</text>
+  <text x="221" y="558" class="seg" fill="#94A3B8" text-anchor="middle">DONATED</text>
+  <text x="317" y="558" class="seg" fill="#2DD4BF" text-anchor="middle">BORROWED</text>
+  <text x="124" y="575" class="tiny" text-anchor="middle">the job owns it</text>
+  <text x="221" y="575" class="tiny" text-anchor="middle">durable</text>
+  <text x="317" y="575" class="tiny" text-anchor="middle">regenerable</text>
+  <text x="72" y="600" class="tiny" fill="#8A9AB4">Three pools. Only one is ever taken back.</text>
 
-  <!-- node cards -->
-  <g class="f">
-    <!-- card 1 -->
-    <rect x="48" y="250" width="336" height="242" rx="14" fill="#111A2B" stroke="#22304A" stroke-width="1.3"/>
-    <text x="70" y="278" class="cap">GPU NODE</text>
-    <rect x="70" y="292" width="82" height="32" rx="8" fill="#422006" stroke="#F59E0B" stroke-width="1.3"/>
-    <text x="111" y="313" class="chip" fill="#FCD34D" text-anchor="middle">GPU</text>
-    <text x="164" y="313" class="note" fill="#64748B">400G NIC</text>
-    <line x1="111" y1="386" x2="111" y2="332" stroke="#2DD4BF" stroke-width="2" marker-end="url(#aT)"/>
-    <text x="124" y="362" class="note" fill="#2DD4BF">feeds</text>
-    <text x="70" y="382" class="cap">LOCAL NVMe</text>
-    <rect x="70" y="392" width="105" height="36" fill="#422006" stroke="#F59E0B" stroke-width="1.2"/>
-    <rect x="175" y="392" width="90"  height="36" fill="#1E293B" stroke="#64748B" stroke-width="1.2"/>
-    <rect x="265" y="392" width="97"  height="36" fill="#134E4A" stroke="#14B8A6" stroke-width="1.2"/>
-    <text x="122" y="448" class="seg" fill="#FBBF24" text-anchor="middle">COMPUTE</text>
-    <text x="220" y="448" class="seg" fill="#94A3B8" text-anchor="middle">DONATED</text>
-    <text x="313" y="448" class="seg" fill="#2DD4BF" text-anchor="middle">BORROWED</text>
-    <text x="122" y="466" class="note" text-anchor="middle" font-size="10.5">the job owns it</text>
-    <text x="220" y="466" class="note" text-anchor="middle" font-size="10.5">durable</text>
-    <text x="313" y="466" class="note" text-anchor="middle" font-size="10.5">reclaim = drop</text>
-
-    <!-- card 2 -->
-    <rect x="432" y="250" width="336" height="242" rx="14" fill="#111A2B" stroke="#22304A" stroke-width="1.3"/>
-    <text x="454" y="278" class="cap">GPU NODE</text>
-    <rect x="454" y="292" width="82" height="32" rx="8" fill="#422006" stroke="#F59E0B" stroke-width="1.3"/>
-    <text x="495" y="313" class="chip" fill="#FCD34D" text-anchor="middle">GPU</text>
-    <text x="548" y="313" class="note" fill="#64748B">400G NIC</text>
-    <text x="454" y="382" class="cap">LOCAL NVMe</text>
-    <rect x="454" y="392" width="176" height="36" fill="#422006" stroke="#F59E0B" stroke-width="1.2"/>
-    <rect x="630" y="392" width="90"  height="36" fill="#1E293B" stroke="#64748B" stroke-width="1.2"/>
-    <rect x="720" y="392" width="26"  height="36" fill="#134E4A" stroke="#14B8A6" stroke-width="1.2"/>
-    <line x1="700" y1="366" x2="746" y2="366" stroke="#FBBF24" stroke-width="1.6" marker-start="url(#aT)"/>
-    <text x="746" y="358" class="note" fill="#FBBF24" text-anchor="end" font-size="10.5">job grew &#8212; capacity reclaimed</text>
-    <text x="454" y="466" class="note" font-size="10.5">no migration. borrowed data was regenerable, so it was dropped.</text>
-
-    <!-- card 3 -->
-    <rect x="816" y="250" width="336" height="242" rx="14" fill="#111A2B" stroke="#22304A" stroke-width="1.3"/>
-    <text x="838" y="278" class="cap">GPU NODE</text>
-    <rect x="838" y="292" width="82" height="32" rx="8" fill="#1E293B" stroke="#475569" stroke-width="1.3"/>
-    <text x="879" y="313" class="chip" fill="#64748B" text-anchor="middle">GPU</text>
-    <text x="932" y="313" class="note" fill="#64748B">idle</text>
-    <text x="838" y="382" class="cap">LOCAL NVMe</text>
-    <rect x="838" y="392" width="58"  height="36" fill="#422006" stroke="#F59E0B" stroke-width="1.2"/>
-    <rect x="896" y="392" width="90"  height="36" fill="#1E293B" stroke="#64748B" stroke-width="1.2"/>
-    <rect x="986" y="392" width="144" height="36" fill="#134E4A" stroke="#14B8A6" stroke-width="1.2"/>
-    <line x1="1010" y1="366" x2="1130" y2="366" stroke="#2DD4BF" stroke-width="1.6" marker-end="url(#aT)"/>
-    <text x="1006" y="358" class="note" fill="#2DD4BF" text-anchor="end" font-size="10.5">idle NVMe lent to the fabric</text>
-    <text x="838" y="466" class="note" font-size="10.5">an idle node becomes cache and prefetch capacity for its rack.</text>
-
-    <!-- rack-local peer links -->
-    <line x1="392" y1="340" x2="424" y2="340" stroke="#2DD4BF" stroke-width="1.6" marker-start="url(#aT)" marker-end="url(#aT)"/>
-    <line x1="776" y1="340" x2="808" y2="340" stroke="#2DD4BF" stroke-width="1.6" marker-start="url(#aT)" marker-end="url(#aT)"/>
-    <text x="408" y="330" class="note" fill="#2DD4BF" text-anchor="middle" font-size="10">rack</text>
-    <text x="792" y="330" class="note" fill="#2DD4BF" text-anchor="middle" font-size="10">rack</text>
+  <!-- card 2 -->
+  <g filter="url(#soft)"><rect x="448" y="364" width="344" height="250" rx="16" fill="url(#cardG)" stroke="#1D2942" stroke-width="1.3"/></g>
+  <rect x="464" y="365" width="312" height="1" fill="#FFFFFF" opacity="0.06"/>
+  <text x="472" y="392" class="cap">GPU NODE &#183; JOB GREW</text>
+  <rect x="472" y="404" width="86" height="34" rx="9" fill="#3B2408" stroke="#F59E0B" stroke-width="1.3"/>
+  <text x="515" y="426" class="gpu" fill="#FCD34D" text-anchor="middle">GPU</text>
+  <text x="570" y="426" class="tiny">wants its disk back</text>
+  <path d="M700 470 H620" stroke="#FBBF24" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="768" y="466" class="note" fill="#FBBF24" text-anchor="end" font-size="11">reclaimed in place</text>
+  <text x="472" y="490" class="cap">LOCAL NVMe</text>
+  <g clip-path="url(#bar2)">
+    <rect x="472" y="500" width="176" height="38" fill="url(#gold)"/>
+    <rect x="648" y="500" width="90"  height="38" fill="url(#slate)"/>
+    <rect x="738" y="500" width="30"  height="38" fill="url(#teal)"/>
+    <rect x="472" y="500" width="296" height="12" fill="#FFFFFF" opacity="0.08"/>
   </g>
+  <rect x="472" y="500" width="296" height="38" rx="7" fill="none" stroke="#233149" stroke-width="1"/>
+  <text x="472" y="562" class="note" font-size="11.5" fill="#E6EDF7">No migration. No rebalance. No waiting.</text>
+  <text x="472" y="582" class="tiny">Borrowed data was regenerable, so it was simply dropped.</text>
+  <text x="472" y="600" class="tiny" fill="#FBBF24">The job never noticed.</text>
 
-  <!-- to durable -->
-  <g class="f">
-    <line x1="600" y1="492" x2="600" y2="546" stroke="#64748B" stroke-width="1.5" marker-end="url(#aS)"/>
-    <text x="616" y="524" class="note">miss, or durability</text>
+  <!-- card 3 -->
+  <g filter="url(#soft)"><rect x="848" y="364" width="344" height="250" rx="16" fill="url(#cardG)" stroke="#1D2942" stroke-width="1.3"/></g>
+  <rect x="864" y="365" width="312" height="1" fill="#FFFFFF" opacity="0.06"/>
+  <text x="872" y="392" class="cap">GPU NODE &#183; IDLE</text>
+  <rect x="872" y="404" width="86" height="34" rx="9" fill="#151E2E" stroke="#3B4A63" stroke-width="1.3"/>
+  <text x="915" y="426" class="gpu" fill="#5A6B85" text-anchor="middle">GPU</text>
+  <text x="970" y="426" class="tiny">between jobs</text>
+  <path d="M1000 470 H1168" stroke="#2DD4BF" stroke-width="2" marker-end="url(#at)"/>
+  <text x="996" y="466" class="note" fill="#2DD4BF" text-anchor="end" font-size="11">lent to the fabric</text>
+  <text x="872" y="490" class="cap">LOCAL NVMe</text>
+  <g clip-path="url(#bar3)">
+    <rect x="872"  y="500" width="56"  height="38" fill="url(#gold)"/>
+    <rect x="928"  y="500" width="90"  height="38" fill="url(#slate)"/>
+    <rect x="1018" y="500" width="150" height="38" fill="url(#teal)"/>
+    <rect x="872"  y="500" width="296" height="12" fill="#FFFFFF" opacity="0.08"/>
   </g>
+  <rect x="872" y="500" width="296" height="38" rx="7" fill="none" stroke="#233149" stroke-width="1"/>
+  <text x="872" y="562" class="note" font-size="11.5" fill="#E6EDF7">Capacity you already own, working.</text>
+  <text x="872" y="582" class="tiny">An idle node becomes cache and prefetch for its whole rack.</text>
+  <text x="872" y="600" class="tiny" fill="#2DD4BF">No purchase order required.</text>
 
-  <!-- durable backends -->
-  <g class="f">
-    <rect x="48" y="550" width="1104" height="92" rx="14" fill="#0F172A" stroke="#334155" stroke-width="1.5"/>
-    <text x="76" y="582" class="band" fill="#94A3B8">PLUGGABLE DURABLE BACKENDS</text>
-    <text x="76" y="612" class="lead" fill="#CBD5E1">Ceph &#183; OpenEBS &#183; S3 &#183; the array you already own</text>
-    <rect x="906" y="580" width="218" height="30" rx="15" fill="#1E293B" stroke="#475569" stroke-width="1.2"/>
-    <text x="1015" y="600" class="pill" fill="#CBD5E1" text-anchor="middle">capability-negotiated</text>
+  <!-- rack peer links -->
+  <path d="M400 470 H440" stroke="#2DD4BF" stroke-width="1.8" marker-start="url(#at)" marker-end="url(#at)" opacity="0.9"/>
+  <path d="M800 470 H840" stroke="#2DD4BF" stroke-width="1.8" marker-start="url(#at)" marker-end="url(#at)" opacity="0.9"/>
+  <text x="420" y="458" class="tiny" fill="#2DD4BF" text-anchor="middle" font-size="9.5">rack</text>
+  <text x="820" y="458" class="tiny" fill="#2DD4BF" text-anchor="middle" font-size="9.5">rack</text>
+</g>
+
+<path d="M620 614 V662" stroke="#64748B" stroke-width="1.5" marker-end="url(#ar)"/>
+<text x="636" y="644" class="f note">on a miss, or for durability</text>
+
+<!-- durable backends -->
+<g class="f" filter="url(#soft)">
+  <rect x="48" y="664" width="1144" height="100" rx="16" fill="url(#stG)" stroke="#334155" stroke-width="1.3"/>
+</g>
+<g class="f">
+  <text x="76" y="694" class="band" fill="#94A3B8">PLUGGABLE DURABLE BACKENDS</text>
+  <g class="chip" fill="#CBD5E1">
+    <rect x="76"  y="710" width="86"  height="28" rx="14" fill="#1B2537" stroke="#3B4A63" stroke-width="1"/><text x="119" y="729" text-anchor="middle">Ceph</text>
+    <rect x="170" y="710" width="112" height="28" rx="14" fill="#1B2537" stroke="#3B4A63" stroke-width="1"/><text x="226" y="729" text-anchor="middle">OpenEBS</text>
+    <rect x="290" y="710" width="70"  height="28" rx="14" fill="#1B2537" stroke="#3B4A63" stroke-width="1"/><text x="325" y="729" text-anchor="middle">S3</text>
+    <rect x="368" y="710" width="212" height="28" rx="14" fill="#1B2537" stroke="#3B4A63" stroke-width="1"/><text x="474" y="729" text-anchor="middle">the array you already own</text>
   </g>
+  <rect x="962" y="700" width="212" height="30" rx="15" fill="#1B2537" stroke="#475569" stroke-width="1.2"/>
+  <text x="1068" y="720" class="pill" fill="#CBD5E1" text-anchor="middle">no rip and replace</text>
+  <text x="1174" y="750" class="tiny" text-anchor="end">drivers declare what they can do, so nothing degrades silently</text>
+</g>
 
-  <text x="1152" y="672" class="f foot" text-anchor="end">github.com/mayur-tolexo/forebay</text>
+<text x="48" y="805" class="f tiny" fill="#5A6B85">Design phase. Performance claims are unproven until measured.</text>
+<text x="1192" y="805" class="f tiny" fill="#5A6B85" text-anchor="end">github.com/mayur-tolexo/forebay</text>
 </svg>

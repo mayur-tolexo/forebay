@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 72" width="300" height="72" role="img" aria-label="Forebay">
+  <defs>
+    <linearGradient id="blight" gradientUnits="userSpaceOnUse" x1="34" y1="12" x2="34" y2="52"><stop offset="0" stop-color="#A5B4FC"/><stop offset="1" stop-color="#4F46E5"/></linearGradient>
+    <linearGradient id="wlight" gradientUnits="userSpaceOnUse" x1="34" y1="28" x2="34" y2="52"><stop offset="0" stop-color="#5EEAD4"/><stop offset="1" stop-color="#0D9488"/></linearGradient>
+    <linearGradient id="flight" gradientUnits="userSpaceOnUse" x1="34" y1="52" x2="34" y2="64"><stop offset="0" stop-color="#FCD34D"/><stop offset="1" stop-color="#F59E0B"/></linearGradient>
+    <clipPath id="clight"><path d="M14 14 H54 L45 40 A7 7 0 0 1 38.5 45 H29.5 A7 7 0 0 1 23 40 Z"/></clipPath>
+  </defs>
+  <g clip-path="url(#clight)">
+    <rect x="10" y="28" width="48" height="24" fill="url(#wlight)"/>
+    <rect x="10" y="28" width="48" height="2.7" fill="#99F6E4"/>
+  </g>
+  <path d="M14 14 H54 L45 40 A7 7 0 0 1 38.5 45 H29.5 A7 7 0 0 1 23 40 Z" fill="none" stroke="url(#blight)" stroke-width="4.5" stroke-linejoin="round"/>
+  <path d="M26.5 49 H41.5 L34 59 Z" fill="url(#flight)"/>
+  <text x="72" y="47" font-family="ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="34" font-weight="700" letter-spacing="-0.6" fill="#111827">forebay</text>
+</svg>

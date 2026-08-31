@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Forebay mark">
+  <defs>
+    <linearGradient id="mBasin" gradientUnits="userSpaceOnUse" x1="32" y1="8" x2="32" y2="46">
+      <stop offset="0" stop-color="#A5B4FC"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+    <linearGradient id="mWater" gradientUnits="userSpaceOnUse" x1="32" y1="24" x2="32" y2="46">
+      <stop offset="0" stop-color="#5EEAD4"/>
+      <stop offset="1" stop-color="#0D9488"/>
+    </linearGradient>
+    <linearGradient id="mFlow" gradientUnits="userSpaceOnUse" x1="32" y1="48" x2="32" y2="60">
+      <stop offset="0" stop-color="#FCD34D"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+    <clipPath id="mClip">
+      <path d="M10 10 H54 L44 39 A8 8 0 0 1 36.5 44.5 H27.5 A8 8 0 0 1 20 39 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- the held volume, at a level -->
+  <g clip-path="url(#mClip)">
+    <rect x="6" y="25" width="52" height="26" fill="url(#mWater)"/>
+    <rect x="6" y="25" width="52" height="3" fill="#99F6E4"/>
+  </g>
+
+  <!-- the basin -->
+  <path d="M10 10 H54 L44 39 A8 8 0 0 1 36.5 44.5 H27.5 A8 8 0 0 1 20 39 Z"
+        fill="none" stroke="url(#mBasin)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- outflow feeding the turbine -->
+  <path d="M23.5 49 H40.5 L32 60 Z" fill="url(#mFlow)"/>
+</svg>
