@@ -17,7 +17,28 @@ one disagree, the later one is right.
 
 ## Design
 
-![Forebay architecture](../diagrams/architecture.svg)
+```mermaid
+flowchart TB
+    acc["ACCESS LAYER, protocols plug in here<br/>pNFS · NFSv4.2 · NFSv3 · S3 · CSI block"]
+    fast["FAST TIER, owned outright and not pluggable<br/>borrowed NVMe · rack fabric · placement · prefetch"]
+    drv["DURABLE BACKEND DRIVERS, capability negotiated"]
+    store[("Ceph · OpenEBS · S3 · the array you already own")]
+    cp["CONTROL PLANE<br/>intent · topology · leases · autonomy"]
+
+    acc --> fast
+    fast --> drv
+    drv --> store
+    cp -.->|leases and policy, granted ahead of time| fast
+
+    classDef control fill:#312E81,stroke:#6366F1,color:#E0E7FF
+    classDef owned fill:#134E4A,stroke:#14B8A6,color:#CCFBF1
+    classDef durable fill:#1E293B,stroke:#64748B,color:#E2E8F0
+    class cp,acc,drv control
+    class fast owned
+    class store durable
+```
+
+Pluggable at the edges, owned in the middle. The control plane touches none of the vertical path.
 
 ### Two seams and one owned middle
 
