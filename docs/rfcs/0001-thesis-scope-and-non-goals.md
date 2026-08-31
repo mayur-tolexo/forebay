@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 0 |
 | **Depends on** | — |
 
@@ -47,12 +47,18 @@ eleven SSD OSDs using four parallel ranges took **0.23 s**, roughly 995 MB/s. Re
 payload from the same node's own local disk with O_DIRECT took **1.71 s**, roughly 400 MB/s, and did
 not improve with concurrency.
 
-Aggregate fan-out beat locality by about seven times.
+Aggregate fan-out beat locality by about seven times on wall clock, for the same logical payload.
+That is the number a job waiting on its data actually experiences.
+
+On raw bandwidth the gap is closer to two and a half times, 995 MB/s against 400, because the object
+crossing the network was compressed roughly three to one while the local read moved every byte. Both
+numbers appear here because the distance between them is precisely the sort of thing a reader should
+not have to reconstruct, and because a document arguing for honest measurement cannot quote the
+flattering one alone.
 
 That hardware is not what Forebay targets. Those were general-purpose nodes with LVM-backed volumes,
-not GPU nodes with directly attached Gen5 NVMe, and the object was compressed roughly three to one
-while the local read was not. The comparison is not apples to apples and it does not disprove
-anything.
+not GPU nodes with directly attached Gen5 NVMe. The comparison is not apples to apples and it does
+not disprove anything.
 
 It is recorded here, at the front, because it is the cleanest available reminder that **node-local is
 not automatically fast**. A single device has a fixed ceiling. A backend spread over many devices
@@ -70,12 +76,17 @@ Finding out is the first serious engineering task, not a detail to be tidied up 
 | A meaningful fraction of compute-local NVMe is idle for meaningful periods | Reasoned, from how GPU clusters are provisioned | If utilisation is already high, there is nothing to borrow and the project has no premise |
 | Direct-attached NVMe on GPU nodes substantially outruns a node's achievable share of a shared backend | Unverified | Claim 2 fails, and Forebay is at best a convenience layer |
 | Regenerable data is a large enough share of AI storage traffic to be worth a dedicated tier | Reasoned, from cache, prefetch, scratch and checkpoint staging patterns | The borrowed pool is too small to matter and only the donated pool is useful |
-| Capacity can be reclaimed fast enough that compute never has to wait | Reasoned, and the subject of RFC-0005 | Claim 1 fails, and no amount of performance would justify the risk to jobs |
+| Capacity can be reclaimed fast enough that compute never has to wait | Partly measured. Reclaim by unlink is 2.5 to 2.6 ms and unaffected by concurrent write load, so the filesystem is not the constraint. End-to-end reclaim, which includes revoking readers, is unmeasured. See RFC-0005 | Claim 1 fails, and no amount of performance would justify the risk to jobs |
 | Operators will donate a fixed slice of node NVMe permanently | Unverified, needs conversations with operators | The durable pool never forms and Forebay is a cache only |
-| The in-kernel Linux pNFS client is production-viable for this access pattern | Unverified | The access layer needs rethinking, and possibly a client, which RFC-0001 explicitly refuses to write |
+| The in-kernel Linux pNFS client is production-viable for this access pattern | Partly verified. The flexfiles driver ships in the target node OS, see RFC-0008. Its behaviour under load is still unmeasured | The access layer needs rethinking, and possibly a client, which this document explicitly refuses to write |
 
-The two unverified assumptions at the top of that list are the project. Everything else is
-engineering.
+Two rows remain unverified: whether local media beats a node's share of a shared backend, and whether
+operators will donate capacity at all. Those two are the project. Everything else is engineering.
+
+One row has moved since this document was first written. The in-kernel client began unverified and is
+now partly verified. The reclamation row was never unverified, only reasoned, and is now partly
+measured. That is one assumption settled and one strengthened, which is worth being precise about in
+a document whose whole argument is that nobody should overstate what has been measured.
 
 ## Landscape
 
@@ -87,7 +98,7 @@ would suggest, and pretending otherwise would only mean discovering it later.
 | --- | --- | --- |
 | Enterprise array platforms | Mature, general-purpose storage software on dedicated hardware | See only their own media. They cannot observe GPU utilisation or cache behaviour, so they cannot act on either. The gap is structural rather than a missing feature |
 | Ceph | Distributed block, file and object store | Excellent durable substrate and a planned Forebay backend. Its placement is failure-domain aware, not accelerator aware, and rebalance is a slow, heavy actuator |
-| WEKA | High-performance parallel filesystem, deployable converged on compute nodes | The closest commercial system to this idea. Converged mode already uses compute-node NVMe, though capacity and cores are provisioned to it rather than continuously arbitrated with the scheduler. This needs verifying against current documentation before the claim is relied upon |
+| WEKA | High-performance parallel filesystem, deployable converged on compute nodes | The closest commercial system to this idea, and converged mode already uses compute-node NVMe. Its documentation describes cores pinned by cgroup and sized at configuration time against fixed ratios, with Slurm configured to keep user workloads off them, and capacity changed by an administrator expanding cluster resources. Provisioned once and held, in other words, rather than arbitrated continuously from observed state |
 | VAST Data | Disaggregated shared-everything storage | Assumes dedicated storage enclosures. Different bet: separate the tiers well rather than converge them |
 | HPC storage platforms | Parallel and scale-out storage for large clusters | Dedicated hardware, and the same structural blindness to compute state as the row above |
 | Lustre, BeeGFS | Parallel filesystems for HPC | Dedicated servers by default. BeeGFS On Demand builds an ad-hoc parallel filesystem across a job's compute nodes, which is genuine prior art for this thesis |
@@ -133,8 +144,12 @@ true.
 5. **Operators will not donate capacity.** If nobody will permanently commit a slice of node NVMe,
    the durable pool never forms and only the cache half of the design survives.
 
-Each of these has a corresponding experiment in RFC-0018. The project treats them as the highest
-priority work rather than as risks to be managed around.
+The first four are measurements and belong to RFC-0018, which now carries an experiment for each.
+The fifth is not a measurement at all: whether operators will permanently commit capacity is a
+question about incentives, answered by asking them rather than by instrumenting anything, and it is
+listed below as open for that reason.
+
+The project treats all five as the highest priority work rather than as risks to be managed around.
 
 ## Non-goals
 
@@ -161,10 +176,12 @@ priority work rather than as risks to be managed around.
 
 ## Open questions
 
-- Where the locality crossover actually sits on current GPU hardware. Everything depends on it.
-- Whether operators will donate permanent capacity, which is a question about incentives rather than
-  engineering and is best answered by asking them.
-- Whether WEKA's converged mode already arbitrates capacity dynamically. If it does, the gap
-  identified above is narrower than stated and this RFC needs correcting.
-- What fraction of AI storage traffic is genuinely regenerable, which sets the ceiling on how much
-  the borrowed pool can ever matter.
+- **Where the locality crossover sits on current GPU hardware.** Everything depends on it. Owned by
+  [RFC-0018](0018-benchmark-and-falsification-suite.md).
+- **What fraction of real storage traffic is genuinely regenerable**, which sets the ceiling on how
+  much the borrowed pool can ever matter. Owned by
+  [RFC-0018](0018-benchmark-and-falsification-suite.md).
+- **Whether operators will permanently commit capacity.** No RFC owns this, and that is deliberate
+  rather than an oversight: it is a question about incentives, answered by asking operators, and no
+  amount of instrumentation substitutes. It is deferred to the review that decides whether Phase 1
+  has succeeded, since a fast tier nobody will donate to is a different product.

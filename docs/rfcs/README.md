@@ -12,7 +12,12 @@ the value of writing them down.
 
 ## Status
 
-Nothing is accepted yet. Forebay is in Phase 0 and the whole index is open for argument.
+RFC-0001 is accepted. Everything else is open for argument.
+
+An RFC becomes accepted when its assumptions carry an honest basis, its open questions are answered
+or explicitly deferred to a named owner, and no claim in it is one we could not defend. Accepted does
+not mean finished: a later measurement can supersede it, and RFC-0021 already superseded one of
+RFC-0001's non-goals.
 
 RFC-0021 supersedes the unified-namespace non-goal in RFC-0001. That reversal is recorded rather than
 edited away, which is the point of keeping these.
@@ -20,7 +25,7 @@ edited away, which is the point of keeping these.
 | # | Title | Status | Phase | Depends on |
 | --- | --- | --- | --- | --- |
 | [0000](0000-rfc-process.md) | RFC process | Draft | 0 | — |
-| [0001](0001-thesis-scope-and-non-goals.md) | Thesis, scope and non-goals | Draft | 0 | — |
+| [0001](0001-thesis-scope-and-non-goals.md) | Thesis, scope and non-goals | **Accepted** | 0 | — |
 | [0002](0002-architecture-overview.md) | Architecture overview | Draft | 0 | 0001 |
 | [0003](0003-topology-model.md) | Topology model | Not started | 1 | 0002 |
 | [0004](0004-node-agent.md) | Node agent | Draft | 1 | 0002, 0003 |

@@ -25,6 +25,12 @@ make the project look good would be worse than none.
 - Workload definitions that reflect real training and inference access patterns rather than synthetic sequential reads
 - The scaling curve method across one node, one rack, ten racks and beyond, and where scaling is expected to stop
 - Hardware profiles the results are valid for, since a result on one generation of NVMe and NIC may not transfer
+- How idle compute-local NVMe is measured across a real fleet, and over what window, since capacity
+  that is idle only in short bursts is not capacity worth borrowing
+- How much value static provisioning would have captured on the same workload, since if the split
+  rarely needs to move then a simpler system is the right answer
+- What fraction of a real workload's storage traffic is regenerable, since that sets the ceiling on
+  how much a tier holding only regenerable data can ever be worth
 - How results are published, including negative ones
 
 ## Constraints inherited from earlier RFCs

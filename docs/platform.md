@@ -51,7 +51,7 @@ terminate.
 | Prefetch driven by dataset manifests and dataloader hints | No | Planned · [0011](rfcs/0011-prefetch-and-dataset-manifests.md) |
 | Checkpoint fast-ack with a stated durability policy | Partially, generically | Planned · [0013](rfcs/0013-checkpoint-path.md) |
 | Datasets, versions and experiments instead of volumes and LUNs | No | Planned · [0012](rfcs/0012-dataset-object-model.md) |
-| Runs on the storage you already bought, from any vendor | No, by design | Specified · [0006](rfcs/0006-durable-backend-driver-contract.md) |
+| Runs on the storage you already bought, from any vendor | No, by design | Planned · [0006](rfcs/0006-durable-backend-driver-contract.md) |
 | Open source, no licence per terabyte | No | Apache 2.0 |
 
 The honest summary: **a mature array is better than Forebay at being an array, and will be for a long

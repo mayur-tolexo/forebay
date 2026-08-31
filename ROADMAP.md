@@ -49,7 +49,7 @@ backend cannot.
 
 | Capability | Status | RFC |
 | --- | --- | --- |
-| pNFS and NFSv4.2, parallel by design | Specified | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
+| pNFS and NFSv4.2, parallel by design | Planned | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
 | NFSv3 for compatibility | Planned | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
 | S3 object access | Planned | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
 | Block access through CSI | Planned | [0014](docs/rfcs/0014-kubernetes-integration.md) |
@@ -94,7 +94,7 @@ them without a fork.
 
 | Capability | Status | RFC |
 | --- | --- | --- |
-| Durable backend driver contract with capability negotiation | Specified | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
+| Durable backend driver contract with capability negotiation | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 | Driver conformance suite, so a third-party driver can prove itself | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 | Ceph driver | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 | S3 driver | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
@@ -112,7 +112,7 @@ cannot offer them, however good it is at everything above.
 | Elastic capacity leased from compute-node NVMe and returned on demand | In progress | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
 | Reclamation by deletion, never by migration | In progress | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
 | Placement that follows the accelerator, using GPU, NUMA, PCIe and NIC topology | Planned | [0003](docs/rfcs/0003-topology-model.md) |
-| Rack-local fast tier | Specified | [0007](docs/rfcs/0007-fast-tier-data-path.md) |
+| Rack-local fast tier | Planned | [0007](docs/rfcs/0007-fast-tier-data-path.md) |
 | Shard-aware prefetch driven by dataset manifests | Planned | [0011](docs/rfcs/0011-prefetch-and-dataset-manifests.md) |
 | Checkpoint fast acknowledgement with a stated durability policy | Planned | [0013](docs/rfcs/0013-checkpoint-path.md) |
 | Datasets, versions, experiments and checkpoints as first-class objects | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
@@ -133,13 +133,18 @@ make us stop, because the central claim can be wrong.
 
 Writing the architecture down before there is code to defend.
 
+Statuses below are RFC lifecycle states from [RFC-0000](docs/rfcs/0000-rfc-process.md), not the
+capability states above. An RFC is `Draft` while it is being argued with and `Accepted` once its
+assumptions carry an honest basis and its open questions are answered or deferred to a named owner.
+
 | Work | RFC | Status |
 | --- | --- | --- |
-| RFC process | [0000](docs/rfcs/0000-rfc-process.md) | Specified |
-| Thesis, scope and non-goals | [0001](docs/rfcs/0001-thesis-scope-and-non-goals.md) | Specified |
-| Capacity pools and elastic leases | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) | Specified |
-| Architecture overview | [0002](docs/rfcs/0002-architecture-overview.md) | Specified |
-| Core design RFCs | 0003 to 0008 | Planned |
+| Thesis, scope and non-goals | [0001](docs/rfcs/0001-thesis-scope-and-non-goals.md) | **Accepted** |
+| RFC process | [0000](docs/rfcs/0000-rfc-process.md) | Draft |
+| Architecture overview | [0002](docs/rfcs/0002-architecture-overview.md) | Draft |
+| Node agent | [0004](docs/rfcs/0004-node-agent.md) | Draft |
+| Capacity pools and elastic leases | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) | Draft |
+| Topology, drivers, fast tier, access layer | 0003, 0006, 0007, 0008 | Not started |
 
 **Done when** the MVP RFCs are accepted and someone who has never spoken to us can read them and say
 where they are wrong.

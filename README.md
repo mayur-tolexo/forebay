@@ -175,8 +175,10 @@ build and report their version. Neither has a runtime.
 
 Forebay bets that node-local NVMe beats fetching from a fanned-out backend. In one measured
 environment it **did not** — a Ceph RGW read across eleven OSDs took 0.23 s against 1.71 s from the
-node's own disk. Different hardware to what we target, but it means locality is a hypothesis, not a
-premise. Finding the crossover on real GPU hardware is
+node's own disk. That is about seven times faster on wall clock, and two and a half times on raw
+bandwidth, since the object crossing the network was compressed and the local read was not. Different
+hardware to what we target, but it means locality is a hypothesis rather than a premise. Finding the
+crossover on real GPU hardware is
 [RFC-0018](docs/rfcs/0018-benchmark-and-falsification-suite.md), and it is the first serious
 engineering task.
 
