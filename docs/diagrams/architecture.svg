@@ -82,14 +82,14 @@
 
 <g clip-path="url(#cBar)">
   <rect x="100" y="250" width="380" height="100" fill="url(#gGold)">
-    <animate attributeName="width" values="380;380;620;620;380" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/>
+    <animate attributeName="width" values="380;380;620;620;380" keyTimes="0;0.34;0.46;0.82;1" dur="6s" repeatCount="indefinite"/>
   </rect>
   <rect x="480" y="250" width="200" height="100" fill="url(#gSlate)">
-    <animate attributeName="x" values="480;480;720;720;480" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/>
+    <animate attributeName="x" values="480;480;720;720;480" keyTimes="0;0.34;0.46;0.82;1" dur="6s" repeatCount="indefinite"/>
   </rect>
   <rect x="680" y="250" width="420" height="100" fill="url(#gTeal)">
-    <animate attributeName="x" values="680;680;920;920;680" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/>
-    <animate attributeName="width" values="420;420;180;180;420" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/>
+    <animate attributeName="x" values="680;680;920;920;680" keyTimes="0;0.34;0.46;0.82;1" dur="6s" repeatCount="indefinite"/>
+    <animate attributeName="width" values="420;420;180;180;420" keyTimes="0;0.34;0.46;0.82;1" dur="6s" repeatCount="indefinite"/>
   </rect>
   <rect x="100" y="250" width="1000" height="26" fill="#FFFFFF" opacity="0.09"/>
 </g>
@@ -98,27 +98,27 @@
 <!-- segment labels track their segments -->
 <g class="f" text-anchor="middle">
   <text x="290" y="378" class="lbl" fill="#FBBF24">COMPUTE
-    <animate attributeName="x" values="290;290;410;410;290" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+    <animate attributeName="x" values="290;290;410;410;290" keyTimes="0;0.34;0.46;0.82;1" dur="6s" repeatCount="indefinite"/></text>
   <text x="290" y="398" class="sub">the job owns it
-    <animate attributeName="x" values="290;290;410;410;290" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+    <animate attributeName="x" values="290;290;410;410;290" keyTimes="0;0.34;0.46;0.82;1" dur="6s" repeatCount="indefinite"/></text>
 
   <text x="580" y="378" class="lbl" fill="#94A3B8">DONATED
-    <animate attributeName="x" values="580;580;820;820;580" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+    <animate attributeName="x" values="580;580;820;820;580" keyTimes="0;0.34;0.46;0.82;1" dur="6s" repeatCount="indefinite"/></text>
   <text x="580" y="398" class="sub">durable, permanent
-    <animate attributeName="x" values="580;580;820;820;580" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+    <animate attributeName="x" values="580;580;820;820;580" keyTimes="0;0.34;0.46;0.82;1" dur="6s" repeatCount="indefinite"/></text>
 
   <text x="890" y="378" class="lbl" fill="#2DD4BF">BORROWED
-    <animate attributeName="x" values="890;890;1010;1010;890" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+    <animate attributeName="x" values="890;890;1010;1010;890" keyTimes="0;0.34;0.46;0.82;1" dur="6s" repeatCount="indefinite"/></text>
   <text x="890" y="398" class="sub">regenerable only
-    <animate attributeName="x" values="890;890;1010;1010;890" keyTimes="0;0.34;0.46;0.82;1" dur="11s" repeatCount="indefinite"/></text>
+    <animate attributeName="x" values="890;890;1010;1010;890" keyTimes="0;0.34;0.46;0.82;1" dur="6s" repeatCount="indefinite"/></text>
 </g>
 
 <!-- the story, cross-faded with the animation -->
 <g class="f" text-anchor="middle">
   <text x="600" y="440" class="story" fill="#5EEAD4">Every node&#8217;s local NVMe. This one is between jobs, so its spare capacity serves the rack.
-    <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.32;0.44;0.84;1" dur="11s" repeatCount="indefinite"/></text>
+    <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.32;0.44;0.84;1" dur="6s" repeatCount="indefinite"/></text>
   <text x="600" y="440" class="story" fill="#FBBF24" opacity="0">The job grew. Capacity came back instantly, dropped and never migrated.
-    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.36;0.48;0.8;1" dur="11s" repeatCount="indefinite"/></text>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.36;0.48;0.8;1" dur="6s" repeatCount="indefinite"/></text>
 </g>
 
 <!-- durable backends -->
