@@ -14,6 +14,9 @@ the value of writing them down.
 
 Nothing is accepted yet. Forebay is in Phase 0 and the whole index is open for argument.
 
+RFC-0021 supersedes the unified-namespace non-goal in RFC-0001. That reversal is recorded rather than
+edited away, which is the point of keeping these.
+
 | # | Title | Status | Phase | Depends on |
 | --- | --- | --- | --- | --- |
 | [0000](0000-rfc-process.md) | RFC process | Draft | 0 | — |
@@ -36,6 +39,12 @@ Nothing is accepted yet. Forebay is in Phase 0 and the whole index is open for a
 | [0017](0017-observability.md) | Observability | Not started | 2 | 0004 |
 | [0018](0018-benchmark-and-falsification-suite.md) | Benchmark and falsification suite | Not started | 1 | 0007, 0008 |
 | [0019](0019-upgrades-and-operations.md) | Upgrades and operations | Not started | 4 | 0014 |
+| [0020](0020-no-copy-policy.md) | The no-copy policy | Draft | 1 | 0002, 0006, 0007 |
+| [0021](0021-single-copy-multi-protocol.md) | Single-copy multi-protocol access | Draft | 3 | 0012, 0020 |
+| [0022](0022-data-aware-scheduling.md) | Data-aware scheduling and warm start | Not started | 2 | 0003, 0007, 0014 |
+| [0023](0023-lineage-and-reproducibility.md) | Lineage, provenance and immutable versions | Not started | 3 | 0012, 0021 |
+| [0024](0024-efficiency-accounting.md) | Efficiency accounting, GPU hours lost to storage | Not started | 2 | 0017 |
+| [0025](0025-cross-cluster-datasets.md) | Cross-cluster and cross-region datasets | Not started | 4 | 0006, 0021 |
 
 `Not started` means the file holds a problem statement and the questions the RFC has to answer, but
 nobody has written it. Those are the ones to claim.

@@ -32,7 +32,11 @@ the first.
 | Replication and disaster recovery | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 | Encryption at rest and in flight | Planned | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
 | Tiering between hot and cold media | Planned | [0010](docs/rfcs/0010-autonomy-engine.md) |
-| Deduplication | Not planned for v1 | — |
+| No copy to clone, version, tier or serve a second protocol | Specified | [0020](docs/rfcs/0020-no-copy-policy.md) |
+| Register data in place, no copy on ingest | Specified | [0020](docs/rfcs/0020-no-copy-policy.md) |
+| Extent sharing between dataset versions | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
+| Minimum-copy IO path, io_uring and RDMA where available | Planned | [0020](docs/rfcs/0020-no-copy-policy.md) |
+| Deduplication across unrelated data | Not planned for v1 | — |
 | Immutability and retention locks | Not planned for v1 | — |
 
 Several of these are delegated rather than implemented. Where a backend already does snapshots or
@@ -47,9 +51,11 @@ backend cannot.
 | NFSv3 for compatibility | Planned | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
 | S3 object access | Planned | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
 | Block access through CSI | Planned | [0014](docs/rfcs/0014-kubernetes-integration.md) |
-| Shared metadata and lifecycle across protocols | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
+| Write once, read as file **and** object over the same bytes | Specified | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
+| Block under the same namespace, policy and snapshots | Specified | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
+| Snapshot export between block and object | Planned | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
 | SMB | Not planned | — |
-| A single unified namespace across block, file and object | Not planned | [0001](docs/rfcs/0001-thesis-scope-and-non-goals.md) |
+| Concurrent block access to the same bytes as file or object | Not possible | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
 
 ### Management
 
@@ -110,6 +116,11 @@ cannot offer them, however good it is at everything above.
 | Datasets, versions, experiments and checkpoints as first-class objects | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
 | GB per second per GPU, and GPU stall attributed to storage | Planned | [0017](docs/rfcs/0017-observability.md) |
 | Continuous autonomy across compute and storage signals | Planned | [0010](docs/rfcs/0010-autonomy-engine.md) |
+| Data-aware scheduling, telling the scheduler where the data already is | Planned | [0022](docs/rfcs/0022-data-aware-scheduling.md) |
+| Warm start, pre-filling a rack before the pod is admitted | Planned | [0022](docs/rfcs/0022-data-aware-scheduling.md) |
+| Lineage from dataset version to experiment to checkpoint to model | Planned | [0023](docs/rfcs/0023-lineage-and-reproducibility.md) |
+| GPU hours lost to storage, costed per dataset and per tenant | Planned | [0024](docs/rfcs/0024-efficiency-accounting.md) |
+| Cross-cluster and cross-region immutable dataset distribution | Planned | [0025](docs/rfcs/0025-cross-cluster-datasets.md) |
 
 ## Phases
 
@@ -189,8 +200,8 @@ than a version number implying otherwise.
 | Writing a durable store | Ceph, OpenEBS and S3 exist, are good, and are already deployed where the users are |
 | Writing a client | The in-kernel Linux pNFS client is the client. Shipping one across kernels is where storage projects bleed |
 | SMB | No AI workload has asked for it |
-| Deduplication | Expensive to do well, and AI datasets are poor candidates for it |
-| A unified namespace across block, file and object | Multiplies consistency problems for a benefit nobody has requested |
+| Deduplication across unrelated data | Expensive to do well. Extent sharing between versions of the same dataset gives most of the benefit for almost none of the cost |
+| Concurrent block access to the same bytes as file or object | Not achievable. A block volume is an opaque range with a client-owned filesystem inside it, so there are no objects in there to serve |
 | GPUDirect Storage in v1 | Real and probably valuable, but it constrains hardware and needs the rest of the path fast first |
 | Machine-learned access prediction in v1 | Manifests and heuristics have to be shown to fall short before a model earns its operational cost |
 

@@ -66,8 +66,8 @@
     <path d="M22 28 H52 L44 39 A8 8 0 0 1 36.5 44.5 H27.5 A8 8 0 0 1 20 39 Z" fill="#14B8A6" opacity="0.9"/>
   </g>
   <text x="96" y="62" class="wm">forebay</text>
-  <text x="1192" y="52" class="tag" text-anchor="end">The NVMe in your GPU nodes is already paid for.</text>
-  <text x="1192" y="72" class="tag" text-anchor="end" fill="#2DD4BF">Forebay makes it the tier that keeps them fed.</text>
+  <text x="1192" y="52" class="tag" text-anchor="end">Write once. Read it any way. Copy it never.</text>
+  <text x="1192" y="72" class="tag" text-anchor="end" fill="#2DD4BF">The open storage control plane for AI infrastructure.</text>
   <rect x="48" y="92" width="1144" height="1" fill="url(#hair)"/>
 </g>
 

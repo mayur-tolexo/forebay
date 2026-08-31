@@ -144,10 +144,11 @@ priority work rather than as risks to be managed around.
 | Durable data on borrowed capacity | It would make reclamation a migration, which is exactly the storm the design exists to avoid |
 | Writing a durable store | Ceph, OpenEBS and S3 exist, are good, and are already deployed where the users are |
 | Writing a client | Shipping and supporting a client across kernels and distributions is where storage projects bleed. The in-kernel pNFS client is the client |
-| A single unified namespace across block, file and object | Shared metadata and lifecycle deliver most of the value. A true unified namespace multiplies consistency problems for a benefit nobody has asked for yet |
+| Concurrent block, file and object access to the same bytes | Not possible in any meaningful sense. File and object over one copy **is** a goal, see [RFC-0021](0021-single-copy-multi-protocol.md). Block shares the control plane, namespace and snapshots, but not the representation |
 | GPUDirect Storage in v1 | Real, and probably valuable, but it constrains hardware and depends on the rest of the path already being fast. Later, behind capability detection |
 | Machine-learned access prediction in v1 | Manifests and sequential heuristics have to be shown to fall short before a model is worth its operational cost |
 | Forking Ceph | The value is above the data plane. A fork is a permanent maintenance tax paid for leverage this project does not need |
+| Copying data that did not have to move | A byte is written once and everything else is a reference. See [RFC-0020](0020-no-copy-policy.md) |
 
 ## Alternatives considered
 
