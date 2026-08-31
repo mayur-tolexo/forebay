@@ -2,37 +2,286 @@
 
 | | |
 | --- | --- |
-| **Status** | Not started |
+| **Status** | Draft |
 | **Phase** | 1 |
 | **Depends on** | 0002, 0003 |
 
-> **Unclaimed.** This file holds the problem statement and the questions the RFC has to answer.
-> Nobody has written it yet. See [CONTRIBUTING.md](../../CONTRIBUTING.md) to claim it.
-
 ## Problem
 
-The node agent is the only Forebay component on the node. It discovers devices and topology,
-owns the split between the compute, donated and borrowed pools, enforces lease decisions made by the
-control plane, and serves the fast tier.
+The agent is the only Forebay component on the node and the only one in the data path. It discovers
+the device, owns the split between capacity the workload keeps and capacity lent to the fabric,
+enforces lease decisions, and serves the fast tier.
 
-It is privileged, it sits next to customer workloads, and it holds capacity that other tenants will
-later use. That combination makes its blast radius larger than its line count suggests.
+It is also privileged, sits beside customer workloads, and holds capacity that passes from one tenant
+to the next. That combination makes its blast radius larger than its line count suggests, and makes
+two of its properties load bearing rather than incidental: it must never make a node worse than one
+without Forebay, and it must keep working when the control plane cannot be reached.
 
-## What this RFC must answer
+RFC-0005 left this document one explicit obligation, which is discharged below rather than being a
+dependency in either direction. The lease manager refuses grants until its
+journal has been replayed, but who replays it, and in what order relative to everything else the
+agent does at startup, is settled here.
 
-- What privileges the agent genuinely needs, and how to hold as few as possible
-- How the agent learns that compute wants capacity back, given Kubernetes signals such as admission, ephemeral-storage requests and eviction pressure
-- What happens to outstanding leases when the agent crashes, and how state is recovered on restart
-- Whether the agent can be upgraded without dropping the fast tier it is serving
-- The local API surface, and what remains available when the control plane is unreachable
-- How the agent behaves when it is degraded rather than dead, which is the harder case
+## Assumptions
 
-## Constraints inherited from earlier RFCs
+| Assumption | Basis | Risk if wrong |
+| --- | --- | --- |
+| Reclaiming by unlink is fast enough to be irrelevant to the deadline | **Measured**: 2.6 ms for 4 GiB, 2.5 ms for 8 GiB across four files under concurrent `O_DIRECT` write load | The deadline has to be derived from the filesystem after all, and the class deadlines change |
+| Kubernetes gives a usable signal before a node is under real pressure | Unverified | Reclamation becomes reactive to `DiskPressure`, which is already too late |
+| Reading `/sys` is enough for device, NUMA and PCIe discovery | Reasoned, and the subject of RFC-0003 | The agent needs broader privilege than this document grants it |
+| One agent per node can be enforced | Reasoned | Two agents would each believe they own the pool directory, and the accounting of both would be wrong |
+| Backend read credentials can be scoped per node and short lived | Unverified | A compromised node yields durable-store credentials, which is a much larger failure than losing a cache |
 
-- The agent never blocks a compute workload. Compute always wins
-- Nothing irreplaceable is held in the borrowed pool
+## Design
 
-## Structure
+### What the agent is, and is not
 
-Follow [`template.md`](template.md). Assumptions carry a basis of measured, reasoned or unverified.
-Alternatives must be real ones.
+| Does | Does not |
+| --- | --- |
+| Discover devices and topology | Decide placement, which is the control plane's job |
+| Own pool accounting and enforce leases | Grant leases to itself |
+| Serve the fast tier and fetch on a miss | Hold durable data outside the donated pool |
+| Reclaim capacity on demand | Negotiate with the workload about reclaiming |
+
+### Deployment shape
+
+A DaemonSet, one per node, running unprivileged.
+
+| Needs | Why | Granted as |
+| --- | --- | --- |
+| Read `/sys` and `/proc` | Device, NUMA, PCIe and NIC discovery | Read-only mounts |
+| Read and write two host directories | The borrowed and the donated pool, kept apart | Two hostPaths, not the whole filesystem |
+| A network port for the data path | Clients and rack peers read from it | See below |
+
+It does not need `privileged: true`, and asking for it would be the easy answer to problems this
+document would rather solve properly. Discovery is reads from `/sys`. Pool management is file
+operations inside one directory. Neither requires the node.
+
+The data path wants `hostNetwork` so a read does not traverse an extra network hop, and that is a
+real cost rather than a free win: it means port conflicts with anything else on the node and less
+isolation for the agent itself. The alternative is an ordinary pod network with a Service, paying a
+hop on every miss. The choice should be configurable and the default decided by measurement, not
+here.
+
+### The pools are separate directories
+
+Borrowed and donated capacity never share a directory.
+
+Two recoveries in this document are deliberately blunt: unlinking extents that no journal entry
+accounts for, and dropping the whole borrowed pool when capacity is demanded before a replay. Both
+are safe only because everything they touch is regenerable, which is true of borrowed capacity and of
+nothing else. Donated capacity holds durable data.
+
+A rule of the form "delete whatever cannot be accounted for" will be implemented exactly as written,
+so the boundary it operates within has to be a directory rather than an intention. Separate
+directories also make the accounting auditable from outside the agent, since an operator can measure
+each pool without asking it.
+
+### Exactly one agent owns a node's pool
+
+Two agents on one node, which a botched upgrade can produce, would each believe they own the pool
+directory. Both would journal, both would reclaim, and both would be wrong.
+
+The agent therefore takes an exclusive lock on the pool directory at startup and holds it for its
+lifetime. An agent that cannot take the lock exits rather than starting in a degraded state, because
+a second writer is not a condition to degrade through.
+
+A hung agent still holds its lock, so the lock on its own would let a wedged process block its
+replacement forever while reclaiming nothing, leaving capacity lent that nobody will give back. That
+is the case liveness exists for. An agent that has stopped making progress is killed, which releases
+the lock and lets a replacement take it, and readiness cannot substitute because a process that is
+merely not ready still holds its file descriptors.
+
+### Startup ordering
+
+This is the obligation RFC-0005 handed over. Capacity must not be lent before the agent knows what it
+already lent.
+
+```mermaid
+flowchart LR
+    lock["take the pool lock<br/>exit if held"]
+    disc["discover device<br/>and topology"]
+    replay["replay the journal"]
+    recon["reconcile against disk<br/>unlink orphan extents"]
+    pub["publish state<br/>to the control plane"]
+    serve["serve reads<br/>and accept grants"]
+
+    lock --> disc --> replay --> recon --> pub --> serve
+
+    classDef control fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+    classDef owned fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
+    class lock,disc,pub control
+    class replay,recon,serve owned
+```
+
+Reconciliation is two sided. An extent on disk with no journal entry is unlinked, because capacity
+nobody has a record of lending has leaked. A journal entry with no extent is dropped, because the
+lease describes capacity that is not there.
+
+**Reclamation is available before any of this completes.** An agent asked for capacity before it has
+replayed cannot tell which extents are whose, so it drops the contents of the borrowed directory,
+which by construction holds nothing that is not regenerable. That is a blunt
+answer and a safe one: everything in that pool is regenerable, and compute is not made to wait on a
+replay. It is also rare, since the request has to arrive inside the startup window.
+
+### Learning that compute wants its capacity back
+
+Waiting for the kubelet to report `DiskPressure` is waiting until the node is already in trouble.
+**Reaching `DiskPressure` from pressure the agent could have seen coming should be treated as an
+agent defect**, not as the signal the agent is built around. A workload can always write faster than
+any reclaim loop, and one that declares no ephemeral-storage request gives no warning at all, so not
+every such event is the agent's fault. What is its fault is reaching `DiskPressure` while still
+holding reclaimable capacity it had the time and the signal to release.
+
+The agent instead maintains a headroom target and reclaims to keep it.
+
+```mermaid
+flowchart LR
+    watch["watch pods bound to this node<br/>ephemeral-storage requests"]
+    fs["poll free space<br/>against the headroom target"]
+    csi["CSI volume requests<br/>on this node"]
+    need["compute the shortfall"]
+    ladder["reclaim: opportunistic,<br/>then elastic, never live guarantees"]
+    report["report shortfall<br/>if any remains"]
+
+    watch --> need
+    fs --> need
+    csi --> need
+    need --> ladder --> report
+
+    classDef control fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+    classDef owned fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
+    classDef compute fill:#FEF3C7,stroke:#B45309,stroke-width:1.5px,color:#451A03
+    class watch,fs,csi control
+    class need,ladder owned
+    class report compute
+```
+
+Three inputs, deliberately overlapping. Watching pods bound to the node gives warning before a
+workload writes anything. Polling free space catches whatever the watch missed, including writes by
+workloads that never declared a request. CSI requests are the explicit case. Any of them can raise
+the shortfall; none of them is trusted alone.
+
+**The shortfall is the largest of the three, never their sum.** A pod's declared request also shows
+up in polled free space once it starts writing, so adding them double counts and reclaims cache the
+node did not need to lose.
+
+The headroom target is the floor the agent keeps free on top of what is already committed. Sizing it
+is a trade: too small and a burst of writes beats the reclaim, too large and the node lends less than
+it could. It has no defensible default yet.
+
+### What survives the control plane going away
+
+| Works | Does not |
+| --- | --- |
+| Serving reads from the fast tier | New lease grants |
+| Fetching from the backend on a miss | Lease renewal, so leases decay toward expiry |
+| Reclaiming capacity for compute | Publishing state, which resumes when the link does |
+| Expiring leases whose term ran out | |
+
+The degradation runs in one direction: toward giving capacity back to compute. A partition that
+outlasts every lease term ends with a node that has no fast tier and no incident.
+
+### Degraded rather than dead
+
+A slow agent is worse than a stopped one, because clients keep waiting on it instead of missing to
+the backend.
+
+The agent separates the two health signals it exposes rather than collapsing them into one.
+Readiness gates new grants, so an agent that is struggling stops being lent more capacity while it
+continues to serve and reclaim. Readiness is an ordinary Kubernetes condition and the control plane
+watches it, rather than discovering the same thing later through a failed grant. Liveness is reserved for states it cannot recover from, since
+restarting an agent that is merely slow throws away a warm cache to no purpose.
+
+An agent that misses a reclaim deadline reports it and keeps reclaiming. It does not restart itself,
+and it does not stop serving.
+
+### Upgrades
+
+The fast tier lives on the host directory and the leases live in the journal, so neither is in the
+container. Stopping an agent and starting a new one loses no cached data and no lease state: the new
+agent takes the lock, replays, reconciles and carries on.
+
+That property is not free and must be protected. Any future design that keeps fast-tier state only in
+the agent's memory would turn every upgrade into a cold cache, and RFC-0019 should treat that as a
+constraint rather than a preference.
+
+## Alternatives considered
+
+| Alternative | Trade-off | Why not |
+| --- | --- | --- |
+| Run privileged | Every discovery and device question becomes easy | The agent sits beside customer workloads and holds cross-tenant capacity, so its privilege is the thing most worth spending effort to reduce |
+| Drive reclamation from `DiskPressure` alone | One signal, no pod watching, much simpler | It fires once the node is already in trouble, and the promise is that compute never waits |
+| Let the control plane drive reclamation | The control plane already knows the fleet's intent | Reclamation would depend on reaching it, which fails exactly when a partition and a pressure event coincide |
+| Keep lease state only in memory | No journal, no replay ordering, less code | An agent restart forgets what it lent, and capacity nobody has a record of lending has leaked |
+| Allow more than one agent per node | Rolling upgrades get simpler | Both would own the same pool and both accountings would be wrong |
+
+## Failure modes
+
+**Agent crashes.** Leases and cache survive on the host. The replacement replays and reconciles. The
+window between crash and replacement is one in which nothing reclaims, so a pressure event during it
+is handled by the kubelet as it would be on a node without Forebay.
+
+**Agent cannot take the pool lock.** It exits. A node with no agent lends nothing, which is the safe
+failure.
+
+**Journal and disk disagree.** Extents without entries are unlinked, entries without extents are
+dropped, and both are reported. Silent reconciliation would show up much later as a node with
+mysteriously less capacity than it should have.
+
+**Agent is slow rather than stopped.** The dangerous case, because the miss path never triggers.
+Readiness has to be latency based rather than a liveness ping, which RFC-0017 has to make measurable.
+
+**Reclaim misses its deadline.** Reported, and reclamation continues. What matters is the
+distribution of how far past, not whether it ever happens.
+
+**The node is genuinely full.** Every reclaimable byte is returned and compute still cannot be
+satisfied. The node is then in the state it would have been in anyway, and the failure belongs to
+capacity planning.
+
+## Performance implications
+
+Predicted except where noted. Reclaim by unlink is measured at 2.6 ms and unaffected by concurrent
+write load, so the agent's reclaim latency is dominated by detecting the need and by invalidating
+readers, not by the filesystem. Both belong in RFC-0018.
+
+The polling interval for free space is a direct trade between reclaim latency and idle cost, and has
+no defensible value yet.
+
+## Complexity
+
+The lease manager and journal already exist. What this RFC adds is discovery, the pool directory and
+its lock, the pressure watch, and the serving path. The serving path is the largest piece and mostly
+belongs to RFC-0007 and RFC-0008.
+
+The constraint it imposes on everything later is that fast-tier state stays outside the agent
+process. Losing that would make every upgrade a cold cache.
+
+## Security and tenancy
+
+**The agent needs read credentials for the durable backend**, because it fetches on a miss. That is
+the largest new attack surface in this document and it is easy to overlook, since the agent is
+otherwise unprivileged. A node that is compromised should not yield credentials that read the whole
+durable store, which argues for per-node, short-lived, read-scoped credentials issued by the control
+plane rather than a shared secret in a DaemonSet. RFC-0016 owns the mechanism.
+
+**Reclaimed capacity is re-lent to a different tenant.** Contents must not survive that transition.
+Doing so cheaply, without overwriting an extent at the worst possible moment, is not solved here.
+
+**A compromised agent can starve its own node.** Containing that to one node is exactly why the agent
+is the authority on its own capacity rather than the control plane, but it is a denial of service
+against the workload it hosts and RFC-0016 should say so plainly.
+
+## Open questions
+
+- The headroom target, and whether it should adapt to observed write rates rather than be configured.
+- Whether `hostNetwork` is worth its cost, which is a measurement rather than an opinion.
+- Whether the pressure watch can be driven from the kubelet directly rather than from the API server,
+  which would keep working during an API server outage.
+- How readiness is computed from latency, which needs RFC-0017 to exist first.
+- Whether a cached extent can go stale against a backend object that changed underneath it, which is
+  RFC-0007's consistency model rather than the agent's, but which the agent is where it would be
+  noticed.
+- Whether the agent should refuse to start when it cannot reach the control plane, or start and serve
+  what it can replay. The second is more useful and gives a node that lends nothing but serves
+  everything it already holds.
