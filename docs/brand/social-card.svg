@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="Forebay social card">
+<defs>
+  <linearGradient id="sBasin" gradientUnits="userSpaceOnUse" x1="0" y1="88" x2="0" y2="196"><stop offset="0" stop-color="#A5B4FC"/><stop offset="1" stop-color="#4F46E5"/></linearGradient>
+  <linearGradient id="sWater" gradientUnits="userSpaceOnUse" x1="0" y1="132" x2="0" y2="196"><stop offset="0" stop-color="#5EEAD4"/><stop offset="1" stop-color="#0D9488"/></linearGradient>
+  <linearGradient id="sFlow" gradientUnits="userSpaceOnUse" x1="0" y1="200" x2="0" y2="232"><stop offset="0" stop-color="#FCD34D"/><stop offset="1" stop-color="#F59E0B"/></linearGradient>
+  <linearGradient id="sGold" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBBF24"/><stop offset="1" stop-color="#B45309"/></linearGradient>
+  <linearGradient id="sSlate" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#64748B"/><stop offset="1" stop-color="#334155"/></linearGradient>
+  <linearGradient id="sTeal" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0F766E"/></linearGradient>
+  <radialGradient id="sgI" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#6366F1" stop-opacity="0.24"/><stop offset="1" stop-color="#6366F1" stop-opacity="0"/></radialGradient>
+  <radialGradient id="sgT" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#14B8A6" stop-opacity="0.20"/><stop offset="1" stop-color="#14B8A6" stop-opacity="0"/></radialGradient>
+  <pattern id="sdots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.2" fill="#1B2740"/></pattern>
+  <clipPath id="sClip"><path d="M76 88 H172 L150 156 A16 16 0 0 1 135 168 H113 A16 16 0 0 1 98 156 Z"/></clipPath>
+  <clipPath id="sBar"><rect x="76" y="452" width="700" height="46" rx="9"/></clipPath>
+  <style>
+    .f{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  </style>
+</defs>
+
+<rect width="1280" height="640" fill="#070C16"/>
+<rect width="1280" height="640" fill="url(#sdots)" opacity="0.6"/>
+<ellipse cx="300" cy="140" rx="640" ry="320" fill="url(#sgI)"/>
+<ellipse cx="980" cy="540" rx="660" ry="340" fill="url(#sgT)"/>
+
+<!-- mark -->
+<g clip-path="url(#sClip)">
+  <rect x="70" y="132" width="110" height="46" fill="url(#sWater)"/>
+  <rect x="70" y="132" width="110" height="6" fill="#99F6E4"/>
+</g>
+<path d="M76 88 H172 L150 156 A16 16 0 0 1 135 168 H113 A16 16 0 0 1 98 156 Z" fill="none" stroke="url(#sBasin)" stroke-width="10" stroke-linejoin="round"/>
+<path d="M100 178 H148 L124 210 Z" fill="url(#sFlow)"/>
+
+<text x="200" y="160" class="f" font-size="76" font-weight="700" fill="#F1F5F9" letter-spacing="-1.6">forebay</text>
+
+<text x="76" y="286" class="f" font-size="52" font-weight="700" fill="#E6EDF7" letter-spacing="-0.8">Write once. Read it any way. Copy it never.</text>
+<text x="76" y="340" class="f" font-size="25" fill="#8A9AB4">The open, Kubernetes-native storage control plane for AI infrastructure.</text>
+<text x="76" y="378" class="f" font-size="25" fill="#2DD4BF">It turns the idle NVMe in your GPU nodes into the tier that keeps them fed.</text>
+
+<!-- pool bar -->
+<text x="76" y="438" class="f" font-size="13" fill="#5A6B85" letter-spacing="1.6" font-weight="700">LOCAL NVMe ON EVERY GPU NODE</text>
+<g clip-path="url(#sBar)">
+  <rect x="76"  y="452" width="250" height="46" fill="url(#sGold)"/>
+  <rect x="326" y="452" width="200" height="46" fill="url(#sSlate)"/>
+  <rect x="526" y="452" width="250" height="46" fill="url(#sTeal)"/>
+  <rect x="76"  y="452" width="700" height="14" fill="#FFFFFF" opacity="0.08"/>
+</g>
+<rect x="76" y="452" width="700" height="46" rx="9" fill="none" stroke="#233149"/>
+<text x="201" y="524" class="f" font-size="14" font-weight="700" fill="#FBBF24" text-anchor="middle" letter-spacing="0.6">COMPUTE</text>
+<text x="426" y="524" class="f" font-size="14" font-weight="700" fill="#94A3B8" text-anchor="middle" letter-spacing="0.6">DONATED</text>
+<text x="651" y="524" class="f" font-size="14" font-weight="700" fill="#2DD4BF" text-anchor="middle" letter-spacing="0.6">BORROWED</text>
+<text x="651" y="546" class="f" font-size="13" fill="#6B7C96" text-anchor="middle">reclaim is a drop, never a migration</text>
+
+<g class="f" font-size="14.5" font-weight="600">
+  <rect x="836" y="452" width="132" height="34" rx="17" fill="#1E1B4B" stroke="#6366F1"/><text x="902" y="474" fill="#C7D2FE" text-anchor="middle">Apache-2.0</text>
+  <rect x="980" y="452" width="180" height="34" rx="17" fill="#0F2E2E" stroke="#14B8A6"/><text x="1070" y="474" fill="#99F6E4" text-anchor="middle">Kubernetes-native</text>
+  <rect x="836" y="500" width="324" height="34" rx="17" fill="#1B2537" stroke="#475569"/><text x="998" y="522" fill="#CBD5E1" text-anchor="middle">Ceph · OpenEBS · S3 · the array you own</text>
+</g>
+
+<text x="76" y="600" class="f" font-size="15" fill="#5A6B85">github.com/mayur-tolexo/forebay</text>
+<text x="1204" y="600" class="f" font-size="15" fill="#5A6B85" text-anchor="end">design phase · 26 RFCs open</text>
+</svg>
