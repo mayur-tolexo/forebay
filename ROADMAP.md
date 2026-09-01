@@ -111,7 +111,7 @@ cannot offer them, however good it is at everything above.
 | --- | --- | --- |
 | Elastic capacity leased from compute-node NVMe and returned on demand | In progress | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
 | Reclamation by deletion, never by migration | In progress | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
-| Placement that follows the accelerator, using GPU, NUMA, PCIe and NIC topology | Planned | [0003](docs/rfcs/0003-topology-model.md) |
+| Placement that follows the accelerator, using GPU, NUMA, PCIe and NIC topology | In progress | [0003](docs/rfcs/0003-topology-model.md) |
 | Rack-local fast tier | Planned | [0007](docs/rfcs/0007-fast-tier-data-path.md) |
 | Shard-aware prefetch driven by dataset manifests | Planned | [0011](docs/rfcs/0011-prefetch-and-dataset-manifests.md) |
 | Checkpoint fast acknowledgement with a stated durability policy | Planned | [0013](docs/rfcs/0013-checkpoint-path.md) |
@@ -168,6 +168,13 @@ and S3 drivers ([0006](docs/rfcs/0006-durable-backend-driver-contract.md)), the 
 `internal/pool` and `internal/lease`, and the agent's startup path is in `internal/agent`: it owns
 the pool directories, holds the node lock, replays the journal and reconciles it against the disk in
 both directions.
+
+Topology discovery is in `internal/topology` and the agent uses it, so a node reads its own capacity
+rather than being told, measured on the filesystem the pools sit on rather than summed across every
+drive in the machine, and reduced by the space that filesystem already holds for everything which is
+not Forebay. On a GPU node it identified both accelerators by vendor, found the NVMe,
+declined to count an attached Ceph RBD as local capacity, and reported NUMA affinity as unknown
+because the kernel says -1.
 
 That path has been run on a GPU node with two RTX 5090s and 1.86 TiB of NVMe. It reported the
 capacity split, unlinked capacity nothing accounted for, left donated data untouched, and refused
