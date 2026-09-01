@@ -240,8 +240,9 @@ choices.
 Keeping the control plane out of the IO path is not a target that can be missed by a few per cent; it
 either is on the path or it is not, and with pNFS the protocol enforces it rather than the project
 having to. Reclaiming by deletion rather than migration is the same kind of bet, and the filesystem
-half of it is measured: unlink returns in 2.5 to 2.6 ms and does not degrade under concurrent write
-load, so reclaim latency is set by detecting the need and revoking readers, not by the disk.
+half of it is measured: reclaiming through the agent takes 2.8 ms for 7 GiB, rising to 7.4 ms under
+concurrent write load, so reclaim latency is set by detecting the need and revoking readers, not by
+the disk.
 
 Everything else here is unproven. Whether the fast tier beats a fanned-out backend at all is
 RFC-0001's central risk, and whether a rack-local hop beats going straight to the backend is the same

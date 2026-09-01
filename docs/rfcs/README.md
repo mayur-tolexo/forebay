@@ -44,7 +44,7 @@ edited away, which is the point of keeping these.
 | [0015](0015-failure-model.md) | Failure model and split brain | Not started | 4 | 0005, 0007 |
 | [0016](0016-multi-tenancy-qos-and-security.md) | Multi-tenancy, QoS and security | Not started | 4 | 0005, 0009 |
 | [0017](0017-observability.md) | Observability | Not started | 2 | 0004 |
-| [0018](0018-benchmark-and-falsification-suite.md) | Benchmark and falsification suite | Not started | 1 | 0007, 0008 |
+| [0018](0018-benchmark-and-falsification-suite.md) | Benchmark and falsification suite | Draft | 1 | 0007, 0008 |
 | [0019](0019-upgrades-and-operations.md) | Upgrades and operations | Not started | 4 | 0014 |
 | [0020](0020-no-copy-policy.md) | The no-copy policy | Draft | 1 | 0002, 0006, 0007 |
 | [0021](0021-single-copy-multi-protocol.md) | Single-copy multi-protocol access | Draft | 3 | 0012, 0020 |
