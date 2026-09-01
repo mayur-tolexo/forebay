@@ -131,6 +131,8 @@ var (
 	// ReclaimWithin. Accepting it would make elastic capacity reclaimable
 	// immediately, which is the opportunistic class wearing the wrong name.
 	ErrNoDeadline = errors.New("lease: elastic leases need a reclaim deadline")
+	// ErrNoSuchLease is a release naming a lease this manager does not hold.
+	ErrNoSuchLease = errors.New("lease: no such lease")
 )
 
 // Config tunes how willingly a node lends and how hard it resists churn.
@@ -271,12 +273,12 @@ func (m *Manager) Restore(now time.Time) (Result, error) {
 			continue
 		}
 		if lendErr := m.acct.Lend(l.Size); lendErr != nil {
-			res.Dropped = append(res.Dropped, l.ID)
+			res.Unfittable = append(res.Unfittable, l.ID)
 			continue
 		}
 		m.leases[l.ID] = l
 	}
-	if len(res.Dropped) > 0 {
+	if len(res.Dropped) > 0 || len(res.Unfittable) > 0 {
 		if err := m.persistLocked(); err != nil {
 			return res, fmt.Errorf("lease: restored state could not be journalled: %w", err)
 		}
@@ -370,6 +372,29 @@ func (m *Manager) Accept(l Lease, now time.Time) error {
 	return nil
 }
 
+// Release drops one lease by identifier and returns the capacity it held.
+//
+// Reclaim chooses what to drop by cost, which is right when the goal is to
+// free a quantity. This is for when a specific lease is known to be wrong, such
+// as one whose extent has gone missing, where dropping the cheapest lease
+// instead would be both useless and destructive.
+func (m *Manager) Release(id string, now time.Time) (pool.Bytes, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	l, ok := m.leases[id]
+	if !ok {
+		return 0, fmt.Errorf("%w: %s", ErrNoSuchLease, id)
+	}
+	if err := m.releaseLocked(l); err != nil {
+		return 0, err
+	}
+	if err := m.persistLocked(); err != nil {
+		return l.Size, err
+	}
+	return l.Size, nil
+}
+
 // Result reports what a reclamation achieved.
 type Result struct {
 	// Reclaimed is capacity actually handed back.
@@ -381,6 +406,11 @@ type Result struct {
 	Shortfall pool.Bytes
 	// Dropped names the leases released, cheapest first.
 	Dropped []string
+	// Unfittable names leases that were valid but that the accounting could no
+	// longer accommodate, which happens when a node comes back smaller than it
+	// went away. They are reported apart from Dropped because ordinary ageing
+	// and a node losing capacity are different events with different causes.
+	Unfittable []string
 	// Err carries a failure from a method that returns only a Result, such as
 	// the accounting refusing to release capacity a lease claimed to hold,
 	// which means the agent's books have diverged from what it believes it
