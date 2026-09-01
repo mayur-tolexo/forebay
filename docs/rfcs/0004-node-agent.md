@@ -38,9 +38,10 @@ behaviour nobody wrote.
 | Expiring leases whose term lapsed while the node was down | Built |
 | Surviving an unreadable journal by starting empty | Built |
 | Device and topology discovery | Built, `internal/topology`, and the agent discovers its own capacity |
-| The pressure watch, and the headroom target it maintains | **Not built** |
+| The pressure watch, and the headroom target it maintains | Built with one of the three inputs. Free space is polled and the shortfall reclaimed; the two that would give warning before a workload writes need Kubernetes and are owned by [RFC-0014](0014-kubernetes-integration.md), so the watch is reactive rather than anticipatory |
+| The headroom target's value | **Not built, deliberately.** It has no defensible default, so a watch without one is refused rather than guessed. Owned by [RFC-0018](0018-benchmark-and-falsification-suite.md) |
 | Timing reclamation against the deadline | Built for the part that exists. A reclaim is timed and one that overruns is an error, but the span covers choosing leases and unlinking extents, not invalidating readers, which is where RFC-0005 expects the time to go |
-| The liveness that breaks a wedged lock | Built. The agent publishes a heartbeat and `--liveness` judges it from outside, since a wedged process cannot answer for itself. **The loop that would keep it fresh is not built**: the binary starts, reports and exits, so today the heartbeat goes stale the moment startup finishes |
+| The liveness that breaks a wedged lock | Built. The agent publishes a heartbeat and `--liveness` judges it from outside, since a wedged process cannot answer for itself. The pressure watch keeps it fresh, so `--watch` is what makes the probe mean anything; without it the binary still starts, reports and exits |
 | Readiness computed from latency | **Not built.** It needs a serving path to have a latency |
 | Serving the fast tier | **Not built.** Owned by [RFC-0007](0007-fast-tier-data-path.md) |
 | Any interface to a control plane | **Not built.** Grants arrive as local calls |
@@ -60,6 +61,8 @@ from an unprivileged container. What it does and what it refuses both behave as 
 | Refuses to start with no reclaim deadline | Yes, since every elastic grant would otherwise be refused |
 | Refuses accounting that does not add up | Yes, `pools exceed device capacity` |
 | Admits one agent per node | Twenty started at once, nine refused by the lock and none proceeding beside another |
+| Reclaims when a workload takes space nobody declared | Yes, on a 512 MiB filesystem with a 128 MiB lease and a 256 MiB target. Two quiet passes while free space was sufficient, then a workload wrote 200 MiB, free fell to 184 MiB, the agent saw a 72 MiB shortfall and returned the lease |
+| Keeps the heartbeat fresh while it runs | Yes, and this is what makes the liveness probe mean anything: before the watch the binary exited and the heartbeat went stale at once |
 | Kills a wedged holder so its replacement can take the lock | Yes, under a real kubelet probe. A stand-in agent held the lock, heartbeated for 20 s and then hung. The probe failed, the kubelet killed it about 10 s later, and the replacement logged that it took the lock. Restarts arrived on a 30 s cadence, which is the 20 s of health plus the detection window |
 
 The lock result needs its caveat. The binary starts, reports and exits, so it holds the lock only
