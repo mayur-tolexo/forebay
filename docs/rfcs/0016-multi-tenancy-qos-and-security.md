@@ -22,6 +22,9 @@ bug.
 ## What this RFC must answer
 
 - The isolation boundary in the fast tier, and what prevents one tenant inferring another's access pattern
+- What may leave the cluster that produced it, and how an access trace is reduced before it does,
+  since a trace reveals dataset structure and often dataset identity and is what RFC-0018's workload
+  experiments need
 - How reclaimed capacity is guaranteed to carry nothing into its next holder, and what that costs in reclamation time
 - Where QoS is enforced, and whether a guarantee can be made without a global admission decision
 - Encryption at rest on borrowed and donated capacity, and in flight between agents

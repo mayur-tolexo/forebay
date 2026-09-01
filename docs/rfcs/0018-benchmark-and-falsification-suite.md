@@ -2,75 +2,284 @@
 
 | | |
 | --- | --- |
-| **Status** | Not started |
+| **Status** | Draft |
 | **Phase** | 1 |
 | **Depends on** | 0007, 0008 |
 
-> **Unclaimed.** This file holds the problem statement and the questions the RFC has to answer.
-> Nobody has written it yet. See [CONTRIBUTING.md](../../CONTRIBUTING.md) to claim it.
-
 ## Problem
 
-RFC-0001 states five conditions under which Forebay should be abandoned. This RFC turns them into
-experiments, and it is the most important document in Phase 1.
+RFC-0001 states five conditions under which Forebay should be abandoned. This document turns them
+into experiments, and it is the most important one in Phase 1.
 
 Its purpose is not to produce a favourable number. It is to find out, as cheaply and as early as
 possible, whether the locality premise holds on hardware that matters. A benchmark suite designed to
-make the project look good would be worse than none.
+make the project look good would be worse than none, because it would spend the project's remaining
+credibility to buy a wrong answer.
 
-## What this RFC must answer
+The specific danger is visible in the project's own founding measurement. RFC-0001 records a Ceph
+RGW read of a 226 MiB compressed object at 0.23 s against 1.71 s to read the same payload from local
+disk, and reports both the seven-times wall-clock gap and the two-and-a-half-times bandwidth gap,
+because the object crossing the network was compressed roughly three to one while the local read
+moved every byte. That is the founding number of the project and it was confounded. Nothing here is
+safe from the same mistake.
 
-- The experiment that locates the crossover between node-local bandwidth and a node's achievable share of backend fan-out
-- How compression is held constant while locating that crossover. The measurement this project was
-  founded on compared a compressed 226 MiB object crossing the network against 687 MiB read raw from
-  local disk, so roughly three to one of the apparent advantage was compression rather than fan-out.
-  A backend that serves compressed bytes against a tier that serves raw ones is not a comparison of
-  locality, and the suite has to say which side compression sits on before the number means anything
-- Whether compressing the fast tier pays for the CPU it costs, given that CPU on a GPU node competes
-  with the dataloader
-- How compute impact during reclamation is measured, so that the job is unaffected can be shown rather than asserted
-- Workload definitions that reflect real training and inference access patterns rather than synthetic sequential reads
-- The scaling curve method across one node, one rack, ten racks and beyond, and where scaling is expected to stop
-- Hardware profiles the results are valid for, since a result on one generation of NVMe and NIC may not transfer
-- How idle compute-local NVMe is measured across a real fleet, and over what window, since capacity
-  that is idle only in short bursts is not capacity worth borrowing
-- How much value static provisioning would have captured on the same workload, since if the split
-  rarely needs to move then a simpler system is the right answer
-- What fraction of a real workload's storage traffic is regenerable, since that sets the ceiling on
-  how much a tier holding only regenerable data can ever be worth
-- How long revoking a reader actually takes against a running metadata server under load, since the
-  elastic reclaim deadline cannot be honoured if revocation is slower than it
-- What headroom a node has to keep free for reclamation to stay ahead of a workload's writes, which
-  is the central tuning value of the agent's pressure design and currently has no defensible default
-- Whether hostNetwork earns its cost on the data path, measured against an ordinary pod network with
-  the extra hop it implies, since the answer decides how much isolation the agent gives up
-- What the driver conformance suite runs against, since proving a driver needs a real backend and a
-  contributor may not have one
-- What cache block size the fast tier should use, since it trades index size against read
-  amplification and the number should come from measurement rather than from taste
-- Whether a rack-local hop beats going straight to a fanned-out backend, which is the crossover
-  question asked one hop further out and decides whether the rack tier exists at all
-- How long the fast tier should wait on a peer before abandoning it for the backend, which has to be
-  shorter than the backend read it is avoiding or trying is worse than not trying
-- How large the fast tier's record of first reads has to be before admission on second read fires at
-  all, since a bound too small to span two reads of the same block admits nothing and a bound too
-  large costs memory the cache could have used
-- How much of a reader's working set one lease holds, since reclamation drops whole leases and that
-  number is what turns a per-block refetch cost into the size of the burst a reader actually feels
-- Whether reading a KV cache block back from borrowed NVMe beats recomputing the prefill that
-  produced it, and above what prefix length, since below some length the read is strictly worse than
-  not having tried and that point decides whether [RFC-0027](0027-kv-cache-spill.md) is worth writing
-- Whether an inference-serving node has idle NVMe to borrow at all, which is the third kill
-  criterion asked of a fleet the existing experiments do not cover: a training node's disk is idle
-  between epochs, and a serving node's may be absent or already busy
-- How results are published, including negative ones
+## What of this is built
 
-## Constraints inherited from earlier RFCs
+**None of the suite.** No harness exists, no workload is defined, nothing is pre-registered and no
+result has been published.
 
-- Every kill criterion in RFC-0001 has a corresponding experiment here
-- Negative results are published with the same prominence as positive ones
+What exists is a handful of measurements taken while building the agent, recorded in the documents
+that own the decisions they bear on.
 
-## Structure
+| Measured | Where | Caveat this document inherits |
+| --- | --- | --- |
+| Ceph RGW fan-out at 995 MB/s against local disk at 400 MB/s | [RFC-0001](0001-thesis-scope-and-non-goals.md) | One environment the project does not control, and the payload crossing the network was compressed while the local read was not |
+| `unlink` returning in 2.5 to 2.6 ms | [RFC-0005](0005-capacity-pools-and-elastic-leases.md) | It measured when the call returned, not when the capacity became usable by somebody else |
+| Reclaiming 7 GiB through the agent in 2.759 ms, and 7.415 ms under four concurrent `O_DIRECT` writers | [RFC-0005](0005-capacity-pools-and-elastic-leases.md) | Covers choosing leases and unlinking extents, which RFC-0004 says are not what dominates |
+| Granting 2 GiB in 5 ms, with `fallocate` committing the blocks | [RFC-0005](0005-capacity-pools-and-elastic-leases.md) | One filesystem, one device |
 
-Follow [`template.md`](template.md). Assumptions carry a basis of measured, reasoned or unverified.
-Alternatives must be real ones.
+That is four measurements against the twenty-five experiments below, and none of the four settles a
+kill criterion on its own. Everything else the project believes about performance is prediction.
+
+## Assumptions
+
+| Assumption | Basis | Risk if wrong |
+| --- | --- | --- |
+| A result on one hardware profile does not transfer to another | Reasoned, from NVMe and NIC generations differing by more than the effects being measured | Results are quoted beyond their validity and the project is wrong in a way that looks measured |
+| The access patterns that decide the outcome can be characterised well enough to replay | Unverified, and the reason workload definition is an experiment rather than a fixture | The suite measures a workload nobody runs, favourably |
+| The project will publish a result that kills it | Unverified, and not a measurement. It is a question about people, which is why pre-registration exists rather than a promise | The suite becomes marketing, and the kill criteria never fire |
+| RFC-0001's five criteria are the right ones to be falsifiable against | Reasoned. They were derived before any result existed, which is the only time such a list is honest | The suite is rigorous about the wrong questions |
+| A measurement rig small enough to be cheap can still answer the existential questions | Reasoned, from three of the five criteria needing a fleet survey or one node rather than a cluster | The decisive experiments wait on hardware the project does not have, which is the current state |
+
+## Design
+
+### Pre-registration, because the alternative is a promise
+
+RFC-0001 requires negative results to be published with the same prominence as positive ones. A rule
+like that cannot be enforced after the fact, because by then the result is known and the reasons to
+soften it are many and reasonable-sounding.
+
+So an experiment is written down before it runs, and the written form has four parts:
+
+| Part | What it fixes |
+| --- | --- |
+| **Hypothesis** | The claim being tested, in a form that can be false |
+| **Threshold** | The number that separates pass from fail, chosen before the data exists |
+| **Killing result** | What outcome would falsify the design decision this experiment supports, named explicitly |
+| **Validity** | The hardware profile, workload and software versions the result is claimed for, and nothing beyond them |
+
+A run that produces a number outside its pre-registered validity is a new experiment, not a
+supporting data point for the old one. An experiment whose threshold moves after the data arrives is
+reported as having moved, with both values.
+
+This is the only mechanism in the project that makes "we will publish negative results" mean
+something, and it is cheap: four sentences before a run.
+
+### Experiments are tiered by what a result would kill
+
+```mermaid
+flowchart LR
+    reg["pre-register<br/>hypothesis, threshold,<br/>killing result, validity"]
+    t1["TIER 1<br/>can end the project<br/>run first, smallest rig"]
+    t2["TIER 2<br/>sizes a design decision<br/>run before building it"]
+    t3["TIER 3<br/>validates at scale<br/>run last, costs most"]
+    pub["publish, including<br/>the results that hurt"]
+
+    reg --> t1
+    t1 -->|survives| t2
+    t2 -->|survives| t3
+    t1 --> pub
+    t2 --> pub
+    t3 --> pub
+
+    classDef control fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+    classDef owned fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
+    classDef compute fill:#FEF3C7,stroke:#B45309,stroke-width:1.5px,color:#451A03
+    class reg,pub control
+    class t1 compute
+    class t2,t3 owned
+```
+
+Tier 1 exists because the cheapest possible outcome is discovering early that the project should
+stop. Those experiments run on the smallest rig that can answer them, and three of the five kill
+criteria need no data path at all, which matters because this document's dependencies suggest
+otherwise.
+
+### The comparability rule
+
+**Both arms of a comparison must do the same work, and the write-up must say what that work was.**
+
+This generalises the compression confound rather than merely avoiding it. A backend serving
+compressed bytes against a tier serving raw ones is not a comparison of locality. Neither is a
+backend read that lands in page cache against a local read with `O_DIRECT`, nor a warm tier against
+a cold backend, nor a tier with prefetch against a backend without it.
+
+Every pre-registration therefore states which side of the comparison carries compression, caching,
+prefetch and concurrency, and a result that cannot say is not reported as a locality result.
+
+### The baselines are measured arms, not assumptions
+
+Forebay is not compared against nothing. It is compared against the best simple alternative, and
+there are two.
+
+| Arm | Why it is the honest comparison |
+| --- | --- |
+| **Backend fan-out** | The counterexample the project starts from. Aggregate parallel bandwidth from a durable store is what Forebay has to beat, and on the one measurement that exists it wins |
+| **Static provisioning** | RFC-0001's fourth kill criterion says that if a fixed split captures nearly all the value, the control plane's central function is unnecessary. That makes static provisioning an arm to run, not a position to argue against |
+
+An alternative that only appears in prose is a strawman. Both of these produce numbers.
+
+### The experiment register
+
+Every question delegated to this document appears here. The register is the point: eleven RFCs defer
+to this one, and a list that quietly loses an item is how a design decision ends up resting on
+nothing.
+
+**Tier 1, can end the project.**
+
+| Experiment | Kill criterion | Needs |
+| --- | --- | --- |
+| Where the locality crossover sits between node-local bandwidth and a node's achievable share of backend fan-out | 2 | One node, one backend |
+| How much idle compute-local NVMe exists across real fleets, over what window, and whether the idle periods are long enough to be worth borrowing | 3 | A fleet survey, no code |
+| Whether inference-serving nodes have idle NVMe at all, which the training-shaped survey above does not cover | 3 | A fleet survey, no code |
+| How much of the available value static provisioning captures on the same workload | 4 | One node, both arms |
+| What fraction of a real workload's storage traffic is regenerable, which bounds what a regenerable-only tier can ever be worth | 2 | Traces, no code |
+| Whether reclamation measurably harms the job that owns the node | 1 | One node, the agent |
+| When freed capacity becomes observably available to a competing writer, which is what compute waits for, rather than when `unlink` returns | 1 | One node, no data path |
+| ~~Whether sub-second reclaim holds under simultaneous IO pressure~~ | 1 | **Answered.** 2.759 ms idle against 7.415 ms under four concurrent writers, so load costs about two and a half times and the absolute number stays four orders of magnitude inside the deadline |
+| How long revoking a reader takes against a running metadata server under load, and whether it fences one client or every reader of an extent | 1 | A pNFS deployment |
+
+**Tier 2, sizes a design decision.**
+
+| Experiment | Sizes | Owned in |
+| --- | --- | --- |
+| The fast tier's cache block size, trading index size against read amplification | The unit of the whole tier | RFC-0007 |
+| How large the record of first reads must be before admission on second read fires at all | Whether admission functions | RFC-0007 |
+| How much of a reader's working set one lease holds, which turns a per-block refetch into the burst a reader feels | The cost of reclamation | RFC-0007 |
+| How long to wait on a peer before abandoning it for the backend | Whether peer fetch helps or hurts | RFC-0007 |
+| Whether a rack-local hop beats going straight to a fanned-out backend | Whether the rack tier exists | RFC-0002, RFC-0007 |
+| The headroom a node keeps free for reclamation to stay ahead of a workload's writes | The agent's pressure design | RFC-0004 |
+| The reclaim deadline default, derived from pod admission behaviour and measured end-to-end reclaim | RFC-0005's central promise | RFC-0005 |
+| The churn budget and the post-reclaim cooldown, whose shipped values are conservative guesses | Whether churn protection is real | RFC-0005 |
+| Whether compressing the fast tier pays for CPU taken from the dataloader | Whether the tier compresses | RFC-0020 |
+| How many copies the IO path actually has on a realistic stack | Whether the no-copy policy is achieved | RFC-0020 |
+| Which of the three transport bottlenecks binds on target hardware | What the fast path is built on | RFC-0026 |
+| Whether `hostNetwork` earns its cost against an ordinary pod network | How much isolation the agent gives up | RFC-0004 |
+| Whether an NVMe read of a KV cache block beats recomputing the prefill, and above what prefix length | Whether RFC-0027 is worth writing | RFC-0027 |
+
+**Tier 3, validates at scale.**
+
+| Experiment | Question |
+| --- | --- |
+| The scaling curve across one node, one rack, ten racks and beyond | Where scaling stops, and whether it stops before it matters |
+| Workload definitions replayed against the full path | Whether the tiered results survive a real access pattern |
+| Hardware profiles the results are valid for | Which results transfer to a different NVMe or NIC generation |
+
+### What can run today
+
+Three Tier 1 experiments need no Forebay code at all: the two fleet surveys and the regenerable
+fraction, which are questions about other people's clusters and traces. Two more need only the node
+agent, which exists and now grants, reclaims and unlinks real extents: when freed capacity becomes
+available to a competing writer, and whether reclamation measurably harms the job that owns the node.
+A sixth was answered while the agent was built, which is how it got into the table above.
+
+So this document's declared dependencies are two unbuilt RFCs and most of its existential work needs
+neither. The dependency row is honest about what the *suite* needs to be complete, and it is not a
+reason to wait.
+
+One Tier 2 value has stopped being abstract. The headroom target has no defensible default, so the
+pressure watch refuses to run without one, which means an operator deploying the agent today has to
+supply a number this document owns and nobody has measured. That is the first case of an unwritten
+experiment blocking shipped behaviour rather than a future decision.
+
+### Publishing
+
+Results are published in this repository, in the RFC that owns the decision the experiment supports,
+with the pre-registration alongside the outcome. A result that contradicts an accepted RFC supersedes
+it, which RFC-0000 already allows and which has happened once.
+
+Aggregate summaries may exist elsewhere. They may not be the only published form, because a summary
+is where an inconvenient result goes to be averaged away.
+
+## Alternatives considered
+
+| Alternative | Trade-off | Why not |
+| --- | --- | --- |
+| Measure after building, when there is something complete to measure | Far cheaper to organise, and the numbers would be realistic | It inverts the project's whole posture. RFC-0000 warns that an unverified assumption quietly restated as fact is how a project talks itself into a wrong architecture, and building first is the mechanism by which that happens |
+| Use standard storage benchmarks and report those numbers | Comparable across projects, no harness to write, credible to outsiders | fio and IO500 measure a device or a filesystem. None of the five kill criteria is a device question: they are about idle capacity across fleets, about harm to a co-tenant job, and about a crossover against a specific alternative. Standard benchmarks would be real work producing no decision |
+| Let each RFC own and run its own measurement | No central register to maintain, and the owner of a decision owns its evidence | Comparability dies. Eleven documents would each choose their own workload and baseline, and the results could not be set beside one another. The compression confound is what one document's private methodology looks like from outside |
+| Publish only results that are complete and conclusive | Higher quality, less noise, fewer misleading partial numbers | Conclusive is a judgement made after seeing the data, which is exactly when the incentive to withhold is strongest. Pre-registration means the obligation to publish is incurred before the result is known |
+| Skip pre-registration and rely on the team's honesty | No process overhead, and the honesty is real | Honesty is not the failure mode. Reading a result generously is, and it is invisible from the inside. The threshold has to exist before the number does |
+
+## Failure modes
+
+**The suite measures what is easy rather than what decides.** Sequential reads on an idle node are
+simple to harness and answer nothing. The register is ordered by what a result would kill precisely
+to resist this, and an experiment that is cheap and answers nothing belongs to no tier.
+
+**A favourable result on a rig nobody runs.** Every result carries the hardware profile it is valid
+for, and a result quoted outside that profile is a new claim needing its own run.
+
+**Pre-registration becomes a formality.** Thresholds written vaguely enough to be met by any outcome
+are worse than none, because they add ceremony to the same wrong answer. A threshold that cannot be
+stated as a number, or as a specific comparison, is not ready to be run.
+
+**Everything becomes "needs more data".** An indefinite lack of conclusion is how a kill criterion is
+avoided without ever being faced. An experiment that has run and produced a number reports that
+number, including when it is inconvenient and the sample is small.
+
+**The suite outlives its own validity.** Hardware moves, and a result from two NVMe generations ago
+is not evidence about current hardware. Results carry dates and profiles so they can be retired
+rather than inherited.
+
+## Performance implications
+
+The suite perturbs what it measures. A harness that runs on the node under test competes with it for
+CPU, memory bandwidth and IO queue depth, and on a GPU node the dataloader is already competing for
+the same CPU, which is the subject of one of the Tier 2 experiments.
+
+Measurement overhead is therefore itself pre-registered: what the harness consumes, and whether the
+measured effect is larger than that consumption. An effect smaller than the harness's own footprint
+is not a result.
+
+## Complexity
+
+The hard part is not the harness, it is access. Two Tier 1 experiments are fleet surveys of clusters
+the project does not own, and the regenerable-fraction experiment needs traces from real training
+runs. None of that is engineering, and no amount of harness quality substitutes for it.
+
+The second hard part is keeping the register honest. Eleven documents defer here, and the failure is
+silent: a question deferred to this document and never entered into the register looks answered from
+the deferring side and does not exist from this one. Writing this document found six such items.
+
+## Security and tenancy
+
+Workload traces are the sensitive artifact. An access trace from a real training run reveals dataset
+structure, read patterns and often dataset identity, and a trace is exactly what the regenerable
+fraction and workload definition experiments need.
+
+Traces are therefore reduced before they leave the cluster that produced them, to the statistics an
+experiment needs rather than the sequence of accesses, and a published result never carries a raw
+trace. What reduction is sufficient is a question about disclosure rather than about measurement, and
+RFC-0016 owns it.
+
+The fleet surveys have the same shape at lower risk: how much NVMe sits idle on a cluster is
+commercially meaningful to whoever owns the cluster, and results are published in aggregate across
+fleets rather than per fleet.
+
+## Open questions
+
+- **What hardware the project can actually measure on.** Everything in Tier 1 needs a node with a
+  current accelerator, current NVMe and a durable backend, and the project has none. This is not a
+  question anybody can answer by engineering, and no RFC owns it, because it is a question about
+  access and funding rather than design.
+- **What the driver conformance suite runs against**, since proving a driver needs a real backend
+  and a contributor may not have one. Owned here, and unanswered: it is the same access problem as
+  the question above, arriving at a contributor rather than at the project.
+- **How traces are reduced before they leave the cluster that produced them**, which decides whether
+  the workload experiments can use real data at all. Owned by
+  [RFC-0016](0016-multi-tenancy-qos-and-security.md), which owns disclosure.
+- **Whether the fleet surveys can be run at all without a partner**, since they measure clusters the
+  project does not own. No RFC owns this, for the same reason as the first question: it is answered
+  by asking people rather than by instrumenting anything, which is also how RFC-0001 disposes of its
+  fifth kill criterion.
