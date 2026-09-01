@@ -22,6 +22,28 @@ dependency in either direction. The lease manager refuses grants until its
 journal has been replayed, but who replays it, and in what order relative to everything else the
 agent does at startup, is settled here.
 
+## What of this is built
+
+`internal/agent` implements the startup path and nothing else. The table says which, because a
+document that reads as description while most of it is intention is how someone comes to rely on
+behaviour nobody wrote.
+
+| Part of the design | State |
+| --- | --- |
+| Separate pool directories, with sharing and nesting refused | Built, `internal/agent` |
+| The node lock, and exiting rather than starting beside another agent | Built |
+| Startup ordering: lock, replay, reconcile, then accept grants | Built |
+| Reconciling both ways: orphan extents unlinked, leases without extents dropped | Built |
+| Refusing a lease identifier that could name a path outside the borrowed pool | Built |
+| Expiring leases whose term lapsed while the node was down | Built |
+| Surviving an unreadable journal by starting empty | Built |
+| Device and topology discovery | **Not built.** Owned by [RFC-0003](0003-topology-model.md) |
+| The pressure watch, and the headroom target it maintains | **Not built** |
+| Timing reclamation against the deadline | **Not built.** Nothing measures elapsed reclaim yet |
+| Readiness computed from latency, and the liveness that breaks a wedged lock | **Not built** |
+| Serving the fast tier | **Not built.** Owned by [RFC-0007](0007-fast-tier-data-path.md) |
+| Any interface to a control plane | **Not built.** Grants arrive as local calls |
+
 ## Assumptions
 
 | Assumption | Basis | Risk if wrong |

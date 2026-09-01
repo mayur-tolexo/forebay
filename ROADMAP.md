@@ -84,7 +84,7 @@ orchestrator in the MVP, and the control plane's objects are Kubernetes objects.
 | Operator reconciling desired state | Planned | [0014](docs/rfcs/0014-kubernetes-integration.md) |
 | CSI driver for volumes and ephemeral volumes | Planned | [0014](docs/rfcs/0014-kubernetes-integration.md) |
 | Snapshots and clones through the Kubernetes API | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
-| Node agent as a DaemonSet | Planned | [0004](docs/rfcs/0004-node-agent.md) |
+| Node agent as a DaemonSet | In progress | [0004](docs/rfcs/0004-node-agent.md) |
 | Reclamation driven by scheduler signals | Planned | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
 
 ### Extensibility

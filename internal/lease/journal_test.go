@@ -203,8 +203,13 @@ func TestRestoreDropsLeasesTheNodeCanNoLongerFit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Restore = %v", err)
 	}
-	if len(res.Dropped) != 1 || res.Dropped[0] != "big" {
-		t.Fatalf("Dropped = %v, want the lease that no longer fits", res.Dropped)
+	// Reported apart from Dropped, because a lapsed term and a node that came
+	// back smaller are different events with different causes.
+	if len(res.Unfittable) != 1 || res.Unfittable[0] != "big" {
+		t.Fatalf("Unfittable = %v, want the lease that no longer fits", res.Unfittable)
+	}
+	if len(res.Dropped) != 0 {
+		t.Errorf("Dropped = %v, want nothing reported as aged out", res.Dropped)
 	}
 	if err := m.Accounting().Validate(); err != nil {
 		t.Errorf("accounting after restore = %v, want it to balance", err)
