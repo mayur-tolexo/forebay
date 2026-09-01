@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 1 |
 | **Depends on** | 0002 |
 
@@ -20,7 +20,9 @@ pretending every backend is the same.
 ## What of this is built
 
 **None of it.** No driver exists, no capability is declared anywhere, and the fast tier that would
-call a driver is not built either. `internal/agent` reads its capacity from flags.
+call a driver is not built either. The node agent now discovers its own capacity from the filesystem
+holding its pools, but that is local storage it owns rather than a durable backend it talks to, and
+nothing in this document is on that path.
 
 ## Assumptions
 
