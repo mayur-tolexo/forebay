@@ -7,11 +7,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/mayur-tolexo/forebay/internal/agent"
@@ -46,6 +49,9 @@ func run() error {
 		mountinfo   = flag.String("mountinfo", "/proc/self/mountinfo", "mount table used to find the device under the pools")
 		liveness    = flag.Bool("liveness", false, "check whether the agent owning the pool is still making progress, and exit non-zero if not")
 		staleAfter  = flag.Duration("stale-after", 60*time.Second, "how long without progress means the agent is wedged")
+		watch       = flag.Bool("watch", false, "stay running, keeping free space above the headroom target")
+		headroom    = flag.Int64("headroom-bytes", 0, "free space the agent keeps on top of what is committed, required by --watch")
+		interval    = flag.Duration("watch-interval", 10*time.Second, "how often free space is polled")
 	)
 	flag.Parse()
 
@@ -198,6 +204,51 @@ func run() error {
 		fmt.Fprintln(os.Stderr, "warning: this build cannot reserve blocks, so borrowed capacity is not really held")
 	}
 	fmt.Fprintln(os.Stderr, "no serving path yet: see docs/rfcs/0007-fast-tier-data-path.md")
+	if !*watch {
+		return nil
+	}
+	return watchPressure(a, cfg, borrowedFS, *sysroot, *mountinfo, pool.Bytes(*headroom), *interval)
+}
+
+// watchPressure runs the agent until it is signalled, keeping free space above
+// the headroom target.
+//
+// Free space is re-measured each pass rather than derived from the accounting,
+// because the point is to catch writes by workloads that told nobody.
+func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sysroot, mountinfo string, headroom pool.Bytes, interval time.Duration) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	free := func() (pool.Bytes, error) {
+		s := topology.DescribePool(sysroot, mountinfo, cfg.BorrowedDir)
+		available, ok := s.AvailableBytes.Known()
+		if !ok {
+			return 0, fmt.Errorf("the filesystem holding %s did not say how much is free", cfg.BorrowedDir)
+		}
+		return pool.Bytes(available), nil
+	}
+
+	device := fs.Device
+	if device == "" {
+		device = "an unidentified device"
+	}
+	fmt.Printf("watching %s, keeping %s free, polling every %s\n", device, headroom, interval)
+	fmt.Fprintln(os.Stderr, "only free space is polled: the two inputs that would give warning before a workload writes need RFC-0014")
+	report := func(t agent.Tick, err error) {
+		switch {
+		case err != nil:
+			fmt.Fprintln(os.Stderr, "forebay-agent: pass failed:", err)
+		case t.Shortfall > 0:
+			fmt.Printf("%s wanted %s back, reclaimed %s, still %s short: the node is now where it would be with no lending at all\n",
+				t.Observed.Source, t.Observed.Need, t.Reclaimed, t.Shortfall)
+		case t.Reclaimed > 0:
+			fmt.Printf("%s wanted %s back, reclaimed %s\n", t.Observed.Source, t.Observed.Need, t.Reclaimed)
+		}
+	}
+	if err := a.Watch(ctx, agent.WatchConfig{Headroom: headroom, Interval: interval}, free, report); err != nil {
+		return err
+	}
+	fmt.Println("forebay-agent: stopped, lock released")
 	return nil
 }
 

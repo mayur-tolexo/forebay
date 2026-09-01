@@ -430,3 +430,14 @@ func TestAnUnjudgeableHeartbeatDoesNotFailTheProbe(t *testing.T) {
 		t.Errorf("liveness on an unreadable heartbeat = %v, want it to pass rather than kill", err)
 	}
 }
+
+func TestWatchingWithoutAHeadroomTargetIsRefused(t *testing.T) {
+	// The value has no defensible default, so the agent refuses rather than
+	// putting a guessed number in the path that decides when a job loses its
+	// cache. Same treatment as a missing reclaim deadline.
+	root := t.TempDir()
+	err := withArgs(t, append(nodeArgs(t, root), "--watch")...)
+	if !errors.Is(err, agent.ErrNoHeadroom) {
+		t.Errorf("watch with no headroom = %v, want ErrNoHeadroom", err)
+	}
+}
