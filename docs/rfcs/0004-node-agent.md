@@ -323,6 +323,11 @@ against the workload it hosts and RFC-0016 should say so plainly.
 
 ## Open questions
 
+- **Whether the agent needs host mounts of `/sys` and `/proc` at all.** A probe from an ordinary pod
+  running as a non-root user, with every capability dropped and no hostPath, read PCI class, NUMA
+  affinity, NUMA topology and block devices successfully, because a container is given `/sys` from
+  the host already. If that holds on the target kernels, the privilege surface in this document is
+  larger than it needs to be. Owned by [RFC-0003](0003-topology-model.md), which owns discovery.
 - **The headroom target**, which is the central tuning value of the pressure design and currently has
   no defensible default, and whether it should adapt to observed write rates rather than be
   configured. The value is owned by [RFC-0018](0018-benchmark-and-falsification-suite.md) and whether
