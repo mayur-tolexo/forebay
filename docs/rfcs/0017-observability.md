@@ -23,6 +23,8 @@ This RFC also gates RFC-0010, because autonomy without measurement is guessing w
 - The core metric set, including delivered GB per second per GPU, cache hit rate, lease churn, reclamation latency and tail latency
 - How metrics are attributed to tenant, dataset and workload without unbounded cardinality
 - How a request is traced across control plane, node agent and backend
+- How a backend capability disappearing under a dataset that relies on it is noticed, since a
+  declaration is a snapshot of a backend that can be reconfigured
 - Whether the topology model is re-read periodically or only on events, and how a node reports that
   its own discovered facts got poorer after a kernel or driver change, since placement would
   otherwise degrade silently
