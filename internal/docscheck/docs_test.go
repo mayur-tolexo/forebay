@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -148,4 +149,88 @@ func TestAcceptedRFCsOwnEveryOpenQuestion(t *testing.T) {
 		t.Fatal("found no accepted RFCs, so this test proves nothing")
 	}
 	t.Logf("checked %d accepted RFCs", checked)
+}
+
+var rfcCountPattern = regexp.MustCompile(`All (\d+) RFCs`)
+
+func TestTheAdvertisedRFCCountIsTheRealOne(t *testing.T) {
+	// A number written in prose does not move when a file is added, and the
+	// front page saying 27 when there are 28 is the sort of thing nobody
+	// notices and every reader can check.
+	root := repoRoot(t)
+	entries, err := os.ReadDir(filepath.Join(root, "docs", "rfcs"))
+	if err != nil {
+		t.Fatalf("reading docs/rfcs: %v", err)
+	}
+	numbered := regexp.MustCompile(`^\d{4}-.*\.md$`)
+	want := 0
+	for _, e := range entries {
+		if numbered.MatchString(e.Name()) {
+			want++
+		}
+	}
+	if want == 0 {
+		t.Fatal("found no numbered RFCs, so this test proves nothing")
+	}
+
+	body, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatalf("reading README.md: %v", err)
+	}
+	m := rfcCountPattern.FindStringSubmatch(string(body))
+	if m == nil {
+		t.Fatal(`README.md no longer says "All N RFCs", so this check has stopped checking anything`)
+	}
+	if m[1] != strconv.Itoa(want) {
+		t.Errorf("README.md advertises %s RFCs, but there are %d", m[1], want)
+	}
+}
+
+var indexRowPattern = regexp.MustCompile(`(?m)^\| \[(\d{4})\]`)
+
+func TestEveryRFCAppearsInTheIndexAndEveryIndexRowExists(t *testing.T) {
+	// The index is the page people navigate from, and a number in the README
+	// does not notice a missing row. Both directions matter: an RFC absent
+	// from the index is invisible, and a row pointing at nothing is a broken
+	// promise that the link check cannot see, because the row's own link is
+	// the thing that would be wrong.
+	root := repoRoot(t)
+	dir := filepath.Join(root, "docs", "rfcs")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	numbered := regexp.MustCompile(`^(\d{4})-.*\.md$`)
+	files := map[string]bool{}
+	for _, e := range entries {
+		if m := numbered.FindStringSubmatch(e.Name()); m != nil {
+			files[m[1]] = true
+		}
+	}
+	if len(files) == 0 {
+		t.Fatal("found no numbered RFCs, so this test proves nothing")
+	}
+
+	body, err := os.ReadFile(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatalf("reading the index: %v", err)
+	}
+	rows := map[string]bool{}
+	for _, m := range indexRowPattern.FindAllStringSubmatch(string(body), -1) {
+		rows[m[1]] = true
+	}
+	if len(rows) == 0 {
+		t.Fatal("the index has no RFC rows, so this check has stopped checking anything")
+	}
+
+	for n := range files {
+		if !rows[n] {
+			t.Errorf("RFC %s exists but the index does not list it", n)
+		}
+	}
+	for n := range rows {
+		if !files[n] {
+			t.Errorf("the index lists RFC %s, but no such file exists", n)
+		}
+	}
 }
