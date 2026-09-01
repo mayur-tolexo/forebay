@@ -47,7 +47,7 @@ terminate.
 
 | | A mature array platform | Forebay |
 | --- | --- | --- |
-| Capacity that appears from idle compute nodes and returns itself | No. It sells you the array | Built · [0005](rfcs/0005-capacity-pools-and-elastic-leases.md). Pools, leases and the node agent exist and have run on a GPU node |
+| Capacity that appears from idle compute nodes and returns itself | No. It sells you the array | Built · [0005](rfcs/0005-capacity-pools-and-elastic-leases.md). The agent lends real preallocated extents and takes them back when a workload eats the free space, on a GPU node. Nothing reads from that capacity yet |
 | Placement that follows the accelerator, by GPU, NUMA and PCIe topology | No. It sees its own media only | Built · [0003](rfcs/0003-topology-model.md), for the discovery half. Nothing places by it yet |
 | Telling the scheduler where the data already is | No. It has no scheduler to talk to | Planned · [0022](rfcs/0022-data-aware-scheduling.md) |
 | Pre-filling a rack before the pod is admitted | No | Planned · [0022](rfcs/0022-data-aware-scheduling.md) |

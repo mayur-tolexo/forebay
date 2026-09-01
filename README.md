@@ -164,12 +164,36 @@ make check     # gofmt, vet, race-enabled tests, 80% coverage gate
 make build     # binaries into bin/
 ```
 
-`make check` is exactly what CI runs, so a green local check means a green pipeline. What exists so
-far is capacity accounting, the lease state machine and the lease journal from
-[RFC-0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md): the three-pool arithmetic, the three
-lease classes, the reclaim ladder, the never-worse-off invariant, and durable lease state so a
-restart does not forget what a node lent. All unit tested. The binaries
-build and report their version. Neither has a runtime.
+`make check` is exactly what CI runs, so a green local check means a green pipeline.
+
+## What runs today
+
+The node agent. It discovers its own capacity, lends it as real preallocated extents, and takes it
+back when compute needs the space.
+
+```sh
+forebay-agent --borrowed-dir=/var/lib/forebay/borrowed \
+              --donated-dir=/var/lib/forebay/donated \
+              --journal=/var/lib/forebay/state/leases.json \
+              --watch --headroom-bytes=$((64 * 1024 * 1024 * 1024))
+```
+
+| Works | Detail |
+| --- | --- |
+| Reads its own capacity | Finds the filesystem holding its pools, refuses storage it cannot prove is local, and reserves nothing it has not measured |
+| Lends capacity as real bytes | One preallocated extent per lease, so reclaiming is an unlink rather than a compaction. An interface with no caller yet: granting is the control plane's job and there is no control plane |
+| Takes it back on a deadline | Invalidates before unlinking, times the reclaim, and treats overrunning as a broken promise. Reached today only through the watch, since nothing an operator can run grants a lease |
+| Keeps a floor of free space | Polls the filesystem and reclaims the shortfall, reporting one it cannot meet |
+| Survives being killed | Replays its journal, reconciles it against the disk in both directions, and finishes an interrupted reclaim |
+| Refuses to run twice | One agent per node, and a wedged one is killed by its own liveness probe so a replacement can take the lock |
+
+Everything above is exercised on a GPU node with local NVMe rather than only in tests, though the two
+rows that need a lease were driven by a stand-in for the control plane rather than by the agent
+binary.
+
+**Nothing serves data yet, and nothing grants.** There is no fast tier, no access layer, no backend
+driver and no control plane, so a running agent guards capacity that nothing lends and nothing reads
+from. That is Phase 1's remaining work.
 
 ## The honest part
 
