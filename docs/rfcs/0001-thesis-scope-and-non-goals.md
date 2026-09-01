@@ -164,6 +164,7 @@ The project treats all five as the highest priority work rather than as risks to
 | Machine-learned access prediction in v1 | Manifests and sequential heuristics have to be shown to fall short before a model is worth its operational cost |
 | Forking Ceph | The value is above the data plane. A fork is a permanent maintenance tax paid for leverage this project does not need |
 | Copying data that did not have to move | A byte is written once and everything else is a reference. See [RFC-0020](0020-no-copy-policy.md) |
+| Caching mutable data | A published dataset version is written once and then immutable, and a change produces a new version with a new identity. That is a constraint the project adopts rather than a property it discovered, and it is what removes invalidation, coherence between nodes, and any window in which two readers see different bytes. Mutable data is scratch: node-local, never shared, never fetched from a peer. [RFC-0012](0012-dataset-object-model.md) owns the naming and identity rules that give the constraint its mechanics |
 
 ## Alternatives considered
 
