@@ -23,6 +23,8 @@ not have to survive their own capacity disappearing on someone else's schedule.
 - The unit of caching, whether that is an object, an extent, a shard or a file range, and how that choice interacts with AI dataset access patterns
 - Admission and eviction policy, and how eviction interacts with an imminent lease reclamation
 - The consistency model, and what a reader is promised when the underlying durable object changes
+- Whether a cached extent can go stale against a backend object that changed underneath it, and how a
+  reader finds out. The node agent is where it would be noticed, but the answer is this document's
 - How rack-local peer fetch is coordinated, and how a peer is chosen
 - How a read in flight is handled when its backing capacity is revoked
 - Whether rack-local fetch beats going straight to a fanned-out backend, which may make the rack tier unnecessary

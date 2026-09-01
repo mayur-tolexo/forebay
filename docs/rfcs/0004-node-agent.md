@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 1 |
 | **Depends on** | 0002, 0003 |
 
@@ -94,6 +94,10 @@ merely not ready still holds its file descriptors.
 
 ### Startup ordering
 
+RFC-0005 hands this document two things and both are discharged here: the startup ordering below, and
+reconciling the journal against the device, which that RFC records as not built and explicitly owned
+by the agent.
+
 This is the obligation RFC-0005 handed over. Capacity must not be lent before the agent knows what it
 already lent.
 
@@ -123,6 +127,21 @@ replayed cannot tell which extents are whose, so it drops the contents of the bo
 which by construction holds nothing that is not regenerable. That is a blunt
 answer and a safe one: everything in that pool is regenerable, and compute is not made to wait on a
 replay. It is also rare, since the request has to arrive inside the startup window.
+
+### Configuring the lease manager
+
+The agent constructs the lease manager, so the manager's configuration is the agent's
+responsibility and one field in it is not optional.
+
+An elastic lease is refused outright if no reclaim deadline is configured, because a zero deadline
+would make elastic capacity reclaimable immediately, which is the opportunistic class under another
+name. An agent that leaves `ReclaimWithin` unset therefore refuses every elastic grant it is offered,
+which is the most common class. The refusal is loud rather than silent by design, but the agent has
+to set the field, and a startup that cannot determine a deadline should fail rather than run as a
+node that lends nothing and cannot say why.
+
+The other tuned values, the guaranteed cap, the post-reclaim cooldown and the churn budget, have
+defaults that are conservative guesses rather than measurements.
 
 ### Learning that compute wants its capacity back
 
@@ -195,6 +214,14 @@ restarting an agent that is merely slow throws away a warm cache to no purpose.
 
 An agent that misses a reclaim deadline reports it and keeps reclaiming. It does not restart itself,
 and it does not stop serving.
+
+**Detecting the miss is the agent's job and nothing does it yet.** RFC-0005 states the deadline and
+validates that one is configured, and stops there: the lease manager drops a lease in microseconds
+and has no idea how long the surrounding work took. The time is spent invalidating readers and
+unlinking extents, both of which are the agent's. So the agent times reclamation from the moment the
+shortfall is computed to the moment the capacity is observably free, compares that against the
+deadline of the cheapest class it had to touch, and reports the distribution rather than a count.
+What matters operationally is how far past the deadline it goes, not whether it ever does.
 
 ### Upgrades
 
@@ -274,14 +301,21 @@ against the workload it hosts and RFC-0016 should say so plainly.
 
 ## Open questions
 
-- The headroom target, and whether it should adapt to observed write rates rather than be configured.
-- Whether `hostNetwork` is worth its cost, which is a measurement rather than an opinion.
-- Whether the pressure watch can be driven from the kubelet directly rather than from the API server,
-  which would keep working during an API server outage.
-- How readiness is computed from latency, which needs RFC-0017 to exist first.
-- Whether a cached extent can go stale against a backend object that changed underneath it, which is
-  RFC-0007's consistency model rather than the agent's, but which the agent is where it would be
-  noticed.
-- Whether the agent should refuse to start when it cannot reach the control plane, or start and serve
-  what it can replay. The second is more useful and gives a node that lends nothing but serves
-  everything it already holds.
+- **The headroom target**, which is the central tuning value of the pressure design and currently has
+  no defensible default, and whether it should adapt to observed write rates rather than be
+  configured. The value is owned by [RFC-0018](0018-benchmark-and-falsification-suite.md) and whether
+  it adapts is owned by [RFC-0010](0010-autonomy-engine.md).
+- **Whether `hostNetwork` is worth its cost**, which is a measurement rather than an opinion. Owned
+  by [RFC-0018](0018-benchmark-and-falsification-suite.md).
+- **Whether the pressure watch can be driven from the kubelet directly** rather than from the API
+  server, which would keep working through an API server outage. Owned by
+  [RFC-0014](0014-kubernetes-integration.md), which owns what the agent may depend on in Kubernetes.
+- **How readiness is computed from latency**, since a slow agent is worse than a stopped one and a
+  liveness ping cannot tell them apart. Owned by [RFC-0017](0017-observability.md).
+- **Whether a cached extent can go stale** against a backend object that changed underneath it. The
+  agent is where it would be noticed, but the consistency model is owned by
+  [RFC-0007](0007-fast-tier-data-path.md).
+- **Whether the agent should refuse to start when it cannot reach the control plane**, or start and
+  serve what it can replay. The second is more useful, giving a node that lends nothing and serves
+  everything it already holds. No RFC owns this, deliberately: it is an operational preference that
+  should be settled by running the thing, and it is deferred to the first real deployment.
