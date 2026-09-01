@@ -191,9 +191,15 @@ unlinking capacity nothing accounted for, leaving donated data untouched, refusi
 should refuse, reclaiming 128 MiB when a workload ate the headroom, and a wedged holder killed and
 replaced under a real kubelet probe.
 
+The backend seam exists. `driver` is the capability contract from
+[0006](docs/rfcs/0006-durable-backend-driver-contract.md), where a driver declares what it can do and
+anything undeclared is refused before the driver is reached, so emulation is unreachable rather than
+merely forbidden. `driver/conformance` is importable, so a third party can demonstrate a driver for a
+store this project has never seen.
+
 Two of the pressure watch's three inputs are missing, so it learns about pressure once the space has
-already gone rather than before a workload writes. Nothing serves data, there is no control plane
-interface, and the headroom target it needs has no measured value.
+already gone rather than before a workload writes. Nothing serves data, no Ceph or S3 driver exists,
+there is no control plane interface, and the headroom target the watch needs has no measured value.
 
 **Done when** a GPU job runs on a node whose spare NVMe is serving the fabric, capacity is reclaimed
 mid-job without the job noticing, and the benchmark reports a number either way.

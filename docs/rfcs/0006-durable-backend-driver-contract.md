@@ -19,10 +19,27 @@ pretending every backend is the same.
 
 ## What of this is built
 
-**None of it.** No driver exists, no capability is declared anywhere, and the fast tier that would
-call a driver is not built either. The node agent now discovers its own capacity from the filesystem
-holding its pools, but that is local storage it owns rather than a durable backend it talks to, and
-nothing in this document is on that path.
+The contract is built and nothing production uses it, because the fast tier that would call a driver
+is not built.
+
+| Part of the design | State |
+| --- | --- |
+| The mandatory core, and a declaration without it refused | Built, `driver` |
+| Capabilities declared rather than probed, and binary | Built |
+| An unknown capability name ignored rather than refused | Built, so an older control plane can drive a newer driver |
+| A driver may not emulate what it lacks | Built as a mechanism rather than a rule. An undeclared capability is refused before the driver is reached, so an implementation that exists cannot be called |
+| Refusals distinguishable from failures | Built, `ErrNotSupported` |
+| The conformance suite | Built, `driver/conformance`, and importable so a third party can demonstrate a driver without us reviewing it. It returns findings rather than only failing a test, so it can be run against a real backend outside `go test`, repeatedly, and it removes what it created wherever the backend allows |
+| Ceph and S3 drivers | **Not built.** Both need a real backend to develop against, which is [RFC-0018](0018-benchmark-and-falsification-suite.md)'s open question about what the suite runs against |
+| Anything calling a driver | **Not built.** The fast tier is the caller, and it is [RFC-0007](0007-fast-tier-data-path.md) |
+
+`driver/filedriver` serves objects from a directory. It exists so the contract has something real to
+be exercised against and is the simplest case of register-in-place: files already there are readable
+objects without anything rewriting them. It declares three capabilities of ten and refuses snapshot
+and clone, because a filesystem cannot do either without copying and a clone that copies is not one.
+
+The suite was tested against a driver that is wrong on purpose as well as one that is right, since a
+suite only ever run against a correct driver demonstrates nothing about what it would catch.
 
 ## Assumptions
 
