@@ -30,7 +30,7 @@ the first.
 | Snapshots | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
 | Instant writable clones, copy on write | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
 | Thin provisioning | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
-| Compression | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
+| Compression, delegated to the backend for data registered in place | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md), [0020](docs/rfcs/0020-no-copy-policy.md) |
 | Replication and disaster recovery | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 | Encryption at rest and in flight | Planned | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
 | Tiering between hot and cold media | Planned | [0010](docs/rfcs/0010-autonomy-engine.md) |
@@ -38,7 +38,7 @@ the first.
 | Register data in place, no copy on ingest | Specified | [0020](docs/rfcs/0020-no-copy-policy.md) |
 | Extent sharing between dataset versions | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
 | Minimum-copy IO path, io_uring and RDMA where available | Planned | [0020](docs/rfcs/0020-no-copy-policy.md) |
-| Deduplication across unrelated data | Not planned for v1 | — |
+| Deduplication across unrelated data | Not planned for v1 | [0020](docs/rfcs/0020-no-copy-policy.md) |
 | Immutability and retention locks | Not planned for v1 | — |
 
 Several of these are delegated rather than implemented. Where a backend already does snapshots or

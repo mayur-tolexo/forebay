@@ -42,6 +42,31 @@ depends on hardware. io_uring, direct IO and RDMA each remove copies where they 
 none of them is available everywhere. Forebay detects capability and degrades, rather than requiring
 a fabric most clusters do not have.
 
+### Compression rewrites, so it is not ours to apply on ingest
+
+Compression is a copy under another name: it reads bytes and writes different ones. That collides
+directly with registering data in place, and the collision is better resolved here than discovered
+during implementation.
+
+| Position | Cost |
+| --- | --- |
+| Compress everything on ingest | Rewrites every byte a user already has, so adoption becomes a migration project, which is the thing operators refuse |
+| Never compress | Gives up a large capacity and bandwidth win. On real code and data pages a measurement of zstd at level 3 returned roughly three to one |
+| **Delegate below, compress only what we write** | Two mechanisms instead of one, and a capability the driver contract has to express |
+
+The third is the position this document takes.
+
+Data registered in place stays exactly as the backend holds it, and whatever compression that backend
+already applies keeps applying, because nothing has been rewritten. Data Forebay writes itself may be
+compressed by Forebay: fast-tier fills and checkpoint staging are bytes we produce, and they are
+regenerable, so compressing them costs nothing that a re-fetch cannot restore.
+
+Two consequences follow. The driver contract has to let a backend declare whether it compresses and
+whether Forebay can ask it to, which is [RFC-0006](0006-durable-backend-driver-contract.md). And
+compressing the fast tier spends CPU on a GPU node, where CPU is not spare: it competes with the
+dataloader feeding the accelerator this project exists to keep busy. Whether that trade pays is a
+measurement, not a preference.
+
 ## What a copy is still allowed for
 
 A policy with no exceptions is a slogan. Copies remain legitimate in exactly three cases.
@@ -95,3 +120,6 @@ if every dataset owned its bytes.
   design decision and belongs in [0018](0018-benchmark-and-falsification-suite.md).
 - Whether extent sharing between tenants is ever acceptable, given that it leaks the fact of
   identical data. The likely answer is no, and it costs real capacity.
+- Whether compressing the fast tier pays for the CPU it takes from the dataloader, which is a
+  measurement owned by [RFC-0018](0018-benchmark-and-falsification-suite.md) rather than a preference
+  to be settled here.

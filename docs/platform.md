@@ -24,7 +24,7 @@ anything that matters, however clever the rest of it is.
 | --- | --- | --- |
 | Snapshots and instant clones | Yes, mature | Planned · [0012](rfcs/0012-dataset-object-model.md) |
 | Replication and disaster recovery | Yes, mature | Planned · [0006](rfcs/0006-durable-backend-driver-contract.md) |
-| Thin provisioning and compression | Yes, mature | Planned · [0006](rfcs/0006-durable-backend-driver-contract.md) |
+| Thin provisioning and compression | Yes, mature | Planned · [0006](rfcs/0006-durable-backend-driver-contract.md). Compression is delegated to the backend rather than applied on ingest, see [0020](rfcs/0020-no-copy-policy.md) |
 | Encryption at rest and in flight | Yes, mature | Planned · [0016](rfcs/0016-multi-tenancy-qos-and-security.md) |
 | QoS, quotas, multi-tenancy, RBAC | Yes, mature | Planned · [0016](rfcs/0016-multi-tenancy-qos-and-security.md) |
 | Audit and capacity reporting | Yes, mature | Planned · [0017](rfcs/0017-observability.md) |
