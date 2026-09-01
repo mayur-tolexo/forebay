@@ -15,6 +15,25 @@ and fixes the vocabulary the rest of the RFCs use.
 It is an overview. Every component named here gets its own RFC, and where this document and a later
 one disagree, the later one is right.
 
+## What of this is built
+
+The architecture is mostly unbuilt, and the parts that exist are the ones nearest the node. Named
+here because this document is the overview, so a reader arrives at it first and would otherwise take
+the whole picture as description.
+
+| Part of the architecture | State |
+| --- | --- |
+| Three pools and the arithmetic between them | Built, `internal/pool` |
+| The node agent's authority over its own capacity | Built, a grant it cannot honour is refused |
+| Lease classes, the reclaim ladder and the journal | Built, `internal/lease` |
+| The agent's startup: lock, replay, reconcile, then accept | Built, `internal/agent` |
+| The fast tier, and anything that serves data | **Not built.** Owned by [RFC-0007](0007-fast-tier-data-path.md) |
+| The access layer | **Not built.** Owned by [RFC-0008](0008-access-layer-pnfs.md) |
+| Backend drivers and capability negotiation | **Not built.** Owned by [RFC-0006](0006-durable-backend-driver-contract.md) |
+| Both autonomy loops | **Not built.** Owned by [RFC-0010](0010-autonomy-engine.md) |
+| Kubernetes integration, and any control plane at all | **Not built.** Owned by [RFC-0014](0014-kubernetes-integration.md) |
+| The copy doctrine and single-copy multi-protocol access | **Not built.** Owned by [RFC-0020](0020-no-copy-policy.md) and [RFC-0021](0021-single-copy-multi-protocol.md) |
+
 ## Assumptions
 
 | Assumption | Basis | Risk if wrong |

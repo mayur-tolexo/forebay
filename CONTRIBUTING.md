@@ -56,7 +56,8 @@ Forebay is written in Go.
   `make check` enforces. A change that cannot be tested should explain why in the pull request.
 - `make check` passes before you ask for review. It runs gofmt, vet, the race-enabled test
   suite and the coverage gate, and CI runs exactly the same target so there are not two sets of
-  rules to keep in step.
+  rules to keep in step. It also enforces the documentation invariants in `internal/docscheck`,
+  since a truncated table or a link to a file that moved is easier to catch than to notice.
 - No speculative code. Constants, helpers and struct fields that nothing references yet do not get
   merged, however likely they look to be needed later.
 
