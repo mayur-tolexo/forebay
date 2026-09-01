@@ -105,9 +105,72 @@ func TestEveryRelativeLinkResolves(t *testing.T) {
 	}
 }
 
+// rfc is one RFC's header, parsed once and shared by every check that needs
+// it, so there is a single answer to "what does this document say it is".
+type rfc struct {
+	number string
+	file   string
+	status string
+	deps   []string
+	body   string
+}
+
+// loadRFCs reads every numbered RFC and parses its header.
+//
+// A document whose header does not parse is a failure rather than a skip. The
+// distinction is the whole point: an extra space in a table row renders
+// identically in Markdown, and when parsing was lenient it silently dropped a
+// document from every check here while both of them still passed. A check that
+// quietly stops checking is worse than no check, because it reports success.
+func loadRFCs(t *testing.T) []rfc {
+	t.Helper()
+	dir := filepath.Join(repoRoot(t), "docs", "rfcs")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	numbered := regexp.MustCompile(`^(\d{4})-.*\.md$`)
+	var out []rfc
+	for _, e := range entries {
+		m := numbered.FindStringSubmatch(e.Name())
+		if m == nil {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatalf("reading %s: %v", e.Name(), err)
+		}
+		r := rfc{number: m[1], file: e.Name(), body: string(body)}
+		r.status = headerField(r.body, "Status")
+		if r.status == "" {
+			t.Errorf("%s: no Status could be read from the header, so every check here would skip it", e.Name())
+			continue
+		}
+		for _, d := range strings.Split(headerField(r.body, "Depends on"), ",") {
+			if d = strings.TrimSpace(d); d != "" && d != "—" {
+				r.deps = append(r.deps, d)
+			}
+		}
+		out = append(out, r)
+	}
+	if len(out) == 0 {
+		t.Fatal("found no numbered RFCs, so nothing here proves anything")
+	}
+	return out
+}
+
+// headerField reads a value out of an RFC's header table, such as Status or
+// Depends on, and returns empty when the row is absent or malformed.
+func headerField(src, name string) string {
+	m := regexp.MustCompile(`\|\s*\*\*` + regexp.QuoteMeta(name) + `\*\*\s*\|([^|]*)\|`).FindStringSubmatch(src)
+	if m == nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.ReplaceAll(m[1], "*", ""))
+}
+
 var (
-	acceptedMarker = "| **Status** | Accepted |"
-	bulletPattern  = regexp.MustCompile(`(?ms)^- (.+?)(?:\n- |\n\n|\z)`)
+	bulletPattern = regexp.MustCompile(`(?ms)^- (.+?)(?:\n- |\n\n|\z)`)
 	// Deliberately narrow. Every alternative here can only be an ownership
 	// claim, never ordinary prose. An earlier version accepted the bare words
 	// "this document", which matched a question that explicitly said nobody
@@ -118,30 +181,17 @@ var (
 func TestAcceptedRFCsOwnEveryOpenQuestion(t *testing.T) {
 	// RFC-0000 requires an open question in an accepted RFC to name an owner,
 	// or to say why it has none.
-	dir := filepath.Join(repoRoot(t), "docs", "rfcs")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading %s: %v", dir, err)
-	}
 	checked := 0
-	for _, e := range entries {
-		if !regexp.MustCompile(`^\d{4}-`).MatchString(e.Name()) {
-			continue
-		}
-		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			t.Fatalf("reading %s: %v", e.Name(), err)
-		}
-		src := string(body)
-		if !strings.Contains(src, acceptedMarker) {
+	for _, r := range loadRFCs(t) {
+		if r.status != "Accepted" {
 			continue
 		}
 		checked++
-		parts := strings.Split(src, "## Open questions")
+		parts := strings.Split(r.body, "## Open questions")
 		for _, m := range bulletPattern.FindAllStringSubmatch(parts[len(parts)-1], -1) {
 			one := strings.Join(strings.Fields(m[1]), " ")
 			if !ownerPattern.MatchString(one) {
-				t.Errorf("%s: open question names no owner: %.70s", e.Name(), one)
+				t.Errorf("%s: open question names no owner: %.70s", r.file, one)
 			}
 		}
 	}
@@ -186,7 +236,7 @@ func TestTheAdvertisedRFCCountIsTheRealOne(t *testing.T) {
 	}
 }
 
-var indexRowPattern = regexp.MustCompile(`(?m)^\| \[(\d{4})\]`)
+var indexRowPattern = regexp.MustCompile(`(?m)^\| \[(\d{4})\][^|]*\|([^|]*)\|([^|]*)\|`)
 
 func TestEveryRFCAppearsInTheIndexAndEveryIndexRowExists(t *testing.T) {
 	// The index is the page people navigate from, and a number in the README
@@ -215,16 +265,16 @@ func TestEveryRFCAppearsInTheIndexAndEveryIndexRowExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading the index: %v", err)
 	}
-	rows := map[string]bool{}
+	rows := map[string]string{}
 	for _, m := range indexRowPattern.FindAllStringSubmatch(string(body), -1) {
-		rows[m[1]] = true
+		rows[m[1]] = strings.TrimSpace(strings.ReplaceAll(m[3], "*", ""))
 	}
 	if len(rows) == 0 {
 		t.Fatal("the index has no RFC rows, so this check has stopped checking anything")
 	}
 
 	for n := range files {
-		if !rows[n] {
+		if _, listed := rows[n]; !listed {
 			t.Errorf("RFC %s exists but the index does not list it", n)
 		}
 	}
@@ -233,4 +283,50 @@ func TestEveryRFCAppearsInTheIndexAndEveryIndexRowExists(t *testing.T) {
 			t.Errorf("the index lists RFC %s, but no such file exists", n)
 		}
 	}
+
+	// Presence is not agreement. Accepting an RFC means editing the document
+	// and the index, which is two places to change and one to forget, and the
+	// status is the field that actually moves.
+	for _, r := range loadRFCs(t) {
+		idx, listed := rows[r.number]
+		if !listed {
+			continue // Already reported above.
+		}
+		if idx != r.status {
+			t.Errorf("RFC %s says it is %q but the index says %q", r.number, r.status, idx)
+		}
+	}
+}
+
+func TestAnAcceptedRFCDependsOnlyOnAcceptedRFCs(t *testing.T) {
+	// Accepting a document whose foundation is still a draft, or unwritten,
+	// makes the status mean less than it says: the reasoning underneath it can
+	// still change. The corpus has always held this, and encoding it turns a
+	// convention nobody wrote down into one that cannot be broken quietly.
+	rfcs := loadRFCs(t)
+	status := map[string]string{}
+	for _, r := range rfcs {
+		status[r.number] = r.status
+	}
+
+	accepted := 0
+	for _, r := range rfcs {
+		if r.status != "Accepted" {
+			continue
+		}
+		accepted++
+		for _, d := range r.deps {
+			ds, known := status[d]
+			switch {
+			case !known:
+				t.Errorf("RFC %s is Accepted and depends on %s, which does not exist", r.number, d)
+			case ds != "Accepted":
+				t.Errorf("RFC %s is Accepted but depends on %s, which is %s", r.number, d, ds)
+			}
+		}
+	}
+	if accepted == 0 {
+		t.Fatal("found no accepted RFCs, so this test proves nothing")
+	}
+	t.Logf("checked %d accepted RFCs", accepted)
 }
