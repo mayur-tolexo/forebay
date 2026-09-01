@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 1 |
 | **Depends on** | 0002 |
 
@@ -51,6 +51,16 @@ The ratio is not the point, though, and stating it as five of six would have bee
 that is strong without help. The point is **which** facts were unavailable: NUMA affinity and link
 speed are precisely what placement by proximity depends on, and both came back as `-1`. A design that
 treats those as normally available has the common case backwards.
+
+## What of this is built
+
+**None of it.** No discovery code exists, and the node agent currently takes its capacity numbers
+from flags rather than from the machine. Recorded because the accepted RFCs with implementations say
+which parts are code, and one with none should say that just as plainly rather than leave a reader to
+assume.
+
+What this document does settle is the shape discovery has to produce: provenance on every fact, an
+unknown that is not a value, and the rule that an unknown never satisfies a requirement.
 
 ## Assumptions
 
@@ -150,11 +160,30 @@ never read it.
 RFC-0026 depends on this document knowing what the fabric can do, and the rule is the same as
 everywhere else: capabilities are detected and absence is a supported state, not an error.
 
-| Capability | Detected by | Absent means |
-| --- | --- | --- |
-| RDMA, RoCE, InfiniBand | Presence of the kernel's `infiniband` class and a usable device | The transport is TCP, which is correct and slower |
-| GPUDirect Storage | The vendor stack being present and functional, not merely installed | Data goes through host memory, as it does today |
-| NVMe over fabrics | The kernel subsystem being present | Block access uses the ordinary path |
+**A capability has the same three states as any other fact.** Present, absent, and unknown, where
+unknown means the probe could not run rather than that it ran and found nothing.
+
+Capabilities differ from topology in having a real absent. A node with no rack label is not
+definitively rack-less, it is unknown, which is why topology has only present or unknown. A kernel
+with no `infiniband` class genuinely has no RDMA, so absent is a fact here rather than a gap.
+
+Both negatives lead to the same behaviour: do not use the capability, because using one that might
+not be there is worse than not using one that is. What they must not share is the report. A fleet
+where detection failed is not a fleet without RDMA, and an operator asking why everything runs over
+TCP needs to tell those apart before concluding they need to buy hardware.
+
+| Capability | Present when | Unknown when | Both negatives mean |
+| --- | --- | --- | --- |
+| RDMA, RoCE, InfiniBand | The kernel's `infiniband` class exists and holds a usable device | `/sys` is unreadable, so the class cannot be checked at all | The transport is TCP, which is correct and slower |
+| GPUDirect Storage | Not settled, see below | Not settled either, since the conditions a check fails under cannot be stated before the check is | Data goes through host memory, as it does today |
+| NVMe over fabrics | The kernel subsystem is present | `/sys` is unreadable | Block access uses the ordinary path |
+
+**GPUDirect detection is not settled and is listed as open rather than described in a phrase.** Every
+other row names something checkable. Saying the vendor stack must be present and functional rather
+than merely installed states a requirement without a mechanism: establishing that it works plausibly
+means moving data, which is not something to do on every node at startup against a stack that may
+need an accelerator allocated first. Whoever implements this from prose alone will either invent a
+criterion or report GPUDirect absent everywhere, and both are worse than admitting it is unresolved.
 
 A cluster missing all three is a supported cluster. The alternative, requiring a fabric most
 clusters do not have, would exclude nearly everyone in exchange for a benchmark number.
@@ -240,6 +269,10 @@ than to tenants. RFC-0016 owns the boundary.
   any one vendor's stack. The rule is settled here, that a class match alone is not enough, and the
   mechanism is not. No other RFC owns this: it is discovery, which is this document's subject, and it
   is answered when discovery is implemented.
+- **How GPUDirect Storage is detected**, given that installed is not the same as working and
+  establishing the difference plausibly means moving data, which is not something to do on every node
+  at startup. No other RFC owns this: detection is this document's subject, and RFC-0026 depends on
+  the answer without being able to supply it.
 - **Whether the model should be re-read periodically or only on events**, and how a node reports that
   its own facts got poorer. Owned by [RFC-0017](0017-observability.md).
 - **How placement expresses a partially known topology** rather than falling back to node-local for
