@@ -40,7 +40,8 @@ behaviour nobody wrote.
 | Device and topology discovery | Built, `internal/topology`, and the agent discovers its own capacity |
 | The pressure watch, and the headroom target it maintains | **Not built** |
 | Timing reclamation against the deadline | Built for the part that exists. A reclaim is timed and one that overruns is an error, but the span covers choosing leases and unlinking extents, not invalidating readers, which is where RFC-0005 expects the time to go |
-| Readiness computed from latency, and the liveness that breaks a wedged lock | **Not built** |
+| The liveness that breaks a wedged lock | Built. The agent publishes a heartbeat and `--liveness` judges it from outside, since a wedged process cannot answer for itself. **The loop that would keep it fresh is not built**: the binary starts, reports and exits, so today the heartbeat goes stale the moment startup finishes |
+| Readiness computed from latency | **Not built.** It needs a serving path to have a latency |
 | Serving the fast tier | **Not built.** Owned by [RFC-0007](0007-fast-tier-data-path.md) |
 | Any interface to a control plane | **Not built.** Grants arrive as local calls |
 
@@ -59,6 +60,7 @@ from an unprivileged container. What it does and what it refuses both behave as 
 | Refuses to start with no reclaim deadline | Yes, since every elastic grant would otherwise be refused |
 | Refuses accounting that does not add up | Yes, `pools exceed device capacity` |
 | Admits one agent per node | Twenty started at once, nine refused by the lock and none proceeding beside another |
+| Kills a wedged holder so its replacement can take the lock | Yes, under a real kubelet probe. A stand-in agent held the lock, heartbeated for 20 s and then hung. The probe failed, the kubelet killed it about 10 s later, and the replacement logged that it took the lock. Restarts arrived on a 30 s cadence, which is the 20 s of health plus the detection window |
 
 The lock result needs its caveat. The binary starts, reports and exits, so it holds the lock only
 briefly and the twenty runs serialised rather than nine failing outright. What the run shows is that

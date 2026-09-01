@@ -17,6 +17,10 @@ func grantable(id string, size pool.Bytes) lease.Lease {
 	return lease.Lease{ID: id, Class: lease.Elastic, Size: size, Term: time.Hour}
 }
 
+// testAccounting is a node with capacity to lend, shared so tests that restart
+// an agent describe the same node both times.
+func testAccounting() pool.Accounting { return pool.Accounting{Capacity: 64 << 20} }
+
 // openAgent starts an agent over a temporary node with capacity to lend.
 func openAgent(t *testing.T) (*Agent, time.Time) {
 	t.Helper()
@@ -29,7 +33,7 @@ func openAgent(t *testing.T) (*Agent, time.Time) {
 	}
 	cfg.Lease.ReclaimWithin = 30 * time.Second
 	now := time.Now()
-	a, _, err := Open(cfg, pool.Accounting{Capacity: 64 << 20}, now)
+	a, _, err := Open(cfg, testAccounting(), now)
 	if err != nil {
 		t.Fatalf("opening agent: %v", err)
 	}
@@ -142,7 +146,9 @@ func TestReleaseFreesTheDiskBeforeTheAccounting(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		if e.Name() != lockName {
+		// The prefix rather than a list of names, so a file the agent keeps
+		// for itself later does not break an assertion about extents.
+		if !strings.HasPrefix(e.Name(), agentFilePrefix) {
 			t.Errorf("%s survived the release", e.Name())
 		}
 	}
@@ -179,7 +185,7 @@ func TestAnInterruptedDiscardIsFinishedByTheNextStartup(t *testing.T) {
 	}
 	a.Close()
 
-	restarted, rec, err := Open(cfg, pool.Accounting{Capacity: 64 << 20}, now)
+	restarted, rec, err := Open(cfg, testAccounting(), now)
 	if err != nil {
 		t.Fatalf("restarting: %v", err)
 	}
