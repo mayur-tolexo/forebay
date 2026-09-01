@@ -37,7 +37,7 @@ behaviour nobody wrote.
 | Refusing a lease identifier that could name a path outside the borrowed pool | Built |
 | Expiring leases whose term lapsed while the node was down | Built |
 | Surviving an unreadable journal by starting empty | Built |
-| Device and topology discovery | **Not built.** Owned by [RFC-0003](0003-topology-model.md) |
+| Device and topology discovery | Built, `internal/topology`, and the agent discovers its own capacity |
 | The pressure watch, and the headroom target it maintains | **Not built** |
 | Timing reclamation against the deadline | **Not built.** Nothing measures elapsed reclaim yet |
 | Readiness computed from latency, and the liveness that breaks a wedged lock | **Not built** |

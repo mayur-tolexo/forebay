@@ -78,9 +78,14 @@ type Reconciliation struct {
 	JournalRecovered error
 }
 
-// validate rejects configurations that would let a blunt recovery touch
+// Validate rejects configurations that would let a blunt recovery touch
 // durable data. This is checked before anything is created or deleted.
-func (c Config) validate() error {
+//
+// It is exported so a caller can check the layout before doing any work of its
+// own. Measuring the filesystem under a pool that was never configured, or
+// under a pair the agent is about to reject, produces an answer about the
+// wrong directory and reports it in place of the real problem.
+func (c Config) Validate() error {
 	if c.BorrowedDir == "" || c.DonatedDir == "" || c.JournalPath == "" {
 		return ErrNoPoolDir
 	}
@@ -126,7 +131,7 @@ func hasDotDotPrefix(rel string) bool {
 func Open(cfg Config, acct pool.Accounting, now time.Time) (*Agent, Reconciliation, error) {
 	var rec Reconciliation
 
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, rec, err
 	}
 	for _, dir := range []string{cfg.BorrowedDir, cfg.DonatedDir, filepath.Dir(cfg.JournalPath)} {

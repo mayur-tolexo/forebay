@@ -1,0 +1,6 @@
+21 1 259:2 / / rw,relatime shared:1 - ext4 /dev/nvme0n1p2 rw
+26 21 0:24 / /sys rw,nosuid,nodev,noexec shared:7 - sysfs sysfs rw
+31 21 259:1 / /boot rw,relatime shared:12 - vfat /dev/nvme0n1p1 rw
+44 21 252:0 / /mnt/remote rw,relatime shared:20 - ceph 10.0.0.1:/vol rw
+52 21 253:0 / /mnt/rbd rw,relatime shared:24 - ext4 /dev/rbd0 rw
+60 21 0:52 / /overlay rw,relatime - overlay overlay rw

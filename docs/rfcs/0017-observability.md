@@ -28,6 +28,11 @@ This RFC also gates RFC-0010, because autonomy without measurement is guessing w
 - Whether the topology model is re-read periodically or only on events, and how a node reports that
   its own discovered facts got poorer after a kernel or driver change, since placement would
   otherwise degrade silently
+- How a node notices that the space its filesystem holds for everything which is not Forebay has
+  grown, since that reserve is measured once at startup and the operating system, container images
+  and neighbouring workloads all keep writing. A reserve that is stale in the wrong direction is a
+  node lending capacity that something else has already taken, which this document owns because
+  RFC-0003 discovers the number once and nothing watches it afterwards
 - How readiness is computed from latency rather than from a liveness ping, since a slow node agent is
   worse than a stopped one: the miss path never fires and clients keep waiting on it
 - What an operator needs on one screen to decide whether Forebay is helping

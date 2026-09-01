@@ -80,13 +80,80 @@ treats those as normally available has the common case backwards.
 
 ## What of this is built
 
-**None of it.** No discovery code exists, and the node agent currently takes its capacity numbers
-from flags rather than from the machine. Recorded because the accepted RFCs with implementations say
-which parts are code, and one with none should say that just as plainly rather than leave a reader to
-assume.
+`internal/topology` implements the model and the discovery, and the agent uses it: capacity is read
+from the machine unless an operator overrides it. It is read from the filesystem the pools are on,
+found through the mount table, rather than summed across every local device: a node with four drives
+and pools on one can lend what that one holds.
 
-What this document does settle is the shape discovery has to produce: provenance on every fact, an
-unknown that is not a value, and the rule that an unknown never satisfies a requirement.
+| Part of the design | State |
+| --- | --- |
+| Provenance on every fact, with unknown unreadable as a value | Built, `internal/topology` |
+| An unknown never satisfying a requirement, in both rack questions | Built |
+| Accelerator identification by vendor rather than class | Built |
+| NUMA, disks, and RDMA presence discovered from sysfs | Built |
+| Rack accepted as a declaration, and only as one | Built |
+| Distinguishing local devices from network ones | Built |
+| Region, zone and row | **Not built.** Nothing places by them yet |
+| Reading the model periodically, or noticing it got poorer | **Not built.** Owned by [RFC-0017](0017-observability.md) |
+| Attributing capacity to the filesystem holding the pools | Built. The mount table names the backing device and `statfs` sizes it |
+| Reserving that capacity against everything else on the filesystem | Built. What the filesystem already holds for others becomes the compute reserve |
+| Noticing that reserve change while the agent runs | **Not built.** It is measured once at startup. Owned by [RFC-0017](0017-observability.md) |
+
+The device under a pool is usually a partition, not a whole namespace, and the first version of the
+locality rule matched only whole namespaces. It read a real local NVMe partition as unknown and
+refused to lend it, which the model got right in principle and wrong on the machine.
+
+Knowing which filesystem holds the pools is not the same as knowing what may be lent from it. The
+filesystem's size is not the agent's to offer: on the GPU node the disk is 1.83 TiB and 559 GiB of
+it was already held by the operating system, container images and other workloads. An agent that
+lends the total offers half a terabyte that does not exist, and filling it fills the node's root
+filesystem, which takes the kubelet and every pod down with it. So what the filesystem can deliver is what
+is free on it plus what Forebay already holds there, and everything above that becomes the compute
+reserve. Forebay's own bytes are added back because that space is ours to hand out again: free
+space alone would shrink the ceiling by everything currently lent, and a node would forget a little
+more of its own capacity on every restart.
+
+That ceiling holds however capacity arrived. An operator who declares one with `--capacity-bytes`
+is checked against the same figure, because the refusal that sends them to that flag is the one
+about unprovable locality, and a guard that switched itself off when an operator took our own
+advice would be worse than no guard.
+
+Deployed across the dev fleet as a DaemonSet, only the node with local NVMe started. Every other
+node found no capacity it could prove was local and refused, which is the designed outcome rather
+than a failure: a machine whose only storage might be an iSCSI LUN or a Ceph volume has nothing this
+project is willing to lend.
+
+Running it on real hardware corrected the design four times, which fixtures alone would not have. The node
+carried an attached Ceph RBD device alongside its NVMe, and counting it offered ninety gigabytes of
+somebody else's networked storage as compute-local capacity, which is the one thing this project is
+not. Locality is now a fact like any other: known local, known remote, or unknown, and only known
+local counts. A SCSI disk stays unknown, because an iSCSI LUN presents as an ordinary one and sysfs
+does not distinguish them.
+
+The same run listed sixteen unused network block devices of zero size, burying the disk that mattered
+under noise. A device of known zero size holds nothing lendable and is skipped, while one whose size
+could not be read is still reported, since unknown is not zero.
+
+The third correction came from reviewing the classifier rather than running it, and is the sharpest.
+Locality was decided from the device name, which is wrong twice over. An NVMe over fabrics namespace
+is called `nvme0n1` exactly as a local drive is, and this project plans to use NVMe over fabrics, so
+the name would have offered a network as local capacity in precisely the deployment it targets. The
+kernel answers in `/sys/class/nvme/nvmeN/transport`, which reads `pcie` locally and `tcp` or `rdma`
+over a fabric. A virtio disk has the same problem in reverse: local from inside the guest and
+routinely backed by network storage the guest cannot see, so it is unknown rather than local.
+
+A fourth correction is the one that would have cost the most. Capacity summed every local device
+without asking whether any of them were built from the others, so a node with its NVMe drives in a
+RAID would have reported the array and its members and lent twice the storage that exists. That is a
+common arrangement on GPU nodes. A device assembled from other devices is skipped in favour of the
+devices underneath it, which are what physically hold bytes, and sysfs names them in the slaves
+directory.
+
+The accelerator rule had drifted the same way. This document requires a vendor **and** device
+identifier naming real compute hardware, and the implementation matched on vendor alone, which would
+have identified an Intel integrated display adapter as an accelerator, since `0x8086` covers both
+that and an Intel datacentre card. A bound compute driver is the second half of the signal, and the
+fixtures now carry both an integrated adapter and a datacentre card that differ only in it.
 
 ## Assumptions
 
