@@ -26,7 +26,7 @@ each backend worth using.
 - How the same logical operation is expressed against backends with very different primitives
 - What a conformance suite for a driver looks like, so a third-party driver can prove it works
 - How the contract is versioned as capabilities are added, without breaking existing drivers
-- Whether the donated pool is a driver of its own or simply devices contributed to an existing Ceph cluster
+- Whether the donated pool is a driver of its own or simply devices contributed to a durable store that is already running
 
 ## Constraints inherited from earlier RFCs
 

@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 0 |
 | **Depends on** | 0001 |
 
@@ -14,6 +14,16 @@ and fixes the vocabulary the rest of the RFCs use.
 
 It is an overview. Every component named here gets its own RFC, and where this document and a later
 one disagree, the later one is right.
+
+## Assumptions
+
+| Assumption | Basis | Risk if wrong |
+| --- | --- | --- |
+| Owning exactly one layer buys enough leverage to be worth the maintenance | Reasoned | Either we own too little to optimise anything, or too much to be adopted beside existing storage |
+| Protocols and backends can plug in without their differences leaking upward | Unverified | The seams become lowest common denominators and the control plane can only express what every backend shares |
+| pNFS can serve as the access layer without shipping a client | Partly verified. The flexfiles driver ships in the target node OS and fencing is server-side, see RFC-0008. Behaviour under load is unmeasured | The access layer is redesigned, possibly around a client this project has refused to write |
+| A tier holding only regenerable data is large enough to matter | Reasoned, from cache, prefetch, scratch and staging patterns | The borrowed pool is a rounding error and only donated capacity is useful |
+| Splitting autonomy by the cost of being wrong makes it safe to leave on | Reasoned | Operators disable the loops, and an autonomous control plane that nobody trusts is a dashboard |
 
 ## Design
 
@@ -88,6 +98,20 @@ the donated slice and from the backends, which is why Forebay's array-replacemen
 donated capacity while its elasticity story rests on borrowed capacity. Conflating the two is the
 mistake this split exists to prevent. RFC-0005 specifies lease classes and the reclamation contract.
 
+### Who decides how much a node lends
+
+The control plane proposes a grant. **The node agent decides whether it is real**, accepting only if
+its own arithmetic says the capacity exists.
+
+Putting the authority at the node rather than in the control plane is what makes several otherwise
+awkward problems tractable at once. Two control planes cannot overcommit a node, because neither of
+them is doing the arithmetic. A stale control-plane view produces a rejected grant rather than an
+overallocation. And reclamation never has to reach the control plane, so a partition cannot block it
+at the moment it matters most.
+
+The cost is that the control plane's view of fleet capacity is permanently a slightly stale cache,
+and capacity reporting has to say so rather than presenting a number as exact. RFC-0005 specifies it.
+
 ### The read path
 
 ```mermaid
@@ -138,12 +162,28 @@ and is corrected on the next pass. That asymmetry is what makes autonomy shippab
 alarming: an operator can leave the fast loop on because it cannot do lasting damage, and the slow
 loop is rare enough to be supervised. RFC-0010 specifies both.
 
+### What the architecture does with data
+
+Two rules constrain every component above, and neither is visible from the layer diagram.
+
+**A byte is written once.** Clones, versions and protocol views are references rather than copies,
+data already in a backend is registered in place rather than rewritten, and the fast tier is the only
+duplicate the design permits, because it is regenerable and can be abandoned mid-fill. See
+[RFC-0020](0020-no-copy-policy.md).
+
+**One copy is served several ways.** A published dataset version is immutable, which is what lets
+file and object readers share extents with no consistency problem between them. Block shares the
+control plane, the namespace and the snapshot machinery but not the representation, because a block
+volume is an opaque range with a client's filesystem inside it and has no objects to serve. See
+[RFC-0021](0021-single-copy-multi-protocol.md), which supersedes the unified-namespace non-goal in
+RFC-0001.
+
 ### Components
 
 | Component | Responsibility | RFC |
 | --- | --- | --- |
 | Control plane | API, tenancy, intent, topology, leases, dataset metadata, autonomy | 0002, 0009, 0010 |
-| Node agent | Device and topology discovery, pool management, lease enforcement, serving the fast tier | 0004 |
+| Node agent | Device and topology discovery, pool accounting and **the authority over it**, lease enforcement, serving the fast tier | 0004, 0005 |
 | Fast tier | Cache, prefetch, scratch, checkpoint staging, rack-local peer fetch | 0007 |
 | Access layer | Protocol termination, pNFS layouts | 0008 |
 | Backend drivers | Durable storage behind a capability-negotiated contract | 0006 |
@@ -163,14 +203,30 @@ loop is rare enough to be supervised. RFC-0010 specifies both.
 Detailed treatment is RFC-0015. The shape of the problem at this level:
 
 - **Node loss.** Borrowed contents are regenerable, so the loss is a cache miss. Donated contents are
-  the backend's problem, and Ceph already solves it.
+  the backend's problem, and durable stores have solved node loss for years.
 - **Control plane loss.** No effect on the read path, by design. New leases cannot be granted and
   existing ones must have defined behaviour on expiry, which is the interesting case rather than the
   outage itself.
-- **Split brain.** Two control planes granting conflicting leases is the dangerous failure. Leases
-  must be safe under partition, which constrains their design more than any performance requirement.
+- **Split brain.** Two control planes granting conflicting leases would be the dangerous failure, and
+  the design removes it rather than mitigating it: the node does the arithmetic, so neither control
+  plane can overcommit a device that neither of them can see.
 - **Slow node.** A degraded node serving the fast tier is worse than a dead one, because the miss
   path never triggers. Detection has to be latency based, not liveness based.
+
+## Performance implications
+
+Predicted except where noted, and the architecture makes two structural bets rather than tuning
+choices.
+
+Keeping the control plane out of the IO path is not a target that can be missed by a few per cent; it
+either is on the path or it is not, and with pNFS the protocol enforces it rather than the project
+having to. Reclaiming by deletion rather than migration is the same kind of bet, and the filesystem
+half of it is measured: unlink returns in 2.5 to 2.6 ms and does not degrade under concurrent write
+load, so reclaim latency is set by detecting the need and revoking readers, not by the disk.
+
+Everything else here is unproven. Whether the fast tier beats a fanned-out backend at all is
+RFC-0001's central risk, and whether a rack-local hop beats going straight to the backend is the same
+question asked one hop further out.
 
 ## Complexity
 
@@ -182,10 +238,32 @@ The lasting constraint this architecture imposes is the regenerable-only rule on
 Relaxing it later would mean introducing migration, which would change the reclamation contract, the
 failure model and the lease design at once. It is deliberately load bearing.
 
+## Security and tenancy
+
+Three properties of this architecture create most of its security surface, and all three are
+consequences of the shape rather than of any component.
+
+The node agent sits beside customer workloads and holds capacity that passes from one tenant to the
+next, so reclaimed capacity must carry nothing into its next holder. The agent fetches from the
+durable backend on a miss, so every node holds credentials that read it, which is a much larger loss
+than a cache if a node is compromised. And the control plane holds broad authority over the systems
+it manages, so an authorisation gap there has a wider blast radius than its code suggests.
+
+A denial of service against the compute workload counts as a security problem here rather than a
+performance one, because compute always winning is a promise the design makes. RFC-0016 owns all of
+it.
+
 ## Open questions
 
-- pNFS layout recall semantics under lease reclamation, which RFC-0008 must settle.
-- Whether rack-local peer fetch beats going straight to a fanned-out backend. This is the same
-  crossover question as RFC-0001 and may make the rack tier unnecessary.
-- Whether the donated pool should be a backend of its own or simply devices contributed to an
-  existing Ceph cluster. The second is far less work and probably correct.
+- End-to-end revocation latency under load. The load-bearing half of this is settled: flexfiles
+  fencing is server-side and does not depend on the client cooperating, so reclamation never waits
+  out an NFS lease period. What is unmeasured is how long revocation actually takes against a running
+  metadata server, which RFC-0008 owns and RFC-0018 has to measure.
+- Whether to couple the metadata server and the data servers loosely or tightly, which decides
+  whether revocation fences one client or every reader of an extent. RFC-0008 owns it.
+- Whether rack-local peer fetch beats going straight to a fanned-out backend, which may make the
+  rack tier unnecessary. This is RFC-0001's crossover question asked one hop further out, and it is
+  owned by [RFC-0018](0018-benchmark-and-falsification-suite.md) along with the original.
+- Whether the donated pool should be a backend of its own or simply devices contributed to a durable
+  store that is already running. The second is far less work and probably correct. Owned by
+  [RFC-0006](0006-durable-backend-driver-contract.md), which already carries the question.

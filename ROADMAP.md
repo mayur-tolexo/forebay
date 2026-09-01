@@ -140,8 +140,8 @@ assumptions carry an honest basis and its open questions are answered or deferre
 | Work | RFC | Status |
 | --- | --- | --- |
 | Thesis, scope and non-goals | [0001](docs/rfcs/0001-thesis-scope-and-non-goals.md) | **Accepted** |
+| Architecture overview | [0002](docs/rfcs/0002-architecture-overview.md) | **Accepted** |
 | RFC process | [0000](docs/rfcs/0000-rfc-process.md) | Draft |
-| Architecture overview | [0002](docs/rfcs/0002-architecture-overview.md) | Draft |
 | Node agent | [0004](docs/rfcs/0004-node-agent.md) | Draft |
 | Capacity pools and elastic leases | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) | Draft |
 | Topology, drivers, fast tier, access layer | 0003, 0006, 0007, 0008 | Not started |

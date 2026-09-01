@@ -176,10 +176,15 @@ new reads refuse it and in-flight reads are failed with a retryable signal that 
 converts into a backend fetch. Only once no reader holds it is it unlinked.
 
 **This is where the elastic deadline meets the access layer, and it is a hard constraint on
-RFC-0008.** With pNFS the reader holds a layout, and invalidating an extent means recalling that
-layout. If worst-case layout recall takes longer than `reclaimWithin`, the deadline cannot be
-honoured while pNFS is the access path, and either the deadline grows or the access design changes.
-That question is not settled here, and RFC-0008 cannot be accepted without answering it.
+RFC-0008.** With pNFS the reader holds a layout, and invalidating an extent means taking that layout
+away.
+
+The version of this risk the document was originally written around has been answered. Recall is the
+polite path and waiting for it is not the only option: flexfiles fencing lets the metadata server
+revoke a client's credentials directly, without the client cooperating, so reclamation never has to
+wait out an NFS lease period. What remains unmeasured is how long revocation actually takes against a
+running metadata server under load, and whether it fences one client or every reader of an extent.
+RFC-0008 owns both, and RFC-0018 has to measure the first.
 
 ### Leases expire, and expiry is fail-safe
 

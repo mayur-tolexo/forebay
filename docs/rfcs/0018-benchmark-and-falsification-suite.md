@@ -31,6 +31,8 @@ make the project look good would be worse than none.
   rarely needs to move then a simpler system is the right answer
 - What fraction of a real workload's storage traffic is regenerable, since that sets the ceiling on
   how much a tier holding only regenerable data can ever be worth
+- How long revoking a reader actually takes against a running metadata server under load, since the
+  elastic reclaim deadline cannot be honoured if revocation is slower than it
 - How results are published, including negative ones
 
 ## Constraints inherited from earlier RFCs

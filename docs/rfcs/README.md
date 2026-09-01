@@ -12,7 +12,7 @@ the value of writing them down.
 
 ## Status
 
-RFC-0001 is accepted. Everything else is open for argument.
+RFC-0001 and RFC-0002 are accepted. Everything else is open for argument.
 
 An RFC becomes accepted when its assumptions carry an honest basis, its open questions are answered
 or explicitly deferred to a named owner, and no claim in it is one we could not defend. Accepted does
@@ -26,7 +26,7 @@ edited away, which is the point of keeping these.
 | --- | --- | --- | --- | --- |
 | [0000](0000-rfc-process.md) | RFC process | Draft | 0 | — |
 | [0001](0001-thesis-scope-and-non-goals.md) | Thesis, scope and non-goals | **Accepted** | 0 | — |
-| [0002](0002-architecture-overview.md) | Architecture overview | Draft | 0 | 0001 |
+| [0002](0002-architecture-overview.md) | Architecture overview | **Accepted** | 0 | 0001 |
 | [0003](0003-topology-model.md) | Topology model | Not started | 1 | 0002 |
 | [0004](0004-node-agent.md) | Node agent | Draft | 1 | 0002, 0003 |
 | [0005](0005-capacity-pools-and-elastic-leases.md) | Capacity pools and elastic leases | Draft | 1 | 0002, 0004 |

@@ -28,6 +28,9 @@ rather than assume completeness.
 - How PCIe, NUMA and GPU to NIC to NVMe affinity are discovered, and on which platforms that discovery is unavailable
 - How the model represents unknown or low-confidence facts, so placement can degrade rather than guess
 - How topology changes over time are handled, including nodes moving and hardware being replaced
+- Which transport and fabric capabilities are detectable, including RDMA, RoCE, InfiniBand and
+  GPUDirect, and how a cluster lacking them is degraded to rather than excluded. RFC-0026 depends on
+  this detection existing
 - Who is authoritative when discovery and operator-supplied labels disagree
 
 ## Constraints inherited from earlier RFCs
