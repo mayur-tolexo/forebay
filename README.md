@@ -201,7 +201,7 @@ Full detail, with per-capability status, in [ROADMAP.md](ROADMAP.md).
 | **Disagree with the thesis** | [RFC-0001](docs/rfcs/0001-thesis-scope-and-non-goals.md) → open an [issue](../../issues/new/choose) |
 | **Understand the design** | [Architecture](docs/architecture.md) · [Platform surface](docs/platform.md) |
 | **Claim an RFC** | [0003 topology](docs/rfcs/0003-topology-model.md) · [0006 driver contract](docs/rfcs/0006-durable-backend-driver-contract.md) · [0022 data-aware scheduling](docs/rfcs/0022-data-aware-scheduling.md) · [0024 efficiency accounting](docs/rfcs/0024-efficiency-accounting.md) |
-| **Everything else** | [All 27 RFCs](docs/rfcs/README.md) · [Contributing](CONTRIBUTING.md) · [Governance](GOVERNANCE.md) · [Security](SECURITY.md) |
+| **Everything else** | [All 28 RFCs](docs/rfcs/README.md) · [Contributing](CONTRIBUTING.md) · [Governance](GOVERNANCE.md) · [Security](SECURITY.md) |
 
 If you have run large GPU clusters, operated Ceph at scale, or watched a checkpoint storm take out a
 filesystem, your objection is worth more than a patch.

@@ -220,6 +220,14 @@ These are the reasons people trust storage, and none of them are interesting unt
 Their absence is why Forebay will say pre-production for a long time, and saying so is more useful
 than a version number implying otherwise.
 
+KV cache spill and the inference path ([0027](docs/rfcs/0027-kv-cache-spill.md)) sits here by
+ordering rather than by theme, and it is conditional rather than planned. Everything else in this
+roadmap is shaped by training. Serving is the other half of what a GPU fleet does, and the fast tier
+already describes KV blocks almost without change, because they are immutable, addressed by content
+and regenerable. What is not established is that reading one back from NVMe beats recomputing it,
+which is a far tighter contest than any other Forebay enters, and RFC-0018 owns the measurement. If
+it comes back badly the RFC is rejected rather than deferred.
+
 ## Deliberately excluded
 
 | Not doing | Why |
