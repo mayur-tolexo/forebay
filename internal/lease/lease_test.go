@@ -472,3 +472,41 @@ func TestElasticGrantIsRefusedWithoutADeadline(t *testing.T) {
 		t.Errorf("guaranteed Accept = %v, want nil", err)
 	}
 }
+
+func TestOnlyTakingALiveElasticLeaseEngagesTheDeadline(t *testing.T) {
+	// Bounded is what tells the agent whether a deadline applies at all, so
+	// the classes that promise nothing must not set it. Opportunistic capacity
+	// is taken without warning, and a lease whose term ran out was never asked
+	// for: neither engaged a promise, and timing them against one would report
+	// a deadline as kept that was never made.
+	for _, c := range []struct {
+		name  string
+		class Class
+		want  bool
+	}{
+		{"elastic promises a deadline", Elastic, true},
+		{"opportunistic promises nothing", Opportunistic, false},
+	} {
+		m := New(pool.Accounting{Capacity: 8 * pool.TiB}, DefaultConfig())
+		l := Lease{ID: "a", Class: c.class, Size: 1 * pool.TiB, Term: time.Hour}
+		if err := m.Accept(l, t0); err != nil {
+			t.Fatalf("%s: accepting: %v", c.name, err)
+		}
+		if got := m.Reclaim(1*pool.TiB, t0).Bounded; got != c.want {
+			t.Errorf("%s: Bounded = %v, want %v", c.name, got, c.want)
+		}
+	}
+
+	// An expired elastic lease is released by the same call, and must not.
+	m := New(pool.Accounting{Capacity: 8 * pool.TiB}, DefaultConfig())
+	if err := m.Accept(Lease{ID: "a", Class: Elastic, Size: 1 * pool.TiB, Term: time.Minute}, t0); err != nil {
+		t.Fatalf("accepting: %v", err)
+	}
+	res := m.Reclaim(1*pool.TiB, t0.Add(time.Hour))
+	if len(res.Dropped) != 1 {
+		t.Fatalf("Dropped = %v, want the expired lease released", res.Dropped)
+	}
+	if res.Bounded {
+		t.Error("an expired lease engaged the reclaim deadline, but its term simply ran out")
+	}
+}

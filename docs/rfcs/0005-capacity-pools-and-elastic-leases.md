@@ -39,7 +39,7 @@ nobody has written.
 | Allocating capacity as preallocated extents, one per lease | Built as an interface, with no caller yet. `fallocate` on Linux, and a build that cannot commit blocks says so at startup rather than implying it did. The agent binary starts, reports and exits, so nothing an operator can run grants a lease: the caller is the control plane, which is not built |
 | Draining readers between invalidating and unlinking | **Not built.** Nothing serves an extent, so there is nobody to wait for. The access layer has to wait between those two steps rather than around them |
 | Freeing the disk before the accounting, on every path | Built for release. **Not on reclaim**, where the lease manager owns the ladder and frees the accounting before the extents are gone, leaving a window in which a grant could be accepted against space still occupied |
-| The reclaim deadline | **Stated and validated, not enforced.** An elastic grant is refused if no deadline is configured, so the promise cannot go missing quietly. Honouring it end to end means invalidating readers, which is the data path |
+| The reclaim deadline | **Stated, validated and now timed, but not enforced.** An elastic grant is refused if no deadline is configured, and a reclaim that overruns is returned as an error rather than logged. Honouring it end to end still means invalidating readers, which is the data path, so what is timed is the half that exists |
 | Invalidate before unlink | Built. An extent is renamed out of reach before it is unlinked, and the rename is atomic, so an interrupted reclaim leaves a name no lease claims |
 | Reconciling the journal against the device, and unlinking orphans | Built. Both directions: an extent no lease accounts for is unlinked, and a lease whose extent is gone is dropped |
 | Any interface to a control plane | **Not built.** Accepting a grant is a local call, not a request. Nothing proposes grants over a network and nothing publishes the accounting back |
@@ -188,8 +188,19 @@ free space cannot demonstrate what happens without it. A 512 MiB grant that the 
 was refused by the device with `no space left on device`, the accounting rolled back to nothing, no
 partial extent was left in the pool, and a later honest grant succeeded.
 
-Four orders of magnitude inside a thirty second deadline, and concurrent write load made no
-measurable difference. The reclaim deadline is therefore not set by the filesystem, which means it is
+Reclaiming through the agent, rather than by unlinking from a shell, was timed on the same node on
+2026-09-01 against a thirty second deadline.
+
+| Case | Elapsed | Share of the deadline |
+| --- | --- | --- |
+| 7 GiB across three elastic leases, idle device | 2.759 ms | 0.0092% |
+| The same, under four concurrent `O_DIRECT` writers | 7.415 ms | 0.0247% |
+
+Load does make a difference at this level, about two and a half times, which the earlier shell
+measurement was too coarse to see. It does not change the conclusion and it does correct the
+wording: the effect is measurable and negligible, rather than absent.
+
+Four orders of magnitude inside a thirty second deadline. The reclaim deadline is therefore not set by the filesystem, which means it is
 set by the access layer, and that is where the remaining risk lives.
 
 One caveat on that number: it measures how long the `unlink` call takes to return, not how quickly
