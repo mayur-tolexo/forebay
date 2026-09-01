@@ -26,6 +26,10 @@ bug.
 - Where QoS is enforced, and whether a guarantee can be made without a global admission decision
 - Encryption at rest on borrowed and donated capacity, and in flight between agents
 - Identity for nodes, agents and tenants, and what a compromised node agent can reach
+- Whether out-of-tree backend drivers are loaded at all, and with what isolation, given that a driver
+  is code Forebay runs with credentials to a durable store
+- Whether a backend capability can be declared per credential rather than per backend, since a tenant
+  may lack permission for something the backend itself supports
 - How tenant and region scoping is enforced in code, given the control plane holds broad credentials to the systems it manages
 
 ## Constraints inherited from earlier RFCs

@@ -44,6 +44,8 @@ make the project look good would be worse than none.
   is the central tuning value of the agent's pressure design and currently has no defensible default
 - Whether hostNetwork earns its cost on the data path, measured against an ordinary pod network with
   the extra hop it implies, since the answer decides how much isolation the agent gives up
+- What the driver conformance suite runs against, since proving a driver needs a real backend and a
+  contributor may not have one
 - How results are published, including negative ones
 
 ## Constraints inherited from earlier RFCs
