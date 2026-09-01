@@ -197,9 +197,15 @@ anything undeclared is refused before the driver is reached, so emulation is unr
 merely forbidden. `driver/conformance` is importable, so a third party can demonstrate a driver for a
 store this project has never seen.
 
+The fast tier's node-local half is in `internal/fasttier`
+([0007](docs/rfcs/0007-fast-tier-data-path.md)): fixed-size blocks in a lease's extent, admission on
+the second read so a single epoch cannot empty the cache, eviction preferring capacity that is
+leaving anyway, and a revoked block read as a miss rather than an error.
+
 Two of the pressure watch's three inputs are missing, so it learns about pressure once the space has
-already gone rather than before a workload writes. Nothing serves data, no Ceph or S3 driver exists,
-there is no control plane interface, and the headroom target the watch needs has no measured value.
+already gone rather than before a workload writes. Nothing reads from the tier, no Ceph or S3 driver
+exists, there is no peer fetch, no control plane interface, and the headroom target the watch needs
+has no measured value.
 
 **Done when** a GPU job runs on a node whose spare NVMe is serving the fabric, capacity is reclaimed
 mid-job without the job noticing, and the benchmark reports a number either way.
