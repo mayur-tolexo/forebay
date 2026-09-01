@@ -2,9 +2,9 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 1 |
-| **Depends on** | 0005, 0006, 0012 |
+| **Depends on** | 0005, 0006 |
 
 ## Problem
 
@@ -25,7 +25,7 @@ nothing serves a byte. There is no cache, no admission, no eviction and no peer 
 
 | Assumption | Basis | Risk if wrong |
 | --- | --- | --- |
-| Published dataset versions are immutable, so cached content cannot go stale | Reasoned. The rule belongs to [RFC-0012](0012-dataset-object-model.md), which owns identity and immutability for versions, and [RFC-0021](0021-single-copy-multi-protocol.md) relies on the same rule | The tier needs invalidation and a coherence protocol, which is a different and much larger design |
+| Published dataset versions are immutable, so cached content cannot go stale | Reasoned. A constraint the project adopts, stated as a non-goal in [RFC-0001](0001-thesis-scope-and-non-goals.md): mutable data is not cached. [RFC-0012](0012-dataset-object-model.md) owns the naming and identity mechanics, and [RFC-0021](0021-single-copy-multi-protocol.md) relies on the same constraint | The tier needs invalidation and a coherence protocol, which is a different and much larger design |
 | Most of what an AI workload reads repeatedly is immutable dataset content | Reasoned, from training reading the same shards each epoch | The cache holds little worth holding and the tier is a prefetch buffer rather than a cache |
 | A rack-local fetch beats a fanned-out backend read | Unverified, and the same crossover as RFC-0001 | The rack tier is removed and a local miss goes straight to the backend, which is simpler |
 | Refetching revoked blocks is cheap enough to be the answer to revocation | Reasoned, per block. Reclamation drops whole leases, so a reader pays one backend read for each block it still needs, and how many that is has not been measured | Reclamation is expensive for readers in bursts rather than singly, and the deadline in RFC-0005 has to grow |
