@@ -22,6 +22,7 @@ each backend worth using.
 ## What this RFC must answer
 
 - The capability vocabulary: snapshots, clones, thin provisioning, replication, topology hints, ranged reads, and what else is load bearing
+- Whether a backend compresses already, and whether Forebay can ask it to, since RFC-0020 delegates compression downward rather than rewriting data on ingest
 - How an intent is refused when no backend can satisfy it, and how that refusal reaches the user
 - How the same logical operation is expressed against backends with very different primitives
 - What a conformance suite for a driver looks like, so a third-party driver can prove it works

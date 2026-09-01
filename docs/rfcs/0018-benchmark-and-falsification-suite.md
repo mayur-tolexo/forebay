@@ -21,6 +21,13 @@ make the project look good would be worse than none.
 ## What this RFC must answer
 
 - The experiment that locates the crossover between node-local bandwidth and a node's achievable share of backend fan-out
+- How compression is held constant while locating that crossover. The measurement this project was
+  founded on compared a compressed 226 MiB object crossing the network against 687 MiB read raw from
+  local disk, so roughly three to one of the apparent advantage was compression rather than fan-out.
+  A backend that serves compressed bytes against a tier that serves raw ones is not a comparison of
+  locality, and the suite has to say which side compression sits on before the number means anything
+- Whether compressing the fast tier pays for the CPU it costs, given that CPU on a GPU node competes
+  with the dataloader
 - How compute impact during reclamation is measured, so that the job is unaffected can be shown rather than asserted
 - Workload definitions that reflect real training and inference access patterns rather than synthetic sequential reads
 - The scaling curve method across one node, one rack, ten racks and beyond, and where scaling is expected to stop
