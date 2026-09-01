@@ -267,12 +267,12 @@ than to tenants. RFC-0016 owns the boundary.
   deployment.
 - **Which positive signals identify an accelerator across vendors**, without taking a dependency on
   any one vendor's stack. The rule is settled here, that a class match alone is not enough, and the
-  mechanism is not. No other RFC owns this: it is discovery, which is this document's subject, and it
-  is answered when discovery is implemented.
+  mechanism is not. No other RFC owns this: it is discovery, which is this
+  document's subject, and it is answered when discovery is implemented.
 - **How GPUDirect Storage is detected**, given that installed is not the same as working and
   establishing the difference plausibly means moving data, which is not something to do on every node
-  at startup. No other RFC owns this: detection is this document's subject, and RFC-0026 depends on
-  the answer without being able to supply it.
+  at startup. No other RFC owns this: detection is this
+  document's subject, and RFC-0026 depends on the answer without being able to supply it.
 - **Whether the model should be re-read periodically or only on events**, and how a node reports that
   its own facts got poorer. Owned by [RFC-0017](0017-observability.md).
 - **How placement expresses a partially known topology** rather than falling back to node-local for

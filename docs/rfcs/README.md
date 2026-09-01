@@ -12,19 +12,21 @@ the value of writing them down.
 
 ## Status
 
-RFC-0001 through RFC-0005 are accepted. Everything else is open for argument, including RFC-0000, which defines what acceptance means and has not been held to it yet.
+RFC-0000 through RFC-0005 are accepted. Everything else is open for argument.
 
-An RFC becomes accepted when its assumptions carry an honest basis, its open questions are answered
-or explicitly deferred to a named owner, and no claim in it is one we could not defend. Accepted does
-not mean finished: a later measurement can supersede it, and RFC-0021 already superseded one of
-RFC-0001's non-goals.
+What acceptance requires is defined in [RFC-0000](0000-rfc-process.md), not here, so that there is
+one statement of it rather than two that can drift. In short: assumptions carry an honest basis, open
+questions are answered or deferred to an owner that actually carries them, no claim is one we could
+not defend, and the document says which parts are built.
+
+Accepted does not mean finished. RFC-0021 has already superseded a non-goal in RFC-0001.
 
 RFC-0021 supersedes the unified-namespace non-goal in RFC-0001. That reversal is recorded rather than
 edited away, which is the point of keeping these.
 
 | # | Title | Status | Phase | Depends on |
 | --- | --- | --- | --- | --- |
-| [0000](0000-rfc-process.md) | RFC process | Draft | 0 | — |
+| [0000](0000-rfc-process.md) | RFC process | **Accepted** | 0 | — |
 | [0001](0001-thesis-scope-and-non-goals.md) | Thesis, scope and non-goals | **Accepted** | 0 | — |
 | [0002](0002-architecture-overview.md) | Architecture overview | **Accepted** | 0 | 0001 |
 | [0003](0003-topology-model.md) | Topology model | **Accepted** | 1 | 0002 |

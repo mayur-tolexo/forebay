@@ -139,12 +139,12 @@ assumptions carry an honest basis and its open questions are answered or deferre
 
 | Work | RFC | Status |
 | --- | --- | --- |
+| RFC process | [0000](docs/rfcs/0000-rfc-process.md) | **Accepted** |
 | Thesis, scope and non-goals | [0001](docs/rfcs/0001-thesis-scope-and-non-goals.md) | **Accepted** |
 | Architecture overview | [0002](docs/rfcs/0002-architecture-overview.md) | **Accepted** |
 | Topology model | [0003](docs/rfcs/0003-topology-model.md) | **Accepted** |
 | Node agent | [0004](docs/rfcs/0004-node-agent.md) | **Accepted** |
 | Capacity pools and elastic leases | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) | **Accepted** |
-| RFC process | [0000](docs/rfcs/0000-rfc-process.md) | Draft |
 | Drivers, fast tier, access layer | 0006, 0007, 0008 | Not started |
 
 **Done when** the MVP RFCs are accepted and someone who has never spoken to us can read them and say
