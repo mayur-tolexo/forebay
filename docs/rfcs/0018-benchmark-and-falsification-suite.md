@@ -57,6 +57,12 @@ make the project look good would be worse than none.
   large costs memory the cache could have used
 - How much of a reader's working set one lease holds, since reclamation drops whole leases and that
   number is what turns a per-block refetch cost into the size of the burst a reader actually feels
+- Whether reading a KV cache block back from borrowed NVMe beats recomputing the prefill that
+  produced it, and above what prefix length, since below some length the read is strictly worse than
+  not having tried and that point decides whether [RFC-0027](0027-kv-cache-spill.md) is worth writing
+- Whether an inference-serving node has idle NVMe to borrow at all, which is the third kill
+  criterion asked of a fleet the existing experiments do not cover: a training node's disk is idle
+  between epochs, and a serving node's may be absent or already busy
 - How results are published, including negative ones
 
 ## Constraints inherited from earlier RFCs
