@@ -61,7 +61,7 @@ func TestOpenCreatesPoolsAndAcceptsGrants(t *testing.T) {
 	// Grants are only accepted once the journal has been replayed, so this
 	// succeeding is what proves startup completed.
 	l := lease.Lease{ID: "a", Class: lease.Elastic, Size: 1 * pool.TiB, Term: time.Hour}
-	if err := a.Leases().Accept(l, t0); err != nil {
+	if err := a.leases.Accept(l, t0); err != nil {
 		t.Fatalf("Accept after startup = %v", err)
 	}
 }
@@ -154,7 +154,7 @@ func TestStartupDropsLeasesWhoseExtentIsGone(t *testing.T) {
 	}
 	for _, id := range []string{"kept", "vanished"} {
 		l := lease.Lease{ID: id, Class: lease.Elastic, Size: 1 * pool.TiB, Term: time.Hour}
-		if err := a.Leases().Accept(l, t0); err != nil {
+		if err := a.leases.Accept(l, t0); err != nil {
 			t.Fatalf("Accept(%s) = %v", id, err)
 		}
 		extent(t, a, id)
@@ -189,7 +189,7 @@ func TestLeasesSurviveARestart(t *testing.T) {
 		t.Fatalf("Open = %v", err)
 	}
 	l := lease.Lease{ID: "kept", Class: lease.Elastic, Size: 2 * pool.TiB, Term: time.Hour}
-	if err := a.Leases().Accept(l, t0); err != nil {
+	if err := a.leases.Accept(l, t0); err != nil {
 		t.Fatalf("Accept = %v", err)
 	}
 	extent(t, a, "kept")
@@ -216,7 +216,7 @@ func TestExpiredLeasesAreDroppedAndTheirExtentsRemoved(t *testing.T) {
 		t.Fatalf("Open = %v", err)
 	}
 	l := lease.Lease{ID: "stale", Class: lease.Elastic, Size: 1 * pool.TiB, Term: time.Minute}
-	if err := a.Leases().Accept(l, t0); err != nil {
+	if err := a.leases.Accept(l, t0); err != nil {
 		t.Fatalf("Accept = %v", err)
 	}
 	extent(t, a, "stale")
@@ -248,7 +248,7 @@ func TestUnreadableJournalStartsEmptyAndClearsThePool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open = %v", err)
 	}
-	if err := a.Leases().Accept(lease.Lease{ID: "a", Class: lease.Elastic, Size: 1 * pool.TiB, Term: time.Hour}, t0); err != nil {
+	if err := a.leases.Accept(lease.Lease{ID: "a", Class: lease.Elastic, Size: 1 * pool.TiB, Term: time.Hour}, t0); err != nil {
 		t.Fatalf("Accept = %v", err)
 	}
 	extent(t, a, "a")
@@ -307,7 +307,7 @@ func TestANodeThatCameBackSmallerIsReportedApartFromAgeing(t *testing.T) {
 		t.Fatalf("Open = %v", err)
 	}
 	l := lease.Lease{ID: "roomy", Class: lease.Elastic, Size: 4 * pool.TiB, Term: time.Hour}
-	if err := a.Leases().Accept(l, t0); err != nil {
+	if err := a.leases.Accept(l, t0); err != nil {
 		t.Fatalf("Accept = %v", err)
 	}
 	extent(t, a, "roomy")
@@ -342,7 +342,7 @@ func TestReportedListsAreStable(t *testing.T) {
 	}
 	for _, id := range []string{"c", "a", "b"} {
 		l := lease.Lease{ID: id, Class: lease.Elastic, Size: 1 * pool.TiB, Term: time.Hour}
-		if err := a.Leases().Accept(l, t0); err != nil {
+		if err := a.leases.Accept(l, t0); err != nil {
 			t.Fatalf("Accept(%s) = %v", id, err)
 		}
 	}

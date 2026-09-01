@@ -169,6 +169,10 @@ and S3 drivers ([0006](docs/rfcs/0006-durable-backend-driver-contract.md)), the 
 the pool directories, holds the node lock, replays the journal and reconciles it against the disk in
 both directions.
 
+Leases now put bytes on disk. Granting one preallocates a whole extent, reclaiming invalidates it
+before unlinking it, and an interrupted reclaim leaves a file the next startup removes. Until this,
+a lease was bookkeeping: the accounting could record a terabyte lent above an empty pool.
+
 Topology discovery is in `internal/topology` and the agent uses it, so a node reads its own capacity
 rather than being told, measured on the filesystem the pools sit on rather than summed across every
 drive in the machine, and reduced by the space that filesystem already holds for everything which is

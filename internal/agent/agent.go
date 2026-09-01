@@ -60,6 +60,12 @@ type Agent struct {
 
 // Reconciliation reports what startup had to correct.
 type Reconciliation struct {
+	// InvalidatedExtents are extents a previous run had begun discarding and
+	// did not finish, found by their suffix. They are unlinked as orphans like
+	// anything else unaccounted for, and named separately because they mean
+	// something different: not leaked capacity, but a reclaim interrupted
+	// between invalidating an extent and removing it.
+	InvalidatedExtents []string
 	// OrphanExtents are extents on disk that no lease accounted for. Capacity
 	// nobody has a record of lending has leaked, so they are unlinked.
 	OrphanExtents []string
@@ -173,6 +179,7 @@ func Open(cfg Config, acct pool.Accounting, now time.Time) (*Agent, Reconciliati
 	r, reconcileErr := a.reconcile(now)
 	rec.OrphanExtents = r.OrphanExtents
 	rec.LeasesWithoutExtents = r.LeasesWithoutExtents
+	rec.InvalidatedExtents = r.InvalidatedExtents
 	if reconcileErr != nil {
 		a.Close()
 		return nil, rec, reconcileErr
@@ -200,6 +207,18 @@ func (a *Agent) reconcile(now time.Time) (Reconciliation, error) {
 		return rec, fmt.Errorf("agent: reading borrowed pool: %w", err)
 	}
 
+	// An extent found part-way through being discarded is one event with a
+	// known cause and a known recovery. It is removed like anything else the
+	// accounting does not claim, but it is reported only here: counting it
+	// again as leaked capacity, and its lease again as one that lost its
+	// extent, turns one interrupted reclaim into three problems on the
+	// startup line.
+	rec.InvalidatedExtents = invalidatedExtents(entries)
+	interrupted := make(map[string]struct{}, len(rec.InvalidatedExtents))
+	for _, name := range rec.InvalidatedExtents {
+		interrupted[strings.TrimSuffix(name, invalidSuffix)] = struct{}{}
+	}
+
 	live := make(map[string]struct{})
 	for _, l := range a.leases.Leases() {
 		live[l.ID] = struct{}{}
@@ -216,6 +235,9 @@ func (a *Agent) reconcile(now time.Time) (Reconciliation, error) {
 		}
 		if err := os.RemoveAll(filepath.Join(a.cfg.BorrowedDir, e.Name())); err != nil {
 			return rec, fmt.Errorf("agent: unlinking orphan extent %s: %w", e.Name(), err)
+		}
+		if strings.HasSuffix(e.Name(), invalidSuffix) {
+			continue // Already reported as an interrupted reclaim.
 		}
 		rec.OrphanExtents = append(rec.OrphanExtents, e.Name())
 	}
@@ -235,14 +257,13 @@ func (a *Agent) reconcile(now time.Time) (Reconciliation, error) {
 		if _, err := a.leases.Release(id, now); err != nil {
 			return rec, fmt.Errorf("agent: dropping lease %s with no extent: %w", id, err)
 		}
+		if _, ok := interrupted[id]; ok {
+			continue // Explained by the interrupted reclaim already reported.
+		}
 		rec.LeasesWithoutExtents = append(rec.LeasesWithoutExtents, id)
 	}
 	return rec, nil
 }
-
-// Leases exposes the lease manager, which is what grants and reclamation act
-// on. It is only usable once Open has returned successfully.
-func (a *Agent) Leases() *lease.Manager { return a.leases }
 
 // Accounting reports the node's current capacity split.
 func (a *Agent) Accounting() pool.Accounting { return a.leases.Accounting() }
@@ -267,6 +288,12 @@ func validLeaseID(id string) error {
 		return fmt.Errorf("%w: %q is not a name", ErrBadLeaseID, id)
 	case id == lockName:
 		return fmt.Errorf("%w: %q is reserved for the node lock", ErrBadLeaseID, id)
+	case strings.HasSuffix(id, invalidSuffix):
+		// Discarding an extent renames it to this suffix, and a rename
+		// overwrites. A lease allowed to carry the suffix could therefore have
+		// its extent destroyed by the release of the lease it shadows, which
+		// leaves it accounted for with nothing on disk and reports nothing.
+		return fmt.Errorf("%w: %q ends in %s, which is reserved for extents being discarded", ErrBadLeaseID, id, invalidSuffix)
 	case strings.ContainsRune(id, os.PathSeparator), strings.ContainsRune(id, '/'):
 		return fmt.Errorf("%w: %q contains a path separator", ErrBadLeaseID, id)
 	case id != filepath.Clean(id):

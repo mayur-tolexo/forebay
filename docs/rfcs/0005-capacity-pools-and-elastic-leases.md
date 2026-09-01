@@ -36,9 +36,12 @@ nobody has written.
 | Never worse off, with the shortfall reported rather than hidden | Built |
 | The journal, replay, and refusing grants until it has been replayed | Built |
 | Post-reclaim cooldown and the churn budget | Built |
+| Allocating capacity as preallocated extents, one per lease | Built as an interface, with no caller yet. `fallocate` on Linux, and a build that cannot commit blocks says so at startup rather than implying it did. The agent binary starts, reports and exits, so nothing an operator can run grants a lease: the caller is the control plane, which is not built |
+| Draining readers between invalidating and unlinking | **Not built.** Nothing serves an extent, so there is nobody to wait for. The access layer has to wait between those two steps rather than around them |
+| Freeing the disk before the accounting, on every path | Built for release. **Not on reclaim**, where the lease manager owns the ladder and frees the accounting before the extents are gone, leaving a window in which a grant could be accepted against space still occupied |
 | The reclaim deadline | **Stated and validated, not enforced.** An elastic grant is refused if no deadline is configured, so the promise cannot go missing quietly. Honouring it end to end means invalidating readers, which is the data path |
-| Invalidate before unlink | **Not built.** There are no extents yet |
-| Reconciling the journal against the device, and unlinking orphans | **Not built**, for the same reason |
+| Invalidate before unlink | Built. An extent is renamed out of reach before it is unlinked, and the rename is atomic, so an interrupted reclaim leaves a name no lease claims |
+| Reconciling the journal against the device, and unlinking orphans | Built. Both directions: an extent no lease accounts for is unlinked, and a lease whose extent is gone is dropped |
 | Any interface to a control plane | **Not built.** Accepting a grant is a local call, not a request. Nothing proposes grants over a network and nothing publishes the accounting back |
 | Publishing pool accounting, so the control plane's view is a cache of the node's | **Not built** |
 
@@ -174,6 +177,16 @@ Reclaim latency was measured on a dev node on 2026-08-31, ext4 on LVM, Ubuntu 24
 | --- | --- |
 | Unlink 4 GiB written with `O_DIRECT` | 2.6 ms |
 | Unlink 8 GiB across four files, under concurrent `O_DIRECT` write load | 2.5 ms |
+
+The agent's own path was measured on 2026-09-01 on a GPU node with local NVMe, once extents existed
+to reclaim: granting a 2 GiB lease, which preallocates the extent, took 5 ms, and reclaiming it,
+which invalidates and then unlinks, took 3.6 ms. `fallocate` committed the blocks rather than sizing
+a sparse file, confirmed by the pool occupying 2147487744 bytes on disk against a 2 GiB request.
+
+The failure path was exercised on the same node against a 64 MiB filesystem, since a device with
+free space cannot demonstrate what happens without it. A 512 MiB grant that the accounting allowed
+was refused by the device with `no space left on device`, the accounting rolled back to nothing, no
+partial extent was left in the pool, and a later honest grant succeeded.
 
 Four orders of magnitude inside a thirty second deadline, and concurrent write load made no
 measurable difference. The reclaim deadline is therefore not set by the filesystem, which means it is

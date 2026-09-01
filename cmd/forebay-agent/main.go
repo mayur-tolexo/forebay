@@ -168,6 +168,12 @@ func run() error {
 		acct.Capacity, acct.Compute, acct.Donated, a.Accounting().Borrowed, a.Accounting().Free())
 	fmt.Printf("startup corrected: %d expired, %d no longer fit, %d orphan extents, %d leases without extents\n",
 		len(rec.Expired), len(rec.Unfittable), len(rec.OrphanExtents), len(rec.LeasesWithoutExtents))
+	if !agent.ReservesBlocks {
+		// A development build sizes an extent without committing its blocks,
+		// so the capacity it reports lending is not actually held. Saying so
+		// is the difference between a caveat and a lie.
+		fmt.Fprintln(os.Stderr, "warning: this build cannot reserve blocks, so borrowed capacity is not really held")
+	}
 	fmt.Fprintln(os.Stderr, "no serving path yet: see docs/rfcs/0007-fast-tier-data-path.md")
 	return nil
 }
