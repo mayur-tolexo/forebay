@@ -26,6 +26,8 @@ not have to survive their own capacity disappearing on someone else's schedule.
 - Whether a cached extent can go stale against a backend object that changed underneath it, and how a
   reader finds out. The node agent is where it would be noticed, but the answer is this document's
 - How rack-local peer fetch is coordinated, and how a peer is chosen
+- How placement expresses a partially known topology rather than falling back to node-local for
+  everything, since on real hardware most topology facts may be unknown
 - How a read in flight is handled when its backing capacity is revoked
 - Whether rack-local fetch beats going straight to a fanned-out backend, which may make the rack tier unnecessary
 

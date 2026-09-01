@@ -23,6 +23,9 @@ This RFC also gates RFC-0010, because autonomy without measurement is guessing w
 - The core metric set, including delivered GB per second per GPU, cache hit rate, lease churn, reclamation latency and tail latency
 - How metrics are attributed to tenant, dataset and workload without unbounded cardinality
 - How a request is traced across control plane, node agent and backend
+- Whether the topology model is re-read periodically or only on events, and how a node reports that
+  its own discovered facts got poorer after a kernel or driver change, since placement would
+  otherwise degrade silently
 - How readiness is computed from latency rather than from a liveness ping, since a slow node agent is
   worse than a stopped one: the miss path never fires and clients keep waiting on it
 - What an operator needs on one screen to decide whether Forebay is helping

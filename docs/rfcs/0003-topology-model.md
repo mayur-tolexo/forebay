@@ -2,42 +2,246 @@
 
 | | |
 | --- | --- |
-| **Status** | Not started |
+| **Status** | Draft |
 | **Phase** | 1 |
 | **Depends on** | 0002 |
 
-> **Unclaimed.** This file holds the problem statement and the questions the RFC has to answer.
-> Nobody has written it yet. See [CONTRIBUTING.md](../../CONTRIBUTING.md) to claim it.
-
 ## Problem
 
-Forebay places data by physical proximity to the accelerator that will read it, which means it has
-to know what the hardware actually looks like: which nodes share a rack, which NVMe device sits on
-the same PCIe root complex as which GPU, which NUMA node a NIC is attached to, and how much network
-sits between any two nodes.
+Forebay places data by proximity to the accelerator that will read it, so it has to know what the
+hardware looks like: which nodes share a rack, which NVMe device sits behind the same PCIe root
+complex as which GPU, which NUMA node a NIC is attached to, and what the fabric between two nodes can
+do.
 
-Most of that information is discoverable, some of it is only discoverable partially, and some of it
-is wrong. Rack membership in particular is usually a label somebody typed. A placement engine that
-trusts a bad topology will confidently make things worse, so the model has to represent uncertainty
-rather than assume completeness.
+Some of that is discoverable. Some is discoverable only sometimes. Some is a label a person typed,
+and is wrong more often than anyone admits. A placement engine that treats all three as equally true
+will confidently make things worse, so this document is mostly about representing what is not known.
 
-## What this RFC must answer
+### What a real node actually reports
 
-- What is the minimum topology model that is actually useful, as opposed to the most complete one
-- How rack and row membership are learned, and what to do when the only source is an operator label that may be wrong
-- How PCIe, NUMA and GPU to NIC to NVMe affinity are discovered, and on which platforms that discovery is unavailable
-- How the model represents unknown or low-confidence facts, so placement can degrade rather than guess
-- How topology changes over time are handled, including nodes moving and hardware being replaced
-- Which transport and fabric capabilities are detectable, including RDMA, RoCE, InfiniBand and
-  GPUDirect, and how a cluster lacking them is degraded to rather than excluded. RFC-0026 depends on
-  this detection existing
-- Who is authoritative when discovery and operator-supplied labels disagree
+Probed on a dev node, 2026-09-01, Ubuntu 24.04, kernel 6.8. Not GPU hardware, which is the point:
+this is what the model gets when it asks a machine that cannot answer.
 
-## Constraints inherited from earlier RFCs
+| Asked for | Answer |
+| --- | --- |
+| NUMA nodes | One, `possible=0` |
+| PCI device NUMA affinity | `numa_node` reads **-1** on every device, meaning not applicable rather than not populated |
+| NIC link speed | `speed` reads **-1** on the physical interface, and the virtual ones have no `device/numa_node` at all |
+| RDMA | No `infiniband` class, so none |
+| A GPU, by PCI class | Found `0000:00:02.0`, which is the VM's **virtual display adapter** |
+| Rack, row or zone labels | None on the node |
 
-- Capability detection over assumption. No environment is required to expose full topology
+**How much privilege that took.** The first probe used a privileged debug container that had entered
+the host filesystem, which proves the files exist and are readable by root and nothing more. Repeated
+from an ordinary pod running as uid 65534, non-root, with every capability dropped, a read-only root
+filesystem and **no hostPath mount at all**, every one of those reads still worked: PCI devices
+listed, `class` and `numa_node` read, NUMA topology read, block devices listed, and the absence of
+the `infiniband` class correctly observed.
 
-## Structure
+That matters beyond this document. RFC-0004 grants the agent read-only mounts of `/sys` and `/proc`
+for discovery, and on this kernel it does not appear to need them, because a container is given
+`/sys` from the host already. The agent may be able to discover topology with no host mounts
+whatsoever, which is a smaller privilege surface than that RFC currently asks for.
 
-Follow [`template.md`](template.md). Assumptions carry a basis of measured, reasoned or unverified.
-Alternatives must be real ones.
+Three of those are answers: the node has one NUMA node, it definitively has no RDMA, and it
+definitively carries no topology labels, the last being the expected input for a declared fact rather
+than a discovery failure. Two are unknown, and one is a false positive.
+
+The ratio is not the point, though, and stating it as five of six would have been inflating a finding
+that is strong without help. The point is **which** facts were unavailable: NUMA affinity and link
+speed are precisely what placement by proximity depends on, and both came back as `-1`. A design that
+treats those as normally available has the common case backwards.
+
+## Assumptions
+
+| Assumption | Basis | Risk if wrong |
+| --- | --- | --- |
+| Device, NUMA and PCIe facts can be read from `/sys` without extra privilege | **Measured**, from an unprivileged pod, as recorded above under how much privilege that took. The first probe did not show this and was corrected | The agent needs privilege this project is trying not to take, see RFC-0004 |
+| NUMA and PCIe affinity are frequently unavailable rather than occasionally | **Measured**, every PCI device reported -1 on the probed node | Nothing: the design assumes this and would only get better |
+| Rack membership cannot be discovered and must be declared | **Measured**, no topology labels existed, and no mechanism exists to derive one | Placement has no failure-domain information at all, which it must then say rather than assume |
+| Identifying accelerators needs more than a PCI class match | **Measured**, a class match found a virtual display adapter | Forebay places data near a device that cannot compute |
+| Operators will label racks if asked | Unverified | Rack-aware placement degrades to node-local and nothing else |
+
+## Design
+
+### The model is small on purpose
+
+The temptation is to model everything a datacentre has. The model instead holds only what a placement
+decision can act on, because a fact nothing consumes is a fact nobody maintains.
+
+```mermaid
+flowchart LR
+    region["region"] --> zone["zone"]
+    zone --> rack["rack"]
+    rack --> node["node"]
+    node --> numa["NUMA node"]
+    numa --> gpu["accelerator"]
+    numa --> nic["NIC"]
+    numa --> nvme["NVMe device"]
+
+    classDef declared fill:#E0E7FF,stroke:#4F46E5,stroke-width:1.5px,color:#1E1B4B
+    classDef discovered fill:#CCFBF1,stroke:#0D9488,stroke-width:1.5px,color:#042F2E
+    class region,zone,rack declared
+    class node,numa,gpu,nic,nvme discovered
+```
+
+The colours are the important part. Everything above the node is **declared** by an operator and
+cannot be discovered. Everything at or below it is **discovered** by the agent and cannot be
+trusted to a person's memory. Row is deliberately absent: nothing in the design places by row today,
+and it can be added when something does.
+
+### Every fact carries where it came from
+
+A fact is a value plus its provenance, and provenance decides what may be done with it.
+
+| Provenance | Source | Trusted for |
+| --- | --- | --- |
+| `discovered` | The agent reading `/sys` on the node itself | Anything. It is the machine describing itself |
+| `declared` | Operator configuration or a node label | Failure domains, which cannot be discovered at all |
+| `unknown` | Asked and not answered, including `-1` | Nothing. It is not a value |
+
+The third row is why this exists. A kernel returning `-1` for NUMA affinity is not saying zero, and
+code that reads it as a number will place data as if every device shared one NUMA node.
+
+### An unknown is resolved against whoever is asking
+
+This is the rule the rest of the design hangs on, and it is not "assume the worst" in a single
+direction, because the worst differs per question.
+
+| Question | If the answer is unknown | Because |
+| --- | --- | --- |
+| Are these two nodes in the same rack? **Locality** | Answer no | Treating unknown as near would place data far away and call it close |
+| Are these two nodes in different racks? **Durability** | Answer no | Treating unknown as separate would put both replicas in one failure domain |
+
+Both answers are no, which looks contradictory and is not: **an unknown never satisfies a
+requirement**, whichever requirement is being asked. It cannot be used to claim closeness and it
+cannot be used to claim separation. The consequence has two halves and they behave differently.
+
+Placement **degrades**: a fleet with no rack labels gets node-local placement, because nothing can be
+shown to be near anything else. That is a worse cache, not a broken one.
+
+Durability **refuses**: a dataset declaring rack-level durability on a fleet that cannot answer which
+rack a node is in is unsatisfiable, and must be refused rather than quietly downgraded. Silently
+storing two replicas that only look separated is the failure this whole rule exists to prevent, so it
+must not be reachable by omission.
+
+That is the same principle RFC-0006 and RFC-0009 already apply, and a different cause. Both of those
+documents refuse an intent when no **backend** can satisfy it. This one is unsatisfiable regardless
+of backend: a perfectly capable durable store still cannot place replicas in separate racks when
+nobody knows which rack anything is in. RFC-0009 owns intent resolution and now carries the case.
+
+The difference is that a missed cache is recoverable and a durability promise that was never true is
+not. RFC-0017 has to make both visible, rather than letting a fleet with no labels look like a fleet
+that is fine.
+
+### Identifying an accelerator
+
+Matching PCI class alone finds virtual display adapters, as the probe demonstrates. Identification
+therefore requires a positive signal rather than the absence of a negative one: a vendor and device
+identifier that names real compute hardware, or a device node that a driver has created, or the
+accelerator being advertised to Kubernetes as a resource. A candidate that only matches the class is
+recorded as `unknown`, not as an accelerator.
+
+Being wrong here is worse than being uninformed, because it moves data towards a device that will
+never read it.
+
+### Capability detection
+
+RFC-0026 depends on this document knowing what the fabric can do, and the rule is the same as
+everywhere else: capabilities are detected and absence is a supported state, not an error.
+
+| Capability | Detected by | Absent means |
+| --- | --- | --- |
+| RDMA, RoCE, InfiniBand | Presence of the kernel's `infiniband` class and a usable device | The transport is TCP, which is correct and slower |
+| GPUDirect Storage | The vendor stack being present and functional, not merely installed | Data goes through host memory, as it does today |
+| NVMe over fabrics | The kernel subsystem being present | Block access uses the ordinary path |
+
+A cluster missing all three is a supported cluster. The alternative, requiring a fabric most
+clusters do not have, would exclude nearly everyone in exchange for a benchmark number.
+
+### Topology changes, and decisions made against it do not
+
+Hardware is replaced, nodes are relabelled, and a node can move rack between one boot and the next.
+The model therefore carries a generation that increments whenever a node's facts change, and a
+placement decision records the generation it was made against.
+
+That does not make old decisions wrong, it makes them **identifiable**. Data placed for a rack the
+node has since left is not corrupt, it is merely no longer where the intent asked for, and the slow
+loop in RFC-0010 can find it precisely because the generation says so.
+
+### When discovery and a label disagree
+
+The node wins about itself. An operator label claiming a node has four accelerators when the node
+reports two is wrong about the node, and no amount of authority changes the hardware.
+
+Above the node the operator wins, because there is nothing to disagree with: a rack label is the only
+source there is. The failure mode is not disagreement but confident error, an operator labelling two
+nodes into the same rack when they are not, which the model cannot detect and must not pretend to.
+RFC-0017 should make rack membership visible enough that a human notices.
+
+## Alternatives considered
+
+| Alternative | Trade-off | Why not |
+| --- | --- | --- |
+| Model everything a datacentre has, including rows, PDUs and switches | Complete, and ready for placement rules nobody has written | Facts nothing consumes are facts nobody maintains, and a stale model is worse than a small one |
+| Treat unknown as a default value, such as NUMA node 0 | Simpler code, no provenance to carry | This is the defect the probe found waiting to happen: `-1` read as a number places everything as though it shared one NUMA node |
+| Require operators to declare the full topology | No discovery code, no ambiguity | Nobody will maintain it, and the parts that can be discovered are exactly the parts a person gets wrong |
+| Infer racks from network latency between nodes | No labels needed, self-maintaining | Latency is not rack membership, and a wrong inference here is a durability failure rather than a slow read |
+
+## Failure modes
+
+**A label that is confidently wrong.** Two nodes labelled into one rack when they are not, so
+replicas that look separated are not. The model cannot detect this, which is stated rather than
+mitigated, and it is the strongest argument for making rack membership visible in RFC-0017.
+
+**Discovery regressing after a kernel or driver change.** A fact that was discovered becomes unknown,
+and placement quietly degrades. The generation makes the change visible, and a node whose facts got
+poorer should be reported rather than silently accepted.
+
+**A false accelerator.** Placement optimises towards a device that will never read the data. The
+positive-signal rule exists for this, and it is the reason a class match alone is not enough.
+
+**Everything unknown.** The honest outcome, and it must look like one: node-local placement, no
+rack-level durability, and an operator who can see that this is what they have.
+
+## Performance implications
+
+Predicted. Discovery is a handful of reads from `/sys` at startup and on change, which is not on any
+hot path. The model is consulted during placement, which is the control plane rather than the IO
+path, so its cost is bounded by how often placement runs and not by how much data moves.
+
+The performance question this document actually decides is whether placement can act on affinity at
+all. On the probed node it could not, and a fleet like that gets no benefit from any of RFC-0026's
+transport work either.
+
+## Complexity
+
+Discovery is mechanical. Provenance and the unknown rule are where the difficulty is, and they are
+difficult because they must be honoured by every consumer: a single caller reading a value without
+its provenance reintroduces the defect for everyone.
+
+The lasting constraint is that the model may not invent values. Any later convenience that defaults
+an unknown to something plausible undoes the whole design.
+
+## Security and tenancy
+
+Topology is not tenant data, but it describes the machine a tenant is running on, and a tenant that
+can read the model learns which other workloads share its node, its rack and its NUMA node. That is
+an inference channel rather than a disclosure, and the model should be visible to operators rather
+than to tenants. RFC-0016 owns the boundary.
+
+## Open questions
+
+- **Whether operators will label racks at all**, since rack-aware placement is worth nothing without
+  it and no engineering substitutes for the labels. No RFC owns this, deliberately: it is the same
+  class of question as whether operators will donate capacity, and it is deferred to the first real
+  deployment.
+- **Which positive signals identify an accelerator across vendors**, without taking a dependency on
+  any one vendor's stack. The rule is settled here, that a class match alone is not enough, and the
+  mechanism is not. No other RFC owns this: it is discovery, which is this document's subject, and it
+  is answered when discovery is implemented.
+- **Whether the model should be re-read periodically or only on events**, and how a node reports that
+  its own facts got poorer. Owned by [RFC-0017](0017-observability.md).
+- **How placement expresses a partially known topology** rather than falling back to node-local for
+  everything. Owned by [RFC-0007](0007-fast-tier-data-path.md), which owns placement in the fast
+  tier.

@@ -23,6 +23,9 @@ better marketing.
 
 - The intent vocabulary for durability, latency and cost, and how each maps to something a backend can be asked for
 - How intents are resolved against declared backend capabilities, and what happens when none fit
+- What happens when an intent is unsatisfiable for reasons that have nothing to do with a backend,
+  such as a durability requirement that spans racks on a fleet whose topology cannot say which rack a
+  node is in. The refusal has to be the same, and the cause is different
 - How conflicting intents from different levels, such as tenant defaults against a per-volume request, are resolved
 - What the defaults are, since most users will never override them and the defaults are therefore the real product
 - How an intent is validated at declaration time rather than discovered to be unsatisfiable later

@@ -27,7 +27,7 @@ edited away, which is the point of keeping these.
 | [0000](0000-rfc-process.md) | RFC process | Draft | 0 | — |
 | [0001](0001-thesis-scope-and-non-goals.md) | Thesis, scope and non-goals | **Accepted** | 0 | — |
 | [0002](0002-architecture-overview.md) | Architecture overview | **Accepted** | 0 | 0001 |
-| [0003](0003-topology-model.md) | Topology model | Not started | 1 | 0002 |
+| [0003](0003-topology-model.md) | Topology model | Draft | 1 | 0002 |
 | [0004](0004-node-agent.md) | Node agent | **Accepted** | 1 | 0002, 0003 |
 | [0005](0005-capacity-pools-and-elastic-leases.md) | Capacity pools and elastic leases | **Accepted** | 1 | 0002, 0004 |
 | [0006](0006-durable-backend-driver-contract.md) | Durable backend driver contract | Not started | 1 | 0002 |
