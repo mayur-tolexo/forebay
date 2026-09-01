@@ -29,6 +29,9 @@ bug.
 - Where QoS is enforced, and whether a guarantee can be made without a global admission decision
 - Encryption at rest on borrowed and donated capacity, and in flight between agents
 - Identity for nodes, agents and tenants, and what a compromised node agent can reach
+- What authenticates a tenant on the access path, and whether AUTH_SYS with separate export
+  namespaces and network policy is acceptable in a multi-tenant deployment or `RPCSEC_GSS` is
+  required, given AUTH_SYS asserts a uid the client chooses
 - Whether out-of-tree backend drivers are loaded at all, and with what isolation, given that a driver
   is code Forebay runs with credentials to a durable store
 - Whether a backend capability can be declared per credential rather than per backend, since a tenant

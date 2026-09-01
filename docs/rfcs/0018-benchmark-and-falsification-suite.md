@@ -173,6 +173,7 @@ nothing.
 | --- | --- |
 | The scaling curve across one node, one rack, ten racks and beyond | Where scaling stops, and whether it stops before it matters |
 | Workload definitions replayed against the full path | Whether the tiered results survive a real access pattern |
+| How often a dataloader asks the metadata server for layouts | Whether the metadata server is a bottleneck, since every layout request crosses it while bulk data does not |
 | Hardware profiles the results are valid for | Which results transfer to a different NVMe or NIC generation |
 
 ### What can run today
