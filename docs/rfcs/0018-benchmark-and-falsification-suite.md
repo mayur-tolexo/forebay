@@ -46,6 +46,17 @@ make the project look good would be worse than none.
   the extra hop it implies, since the answer decides how much isolation the agent gives up
 - What the driver conformance suite runs against, since proving a driver needs a real backend and a
   contributor may not have one
+- What cache block size the fast tier should use, since it trades index size against read
+  amplification and the number should come from measurement rather than from taste
+- Whether a rack-local hop beats going straight to a fanned-out backend, which is the crossover
+  question asked one hop further out and decides whether the rack tier exists at all
+- How long the fast tier should wait on a peer before abandoning it for the backend, which has to be
+  shorter than the backend read it is avoiding or trying is worse than not trying
+- How large the fast tier's record of first reads has to be before admission on second read fires at
+  all, since a bound too small to span two reads of the same block admits nothing and a bound too
+  large costs memory the cache could have used
+- How much of a reader's working set one lease holds, since reclamation drops whole leases and that
+  number is what turns a per-block refetch cost into the size of the burst a reader actually feels
 - How results are published, including negative ones
 
 ## Constraints inherited from earlier RFCs

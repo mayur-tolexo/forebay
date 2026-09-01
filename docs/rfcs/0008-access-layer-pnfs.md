@@ -55,6 +55,8 @@ RFC-0018.
 - Whether to be loosely or tightly coupled, given tight coupling costs a control protocol and buys per-client revocation
 - End-to-end revocation latency under load, with a real metadata server rather than from the specification
 - What the client experiences when a recall cannot complete in time
+- How a retryable miss from the fast tier is absorbed, since RFC-0007 answers a read whose capacity
+  was revoked with a miss the caller must re-issue, and an NFS client cannot be told to try again
 - The authentication and authorisation story, and whether AUTH_SYS is acceptable in a multi-tenant deployment
 - What the fallback is for clients that cannot speak pNFS
 
