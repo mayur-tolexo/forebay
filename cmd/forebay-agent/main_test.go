@@ -382,3 +382,51 @@ func TestADeclaredReserveIsHonouredWhenNothingCanBeMeasured(t *testing.T) {
 		t.Errorf("declaring the reserve the refusal asked for = %v, want nil", err)
 	}
 }
+
+func TestTheLivenessProbeIsItsOwnInvocation(t *testing.T) {
+	// The process being judged may be wedged, so it cannot answer for itself.
+	// The probe runs as a separate execution against the pool on disk, which
+	// is what lets a kubelet kill the holder and free the lock.
+	root := t.TempDir()
+	borrowed := filepath.Join(root, "borrowed")
+
+	// Nothing has started here, so there is no progress to find.
+	err := withArgs(t, "--liveness", "--borrowed-dir="+borrowed)
+	if !errors.Is(err, agent.ErrStalled) {
+		t.Errorf("liveness against an empty pool = %v, want ErrStalled", err)
+	}
+
+	// Start an agent, which writes its first heartbeat as part of startup.
+	if err := withArgs(t, nodeArgs(t, root)...); err != nil {
+		t.Fatalf("startup: %v", err)
+	}
+	if err := withArgs(t, "--liveness", "--borrowed-dir="+borrowed); err != nil {
+		t.Errorf("liveness after a clean startup = %v, want nil", err)
+	}
+	// A window shorter than the heartbeat's age condemns it, which is the
+	// operator's dial rather than the agent's.
+	if err := withArgs(t, "--liveness", "--borrowed-dir="+borrowed, "--stale-after=1ns"); !errors.Is(err, agent.ErrStalled) {
+		t.Errorf("liveness with a 1ns window = %v, want ErrStalled", err)
+	}
+	// And it needs to be told where to look.
+	if err := withArgs(t, "--liveness"); err == nil {
+		t.Error("liveness with no pool directory succeeded, want a refusal")
+	}
+}
+
+func TestAnUnjudgeableHeartbeatDoesNotFailTheProbe(t *testing.T) {
+	// Splitting the error is only worth anything if the probe acts on it: a
+	// bad mount that fails the probe kills a healthy agent every time, and the
+	// restart never fixes the mount.
+	root := t.TempDir()
+	borrowed := filepath.Join(root, "borrowed")
+	if err := withArgs(t, nodeArgs(t, root)...); err != nil {
+		t.Fatalf("startup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(borrowed, ".forebay-heartbeat"), []byte("rubbish"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := withArgs(t, "--liveness", "--borrowed-dir="+borrowed); err != nil {
+		t.Errorf("liveness on an unreadable heartbeat = %v, want it to pass rather than kill", err)
+	}
+}

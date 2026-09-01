@@ -7,6 +7,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -43,11 +44,32 @@ func run() error {
 		sysroot     = flag.String("sysroot", "/", "filesystem root to discover hardware from")
 		rack        = flag.String("rack", "", "this node's rack, which cannot be discovered and must be declared")
 		mountinfo   = flag.String("mountinfo", "/proc/self/mountinfo", "mount table used to find the device under the pools")
+		liveness    = flag.Bool("liveness", false, "check whether the agent owning the pool is still making progress, and exit non-zero if not")
+		staleAfter  = flag.Duration("stale-after", 60*time.Second, "how long without progress means the agent is wedged")
 	)
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("forebay-agent", version.String())
+		return nil
+	}
+
+	// A separate invocation, since the process it judges may be wedged.
+	// Exiting non-zero is what gets the holder killed, which frees the lock.
+	if *liveness {
+		if *borrowed == "" {
+			return fmt.Errorf("liveness needs --borrowed-dir, which is where the heartbeat lives")
+		}
+		switch err := agent.CheckLiveness(*borrowed, *staleAfter, time.Now()); {
+		case errors.Is(err, agent.ErrUnreadable):
+			// Not a verdict. Failing the probe here kills a healthy agent on
+			// every attempt and the restart never fixes the mount.
+			fmt.Fprintln(os.Stderr, "forebay-agent: cannot judge liveness:", err)
+			return nil
+		case err != nil:
+			return err
+		}
+		fmt.Println("forebay-agent: making progress")
 		return nil
 	}
 
@@ -166,8 +188,9 @@ func run() error {
 	fmt.Println("forebay-agent", version.String())
 	fmt.Printf("capacity %s  compute %s  donated %s  borrowed %s  free %s\n",
 		acct.Capacity, acct.Compute, acct.Donated, a.Accounting().Borrowed, a.Accounting().Free())
-	fmt.Printf("startup corrected: %d expired, %d no longer fit, %d orphan extents, %d leases without extents\n",
-		len(rec.Expired), len(rec.Unfittable), len(rec.OrphanExtents), len(rec.LeasesWithoutExtents))
+	fmt.Printf("startup corrected: %d expired, %d no longer fit, %d orphan extents, %d leases without extents, %d interrupted reclaims, %d leftovers\n",
+		len(rec.Expired), len(rec.Unfittable), len(rec.OrphanExtents), len(rec.LeasesWithoutExtents),
+		len(rec.InvalidatedExtents), len(rec.Leftovers))
 	if !agent.ReservesBlocks {
 		// A development build sizes an extent without committing its blocks,
 		// so the capacity it reports lending is not actually held. Saying so

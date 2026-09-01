@@ -32,7 +32,12 @@ var (
 // lockName is the file whose descriptor carries the node lock. It lives in the
 // borrowed directory so that the lock and the capacity it guards cannot be
 // configured to different volumes by accident.
-const lockName = ".forebay-node.lock"
+const lockName = agentFilePrefix + "node.lock"
+
+// agentFilePrefix marks files the agent keeps for itself in the borrowed pool,
+// so no lease can be named over one. A prefix rather than a list of names,
+// because the list kept growing and one addition was already forgotten.
+const agentFilePrefix = ".forebay-"
 
 // Config is what an agent needs to take charge of a node's capacity.
 type Config struct {
@@ -66,6 +71,9 @@ type Reconciliation struct {
 	// something different: not leaked capacity, but a reclaim interrupted
 	// between invalidating an extent and removing it.
 	InvalidatedExtents []string
+	// Leftovers are the agent's own temporary files from a run that was killed
+	// mid-write. They hold nothing and are removed.
+	Leftovers []string
 	// OrphanExtents are extents on disk that no lease accounted for. Capacity
 	// nobody has a record of lending has leaked, so they are unlinked.
 	OrphanExtents []string
@@ -180,6 +188,14 @@ func Open(cfg Config, acct pool.Accounting, now time.Time) (*Agent, Reconciliati
 	rec.OrphanExtents = r.OrphanExtents
 	rec.LeasesWithoutExtents = r.LeasesWithoutExtents
 	rec.InvalidatedExtents = r.InvalidatedExtents
+	rec.Leftovers = r.Leftovers
+
+	// After reconciliation, so a probe never sees a fresh timestamp from an
+	// agent that has not yet established what it already lent.
+	if err := a.Heartbeat(now); err != nil {
+		a.Close()
+		return nil, rec, err
+	}
 	if reconcileErr != nil {
 		a.Close()
 		return nil, rec, reconcileErr
@@ -226,7 +242,17 @@ func (a *Agent) reconcile(now time.Time) (Reconciliation, error) {
 
 	onDisk := make(map[string]struct{}, len(entries))
 	for _, e := range entries {
-		if e.Name() == lockName {
+		// Only the lock and heartbeat are live state. Skipping the rest would
+		// put a killed heartbeat's litter beyond the one thing that cleans
+		// this pool.
+		if e.Name() == lockName || e.Name() == heartbeatName {
+			continue
+		}
+		if strings.HasPrefix(e.Name(), agentFilePrefix) {
+			if err := os.Remove(filepath.Join(a.cfg.BorrowedDir, e.Name())); err != nil {
+				return rec, fmt.Errorf("agent: removing leftover %s: %w", e.Name(), err)
+			}
+			rec.Leftovers = append(rec.Leftovers, e.Name())
 			continue
 		}
 		onDisk[e.Name()] = struct{}{}
@@ -286,8 +312,8 @@ func validLeaseID(id string) error {
 	switch {
 	case id == "", id == "." || id == "..":
 		return fmt.Errorf("%w: %q is not a name", ErrBadLeaseID, id)
-	case id == lockName:
-		return fmt.Errorf("%w: %q is reserved for the node lock", ErrBadLeaseID, id)
+	case strings.HasPrefix(id, agentFilePrefix):
+		return fmt.Errorf("%w: %q starts with %s, which is reserved for the agent's own files", ErrBadLeaseID, id, agentFilePrefix)
 	case strings.HasSuffix(id, invalidSuffix):
 		// Discarding an extent renames it to this suffix, and a rename
 		// overwrites. A lease allowed to carry the suffix could therefore have
