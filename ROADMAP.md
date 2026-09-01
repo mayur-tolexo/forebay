@@ -164,12 +164,17 @@ and S3 drivers ([0006](docs/rfcs/0006-durable-backend-driver-contract.md)), the 
 ([0014](docs/rfcs/0014-kubernetes-integration.md)) and the falsification suite
 ([0018](docs/rfcs/0018-benchmark-and-falsification-suite.md)).
 
-**Started.** Capacity accounting, the lease state machine and the lease journal are implemented and
-tested in `internal/pool` and `internal/lease`. A node now survives a restart knowing what it lent.
-None of it is wired to a device, an agent or a control plane, so nothing reclaims real capacity yet,
-and the restore path has therefore only ever run under test. The first real caller will be the one to
-find whatever the unit tests did not, which is a thing for RFC-0004 to carry rather than assume
-settled.
+**Started.** Capacity accounting, the lease state machine and the lease journal are in
+`internal/pool` and `internal/lease`, and the agent's startup path is in `internal/agent`: it owns
+the pool directories, holds the node lock, replays the journal and reconciles it against the disk in
+both directions.
+
+That path has been run on a GPU node with two RTX 5090s and 1.86 TiB of NVMe. It reported the
+capacity split, unlinked capacity nothing accounted for, left donated data untouched, and refused
+every layout and configuration it is meant to refuse.
+
+Nothing serves data and nothing watches for pressure, so no capacity is reclaimed on a running node
+yet, and there is still no control plane interface.
 
 **Done when** a GPU job runs on a node whose spare NVMe is serving the fabric, capacity is reclaimed
 mid-job without the job noticing, and the benchmark reports a number either way.
