@@ -40,6 +40,10 @@ make the project look good would be worse than none.
   how much a tier holding only regenerable data can ever be worth
 - How long revoking a reader actually takes against a running metadata server under load, since the
   elastic reclaim deadline cannot be honoured if revocation is slower than it
+- What headroom a node has to keep free for reclamation to stay ahead of a workload's writes, which
+  is the central tuning value of the agent's pressure design and currently has no defensible default
+- Whether hostNetwork earns its cost on the data path, measured against an ordinary pod network with
+  the extra hop it implies, since the answer decides how much isolation the agent gives up
 - How results are published, including negative ones
 
 ## Constraints inherited from earlier RFCs

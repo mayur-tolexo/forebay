@@ -23,6 +23,8 @@ believe they own the same bytes.
 - The CRD set, and what belongs in a CRD as opposed to control plane state
 - How borrowed capacity is represented to the scheduler, and whether it should be visible to it at all
 - Which Kubernetes signals drive reclamation, including admission, ephemeral-storage requests and eviction pressure
+- Whether the pressure watch can read from the kubelet directly rather than the API server, which
+  would keep the agent reclaiming through an API server outage
 - The CSI driver's mode of operation and its interaction with the node agent
 - How the operator behaves when the control plane is unreachable
 - How this integration avoids constraining a later Slurm or bare-metal adapter

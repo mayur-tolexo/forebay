@@ -12,7 +12,7 @@ the value of writing them down.
 
 ## Status
 
-RFC-0001, RFC-0002 and RFC-0005 are accepted. Everything else is open for argument.
+RFC-0001, RFC-0002, RFC-0004 and RFC-0005 are accepted. Everything else is open for argument.
 
 An RFC becomes accepted when its assumptions carry an honest basis, its open questions are answered
 or explicitly deferred to a named owner, and no claim in it is one we could not defend. Accepted does
@@ -28,7 +28,7 @@ edited away, which is the point of keeping these.
 | [0001](0001-thesis-scope-and-non-goals.md) | Thesis, scope and non-goals | **Accepted** | 0 | — |
 | [0002](0002-architecture-overview.md) | Architecture overview | **Accepted** | 0 | 0001 |
 | [0003](0003-topology-model.md) | Topology model | Not started | 1 | 0002 |
-| [0004](0004-node-agent.md) | Node agent | Draft | 1 | 0002, 0003 |
+| [0004](0004-node-agent.md) | Node agent | **Accepted** | 1 | 0002, 0003 |
 | [0005](0005-capacity-pools-and-elastic-leases.md) | Capacity pools and elastic leases | **Accepted** | 1 | 0002, 0004 |
 | [0006](0006-durable-backend-driver-contract.md) | Durable backend driver contract | Not started | 1 | 0002 |
 | [0007](0007-fast-tier-data-path.md) | Fast tier data path | Not started | 1 | 0005, 0006 |

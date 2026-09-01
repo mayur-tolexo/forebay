@@ -25,6 +25,9 @@ where a mistake costs real traffic and needs a guard.
 - What actions each loop may take, stated as a closed list rather than a general capability
 - The safety envelope on the slow loop, including rate limits, quorum and human approval
 - How oscillation is prevented when two loops or two control planes react to the same signal
+- Whether the node agent's tuned values should adapt rather than be configured, specifically its
+  headroom target, its post-reclaim cooldown and its churn budget, all of which currently ship as
+  conservative guesses
 - How a decision is explained after the fact, since an operator who cannot see why will turn it off
 - What the kill switch is, and what the system does with it engaged
 
