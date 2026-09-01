@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 1 |
 | **Depends on** | 0002, 0004 |
 
@@ -22,6 +22,25 @@ system into something that occasionally freezes a training job.
 1. When compute wants capacity back, how long may Forebay take, and what happens if it cannot?
 2. Who decides how much capacity a node has lent, when the control plane and the node disagree?
 3. What happens when the control plane is unreachable and a lease is still outstanding?
+
+## What of this is built
+
+This is the first RFC with an implementation behind it, so it says which parts are code. A document
+that reads as description while half of it is intention is how someone comes to rely on a guarantee
+nobody has written.
+
+| Part of the design | State |
+| --- | --- |
+| The pools and the arithmetic between them | Built, `internal/pool` |
+| Lease classes and the reclaim ladder | Built, `internal/lease` |
+| Never worse off, with the shortfall reported rather than hidden | Built |
+| The journal, replay, and refusing grants until it has been replayed | Built |
+| Post-reclaim cooldown and the churn budget | Built |
+| The reclaim deadline | **Stated and validated, not enforced.** An elastic grant is refused if no deadline is configured, so the promise cannot go missing quietly. Honouring it end to end means invalidating readers, which is the data path |
+| Invalidate before unlink | **Not built.** There are no extents yet |
+| Reconciling the journal against the device, and unlinking orphans | **Not built**, for the same reason |
+| Any interface to a control plane | **Not built.** Accepting a grant is a local call, not a request. Nothing proposes grants over a network and nothing publishes the accounting back |
+| Publishing pool accounting, so the control plane's view is a cache of the node's | **Not built** |
 
 ## Assumptions
 
@@ -81,6 +100,10 @@ only one thing: how quickly the capacity can be taken back.
 | `elastic` | Bounded, `reclaimWithin` | Cache, scratch | Second, within the deadline |
 | `guaranteed` | Not before expiry | Checkpoint staging in progress | Never early. The expiry is the promise |
 
+An elastic lease without a configured deadline is refused rather than granted. A zero deadline would
+make elastic capacity reclaimable immediately, which is the opportunistic class under another name,
+and a promise that quietly evaporates is worse than one never made.
+
 `guaranteed` exists because some regenerable data is expensive to regenerate at a bad moment. A
 checkpoint staged halfway through a synchronised write across a thousand ranks is regenerable in
 principle and catastrophic to drop in practice. The class buys a bounded window, never an open one,
@@ -114,7 +137,13 @@ flowchart LR
 ```
 
 Within a step of the ladder, already-expired leases go first because releasing them costs nothing at
-all, and the remainder are dropped oldest-first, age standing in as a proxy for coldness. Nothing
+all, and the remainder are dropped oldest-first, age standing in as a proxy for coldness.
+
+Leases granted in the same instant tie on both of those keys, and the identifier breaks the tie. That
+is not decoration. Without it the order falls back to however the leases came out of a map, which Go
+randomises, so two calls could disagree about which of two identical leases to drop. It was a real
+defect, found by running the tests repeatedly rather than once, and anyone tempted to simplify the
+comparison should know what it is for. Nothing
 better is available without hit-rate data per lease, which is a thing to revisit once RFC-0017 can
 supply it.
 
@@ -338,17 +367,25 @@ and RFC-0016 has to say so explicitly.
 
 ## Open questions
 
-- The default value of `reclaimWithin`. Thirty seconds appears in the API sketch and is currently a
-  guess. It should be derived from pod admission behaviour and measured reclaim latency, not chosen.
-- Whether tight coupling between our metadata server and our node agents is worth the control
-  protocol it requires, given it buys per-client revocation instead of fencing every reader of an
-  extent. See RFC-0008, where the spike findings are recorded.
-- How quickly freed capacity becomes observably available to a competing writer, as opposed to how
-  quickly `unlink` returns.
-- Whether the guaranteed cap should be a fixed fraction or set by policy, and whether a node may
-  refuse guaranteed leases entirely.
-- How the churn budget and the cooldown are chosen, and whether either should adapt rather than
-  being configured. The shipped defaults are conservative guesses, not measurements.
-- Whether oldest-first is the right tiebreak within a class once per-lease hit rates exist.
-- Whether donated capacity should ever be reclaimable under extreme compute pressure. The current
-  answer is no, and it is worth revisiting once operators have opinions.
+- **The default value of `reclaimWithin`.** Thirty seconds appears in the API sketch and is a guess.
+  It has to come from pod admission behaviour and measured end-to-end reclaim rather than be chosen.
+  Owned by [RFC-0018](0018-benchmark-and-falsification-suite.md).
+- **How quickly freed capacity becomes observably available to a competing writer**, as opposed to
+  how quickly `unlink` returns, since the second is what compute actually waits for. Owned by
+  [RFC-0018](0018-benchmark-and-falsification-suite.md).
+- **Whether tight coupling between the metadata server and the node agents is worth the control
+  protocol it requires**, given it buys per-client revocation rather than fencing every reader of an
+  extent. Owned by [RFC-0008](0008-access-layer-pnfs.md).
+- **Whether the guaranteed cap should be a fixed fraction or set by policy**, and whether a node may
+  refuse guaranteed leases outright. Owned by [RFC-0009](0009-intent-and-policy-model.md).
+- **How the churn budget and the cooldown are chosen.** The shipped defaults are conservative
+  guesses. The values are owned by [RFC-0018](0018-benchmark-and-falsification-suite.md), and whether
+  either should adapt rather than be configured is owned by
+  [RFC-0010](0010-autonomy-engine.md).
+- **Whether oldest-first remains the right tiebreak within a class** once per-lease hit rates exist
+  to do better. Owned by [RFC-0007](0007-fast-tier-data-path.md), which owns eviction, using the
+  measurements from [RFC-0017](0017-observability.md).
+- **Whether donated capacity should ever be reclaimable under extreme compute pressure.** The current
+  answer is no. No RFC owns this, deliberately: it trades a durability promise against a compute one,
+  and that is an operator's decision rather than an engineering one. Revisit when operators have
+  opinions.
