@@ -25,6 +25,9 @@ grounds that manifests and plain heuristics have to be shown to fall short first
 - Sequential and strided detection for the case where no hint is available
 - The prefetch budget, and how prefetching is prevented from evicting data that is about to be read
 - How the benefit is measured, so that prefetching can be shown to help rather than assumed to
+- Whether admitting a block to the cache on its second read is good enough, or whether admission
+  needs access-pattern knowledge the fast tier cannot see on its own. A manifest arrives before the
+  first read, which is better evidence than a second one
 - What happens when a prediction is wrong at high volume
 
 ## Constraints inherited from earlier RFCs

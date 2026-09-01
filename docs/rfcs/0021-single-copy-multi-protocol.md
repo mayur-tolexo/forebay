@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Specified |
+| **Status** | Draft |
 | **Phase** | 3 |
 | **Depends on** | 0012, 0020 |
 | **Supersedes** | The unified-namespace non-goal in 0001 |

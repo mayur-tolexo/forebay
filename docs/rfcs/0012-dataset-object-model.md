@@ -25,6 +25,9 @@ whose implementation depends most on what the backend underneath can actually do
 - What happens when a backend cannot clone cheaply, given that silent degradation is forbidden
 - Naming, identity and immutability rules for versions
 - Garbage collection of data no longer referenced by any version, and how that interacts with clones
+- What a reader still holding cached blocks from a deleted dataset version should see. The bytes are
+  valid for an identity that no longer exists, so serving them is arguably correct and definitely
+  surprising
 - How a clone interacts with the borrowed tier, since a fan-out of clones from one golden dataset is the case where caching pays most
 
 ## Constraints inherited from earlier RFCs

@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Specified |
+| **Status** | Draft |
 | **Phase** | 1 |
 | **Depends on** | 0002, 0006, 0007 |
 
