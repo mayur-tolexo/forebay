@@ -18,8 +18,29 @@ than an error, a stall, or a wrong answer.
 
 ## What of this is built
 
-**None of it.** `internal/agent` owns the pool directories and reconciles leases against them, but
-nothing serves a byte. There is no cache, no admission, no eviction and no peer fetch.
+The node-local half is built, in `internal/fasttier`. Nothing above it reads: there is no access
+layer, so the tier has a caller only in tests.
+
+| Part of the design | State |
+| --- | --- |
+| Cache and scratch as separate roles | Built for cache, which is the read path. Scratch is not held by the tier |
+| Immutable content keyed by identity, so there is nothing to invalidate | Built |
+| The fixed-size block as the unit | Built. Blocks are slots inside a lease's extent, because RFC-0005 allocates capacity as extents that are large and few |
+| Admission on the second read, prefetch bypassing it | Built |
+| The record of first reads, bounded | Built. Its size is unmeasured, and a bound too small admits nothing |
+| Eviction: the tier's own choice, least valuable first | Built. It prefers a lease that is leaving anyway, from the order the lease manager already keeps, and takes the least recently used block within it. Recency is the only notion of value: nothing weighs how often a block is read or what it cost to fetch |
+| A revoked read becoming a miss, never an error or stale bytes | Built, and the harder half with it: a read runs outside the cache lock so readers do not queue behind each other, which lets a slot be refilled mid-read. Each occupancy is stamped and the stamp checked afterwards, so a block whose slot was taken reads as a miss rather than as another object's content |
+| Blocks never shared between tenants, and the record per tenant too | Built |
+| Peer fetch and the rack tier | **Not built,** deliberately. The tier is designed as removable there and [RFC-0018](0018-benchmark-and-falsification-suite.md) owns whether it earns its place |
+| Anything that reads from the tier | **Not built.** The caller is the access layer, [RFC-0008](0008-access-layer-pnfs.md) |
+
+Run on a GPU node against a real agent extent. A first epoch over 32 blocks admitted nothing and
+left the cache empty, a second admitted all of them, and a third served every one. A reclaim then
+dropped all 32 at once and every subsequent read was a miss, none an error.
+
+Those numbers say the path works. They are not evidence for the thesis and must not be quoted as
+any: there was no backend arm, so nothing was compared against anything, which is the confound
+RFC-0018's comparability rule exists to prevent.
 
 ## Assumptions
 
