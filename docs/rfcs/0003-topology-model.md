@@ -19,8 +19,9 @@ will confidently make things worse, so this document is mostly about representin
 
 ### What a real node actually reports
 
-Probed on a dev node, 2026-09-01, Ubuntu 24.04, kernel 6.8. Not GPU hardware, which is the point:
-this is what the model gets when it asks a machine that cannot answer.
+Probed first on a dev node without accelerators, 2026-09-01, Ubuntu 24.04, kernel 6.8. This is what
+the model gets when it asks a machine that cannot answer. The same probe was then repeated on a real
+GPU node, below.
 
 | Asked for | Answer |
 | --- | --- |
@@ -30,6 +31,31 @@ this is what the model gets when it asks a machine that cannot answer.
 | RDMA | No `infiniband` class, so none |
 | A GPU, by PCI class | Found `0000:00:02.0`, which is the VM's **virtual display adapter** |
 | Rack, row or zone labels | None on the node |
+
+### The same questions on real GPU hardware
+
+Repeated on a node with two NVIDIA RTX 5090s, 2026-09-01, from the same unprivileged pod.
+
+| Asked for | Answer |
+| --- | --- |
+| Accelerators, by PCI class | Two devices at `0000:01:00.0` and `0000:04:00.0`, class **`0x030000`** |
+| Their vendor and device | `0x10de` and `0x2b85`, which is what identifies them |
+| PCI device NUMA affinity | `numa_node` reads **-1**, as on the virtual node |
+| NUMA nodes | One |
+| NVMe | Present, `nvme0n1` of roughly 1.86 TiB, which is the capacity this project exists to borrow |
+| NIC link speed | **10000**, readable here where the virtual node reported -1 |
+| RDMA | No `infiniband` class, so none |
+
+**The class match result is the important one.** A real RTX 5090 reports class `0x030000`, and so did
+the virtual display adapter on the other node. They are indistinguishable by class, which is direct
+evidence from both sides for the rule below: identification needs a positive signal, and vendor plus
+device is the signal that separates them. Had only the virtual node been probed, the rule would have
+rested on one example and an argument.
+
+Two other things changed and one did not. NIC speed is readable on real hardware and was not on the
+virtual node, so that fact is sometimes available rather than never. NVMe is present and large.
+NUMA affinity is still -1, on a desktop-class single-socket board where it genuinely does not apply,
+so the unavailability this document is built around is not an artefact of virtualisation.
 
 **How much privilege that took.** The first probe used a privileged debug container that had entered
 the host filesystem, which proves the files exist and are readable by root and nothing more. Repeated
@@ -69,7 +95,7 @@ unknown that is not a value, and the rule that an unknown never satisfies a requ
 | Device, NUMA and PCIe facts can be read from `/sys` without extra privilege | **Measured**, from an unprivileged pod, as recorded above under how much privilege that took. The first probe did not show this and was corrected | The agent needs privilege this project is trying not to take, see RFC-0004 |
 | NUMA and PCIe affinity are frequently unavailable rather than occasionally | **Measured**, every PCI device reported -1 on the probed node | Nothing: the design assumes this and would only get better |
 | Rack membership cannot be discovered and must be declared | **Measured**, no topology labels existed, and no mechanism exists to derive one | Placement has no failure-domain information at all, which it must then say rather than assume |
-| Identifying accelerators needs more than a PCI class match | **Measured**, a class match found a virtual display adapter | Forebay places data near a device that cannot compute |
+| Identifying accelerators needs more than a PCI class match | **Measured on both sides.** A class match found a virtual display adapter on one node, and two real RTX 5090s report the identical class on another | Forebay places data near a device that cannot compute |
 | Operators will label racks if asked | Unverified | Rack-aware placement degrades to node-local and nothing else |
 
 ## Design

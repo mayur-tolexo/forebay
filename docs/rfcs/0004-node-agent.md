@@ -44,6 +44,27 @@ behaviour nobody wrote.
 | Serving the fast tier | **Not built.** Owned by [RFC-0007](0007-fast-tier-data-path.md) |
 | Any interface to a control plane | **Not built.** Grants arrive as local calls |
 
+### Verified on a real node
+
+The startup path was run on a GPU node with two RTX 5090s and roughly 1.86 TiB of NVMe, 2026-09-01,
+from an unprivileged container. What it does and what it refuses both behave as this document says.
+
+| Behaviour | Result |
+| --- | --- |
+| Reports the capacity split and what startup corrected | Yes, against 1.86 TiB of real device |
+| Unlinks an extent no lease accounts for | Yes, one planted orphan removed |
+| Leaves donated capacity untouched while doing it | Yes, a file planted in the donated pool survived intact |
+| Refuses a shared pool directory | Yes, `borrowed and donated pools must be different directories` |
+| Refuses nested pool directories | Yes, naming both paths |
+| Refuses to start with no reclaim deadline | Yes, since every elastic grant would otherwise be refused |
+| Refuses accounting that does not add up | Yes, `pools exceed device capacity` |
+| Admits one agent per node | Twenty started at once, nine refused by the lock and none proceeding beside another |
+
+The lock result needs its caveat. The binary starts, reports and exits, so it holds the lock only
+briefly and the twenty runs serialised rather than nine failing outright. What the run shows is that
+contention is detected and refused, not that a long-lived agent excludes another for its lifetime.
+Demonstrating that needs a serving path to stay running for.
+
 ## Assumptions
 
 | Assumption | Basis | Risk if wrong |
