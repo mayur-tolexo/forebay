@@ -24,7 +24,7 @@ func node(cfg Config) *Manager {
 
 // relaxed disables churn and cooldown so a test can exercise one thing.
 func relaxed() Config {
-	return Config{GuaranteedFraction: 0.25}
+	return Config{ReclaimWithin: 30 * time.Second, GuaranteedFraction: 0.25}
 }
 
 func grant(id string, c Class, size pool.Bytes) Lease {
@@ -215,7 +215,7 @@ func TestCooldownBlocksImmediateRegrant(t *testing.T) {
 }
 
 func TestChurningNodeStopsAcceptingCapacity(t *testing.T) {
-	cfg := Config{GuaranteedFraction: 0.25, ChurnWindow: time.Hour, ChurnBudget: 2}
+	cfg := Config{ReclaimWithin: 30 * time.Second, GuaranteedFraction: 0.25, ChurnWindow: time.Hour, ChurnBudget: 2}
 	m := node(cfg)
 	now := t0
 	for i, id := range []string{"a", "b"} {
@@ -316,7 +316,7 @@ func TestReclaimKeepsTheRecordWhenAccountingRefuses(t *testing.T) {
 func TestCooldownSurvivesAShortChurnWindow(t *testing.T) {
 	// A churn window shorter than the cooldown must not discard the history
 	// the cooldown depends on.
-	cfg := Config{GuaranteedFraction: 0.25, MinTerm: time.Minute,
+	cfg := Config{ReclaimWithin: 30 * time.Second, GuaranteedFraction: 0.25, MinTerm: time.Minute,
 		ChurnWindow: 5 * time.Second, ChurnBudget: 10}
 	m := node(cfg)
 	if err := m.Accept(grant("a", Elastic, 1*pool.TiB), t0); err != nil {
@@ -334,7 +334,7 @@ func TestCooldownSurvivesAShortChurnWindow(t *testing.T) {
 func TestReclamationHistoryDoesNotGrowWithoutBound(t *testing.T) {
 	// Churn disabled must still prune, or a long-lived agent accumulates one
 	// timestamp per reclamation forever.
-	cfg := Config{GuaranteedFraction: 0.25, MinTerm: time.Second}
+	cfg := Config{ReclaimWithin: 30 * time.Second, GuaranteedFraction: 0.25, MinTerm: time.Second}
 	m := node(cfg)
 	now := t0
 	for i := 0; i < 200; i++ {
@@ -425,5 +425,50 @@ func TestReclaimOrderIsDeterministicForIdenticalLeases(t *testing.T) {
 	}
 	if first[0] != "e1" || first[2] != "e3" {
 		t.Errorf("tie broken as %v, want identifier order", first)
+	}
+}
+
+func TestReclaimDeadlinePerClass(t *testing.T) {
+	// The deadline is the promise the elastic class exists to make, so the
+	// classes have to differ on it in a way a caller can act on.
+	cfg := Config{ReclaimWithin: 30 * time.Second}
+
+	if d, bounded := Opportunistic.ReclaimDeadline(cfg); !bounded || d != 0 {
+		t.Errorf("Opportunistic = %v, %v; want 0 and bounded", d, bounded)
+	}
+	if d, bounded := Elastic.ReclaimDeadline(cfg); !bounded || d != 30*time.Second {
+		t.Errorf("Elastic = %v, %v; want 30s and bounded", d, bounded)
+	}
+	// Guaranteed capacity is not reclaimed early at any speed, so a deadline
+	// would be a promise the class does not make.
+	if _, bounded := Guaranteed.ReclaimDeadline(cfg); bounded {
+		t.Error("Guaranteed reported a reclaim deadline, want none")
+	}
+}
+
+func TestDefaultConfigStatesTheReclaimContract(t *testing.T) {
+	if got := DefaultConfig().ReclaimWithin; got != 30*time.Second {
+		t.Errorf("DefaultConfig().ReclaimWithin = %v, want 30s", got)
+	}
+}
+
+func TestElasticGrantIsRefusedWithoutADeadline(t *testing.T) {
+	// A config that never set ReclaimWithin would make elastic capacity
+	// reclaimable immediately, which is opportunistic wearing the wrong name.
+	// Refusing is louder than silently downgrading the promise.
+	m := New(pool.Accounting{Capacity: 8 * pool.TiB}, Config{GuaranteedFraction: 0.25})
+
+	if err := m.Accept(grant("e", Elastic, 1*pool.TiB), t0); !errors.Is(err, ErrNoDeadline) {
+		t.Fatalf("elastic Accept without a deadline = %v, want ErrNoDeadline", err)
+	}
+	if got := m.Accounting().Borrowed; got != 0 {
+		t.Errorf("Borrowed = %s after a refused grant, want 0", got)
+	}
+	// The other two classes do not depend on that deadline and still work.
+	if err := m.Accept(grant("o", Opportunistic, 1*pool.TiB), t0); err != nil {
+		t.Errorf("opportunistic Accept = %v, want nil", err)
+	}
+	if err := m.Accept(grant("g", Guaranteed, 1*pool.TiB), t0); err != nil {
+		t.Errorf("guaranteed Accept = %v, want nil", err)
 	}
 }

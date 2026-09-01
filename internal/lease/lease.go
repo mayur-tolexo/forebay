@@ -59,6 +59,30 @@ func ParseClass(s string) (Class, error) {
 	}
 }
 
+// ReclaimDeadline reports how long this class may take to hand capacity back,
+// and whether any deadline applies. Guaranteed capacity has none, because its
+// term is the promise: it is not reclaimed early at any speed.
+//
+// A zero deadline means different things per class and the difference matters.
+// For opportunistic capacity it means immediately. For elastic it means the
+// config never set one, which Accept refuses rather than treat as immediate,
+// since silently collapsing elastic into opportunistic would hand back
+// capacity the caller expected to keep for a bounded time.
+//
+// This states the contract. Enforcing it end to end also requires invalidating
+// readers, which lives in the data path rather than here, so a caller that
+// holds extents is responsible for finishing inside the returned budget.
+func (c Class) ReclaimDeadline(cfg Config) (time.Duration, bool) {
+	switch c {
+	case Opportunistic:
+		return 0, true
+	case Elastic:
+		return cfg.ReclaimWithin, true
+	default:
+		return 0, false
+	}
+}
+
 // Valid reports whether c is a class this package knows how to reclaim.
 // Reclaiming an unknown class would mean guessing at its cost, so grants
 // carrying one are refused instead.
@@ -103,10 +127,20 @@ var (
 	// a manager with a journal lends nothing until it knows what it already
 	// lent.
 	ErrNotRestored = errors.New("lease: journal has not been replayed yet")
+	// ErrNoDeadline is an elastic grant under a config that never set
+	// ReclaimWithin. Accepting it would make elastic capacity reclaimable
+	// immediately, which is the opportunistic class wearing the wrong name.
+	ErrNoDeadline = errors.New("lease: elastic leases need a reclaim deadline")
 )
 
 // Config tunes how willingly a node lends and how hard it resists churn.
 type Config struct {
+	// ReclaimWithin is how long an elastic lease may take to return its
+	// capacity once it has been asked for. It is the promise the elastic class
+	// exists to make, and it bounds the data path rather than this package:
+	// dropping a lease here is a map operation, while the time is spent
+	// invalidating readers and unlinking extents.
+	ReclaimWithin time.Duration
 	// GuaranteedFraction caps guaranteed leases as a share of device
 	// capacity. The denominator is the device rather than the borrowed pool,
 	// because the borrowed pool shrinks under pressure and a cap that shrank
@@ -128,6 +162,7 @@ type Config struct {
 // real workload yet.
 func DefaultConfig() Config {
 	return Config{
+		ReclaimWithin:      30 * time.Second,
 		GuaranteedFraction: 0.25,
 		MinTerm:            30 * time.Second,
 		ChurnWindow:        10 * time.Minute,
@@ -302,6 +337,13 @@ func (m *Manager) Accept(l Lease, now time.Time) error {
 	}
 	if in, until := m.inCooldown(now); in {
 		return fmt.Errorf("%w: %s remaining", ErrCooldown, until)
+	}
+	// An elastic lease promises capacity back within a bounded time. A config
+	// that never set one would quietly make that promise meaningless.
+	if l.Class == Elastic {
+		if d, _ := l.Class.ReclaimDeadline(m.cfg); d <= 0 {
+			return fmt.Errorf("%w: ReclaimWithin is %s", ErrNoDeadline, m.cfg.ReclaimWithin)
+		}
 	}
 	if l.Class == Guaranteed {
 		limit := pool.Bytes(float64(m.acct.Capacity) * m.cfg.GuaranteedFraction)
