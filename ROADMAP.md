@@ -180,12 +180,20 @@ not Forebay. On a GPU node it identified both accelerators by vendor, found the 
 declined to count an attached Ceph RBD as local capacity, and reported NUMA affinity as unknown
 because the kernel says -1.
 
-That path has been run on a GPU node with two RTX 5090s and 1.86 TiB of NVMe. It reported the
-capacity split, unlinked capacity nothing accounted for, left donated data untouched, and refused
-every layout and configuration it is meant to refuse.
+The agent stays running and reclaims on its own. It keeps a floor of free space, polls the
+filesystem, and returns the shortfall when a workload takes space nobody declared. The reclaim is
+timed against the deadline the elastic class promises, and overrunning it is an error rather than a
+log line. While it runs it publishes a heartbeat, so a wedged agent is killed by its own liveness
+probe and its replacement can take the lock, which the node lock alone could not do.
 
-Nothing serves data and nothing watches for pressure, so no capacity is reclaimed on a running node
-yet, and there is still no control plane interface.
+All of it has been run on a GPU node with two RTX 5090s and 1.86 TiB of NVMe: the capacity split,
+unlinking capacity nothing accounted for, leaving donated data untouched, refusing every layout it
+should refuse, reclaiming 128 MiB when a workload ate the headroom, and a wedged holder killed and
+replaced under a real kubelet probe.
+
+Two of the pressure watch's three inputs are missing, so it learns about pressure once the space has
+already gone rather than before a workload writes. Nothing serves data, there is no control plane
+interface, and the headroom target it needs has no measured value.
 
 **Done when** a GPU job runs on a node whose spare NVMe is serving the fabric, capacity is reclaimed
 mid-job without the job noticing, and the benchmark reports a number either way.
