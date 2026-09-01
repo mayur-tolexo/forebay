@@ -214,17 +214,17 @@ func TestReclaimUnlinksWhatItFreed(t *testing.T) {
 		}
 	}
 
-	res, failed, err := a.ReclaimCapacity(size, now)
+	rec, err := a.ReclaimCapacity(size, now)
 	if err != nil {
 		t.Fatalf("reclaiming: %v", err)
 	}
-	if len(failed) != 0 {
-		t.Errorf("extents left behind: %v", failed)
+	if len(rec.Failed) != 0 {
+		t.Errorf("extents left behind: %v", rec.Failed)
 	}
-	if res.Reclaimed < size {
-		t.Errorf("reclaimed %s, want at least %s", res.Reclaimed, pool.Bytes(size))
+	if rec.Result.Reclaimed < size {
+		t.Errorf("reclaimed %s, want at least %s", rec.Result.Reclaimed, pool.Bytes(size))
 	}
-	for _, id := range res.Dropped {
+	for _, id := range rec.Result.Dropped {
 		path := filepath.Join(a.cfg.BorrowedDir, id)
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Errorf("extent for reclaimed lease %s survived", id)
@@ -279,5 +279,78 @@ func TestALeaseCannotShadowAnExtentBeingDiscarded(t *testing.T) {
 	}
 	if _, err := a.Release("a", now); err != nil {
 		t.Errorf("releasing the surviving lease: %v", err)
+	}
+}
+
+func TestReclaimIsTimedAgainstThePromiseItMade(t *testing.T) {
+	// The elastic class exists to promise capacity back within a deadline, and
+	// until now nothing measured whether it was. A promise nobody times is a
+	// promise nobody keeps.
+	a, now := openAgent(t)
+	const size = 4 << 20
+	if err := a.Grant(grantable("elastic-a", size), now); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := a.ReclaimCapacity(size, now)
+	if err != nil {
+		t.Fatalf("reclaiming: %v", err)
+	}
+	if rec.Elapsed <= 0 {
+		t.Error("Elapsed was not measured")
+	}
+	if rec.Deadline != a.cfg.Lease.ReclaimWithin {
+		t.Errorf("Deadline = %s, want the configured %s", rec.Deadline, a.cfg.Lease.ReclaimWithin)
+	}
+	if rec.Overran {
+		t.Errorf("a %s reclaim overran a %s deadline", rec.Elapsed, rec.Deadline)
+	}
+}
+
+func TestOpportunisticCapacityHasNoDeadlineToOverrun(t *testing.T) {
+	// It is taken first and without warning, so it promises nothing. Measuring
+	// it against the elastic deadline would invent a promise the class does
+	// not make, and then report it as kept.
+	a, now := openAgent(t)
+	const size = 4 << 20
+	l := grantable("opp-a", size)
+	l.Class = lease.Opportunistic
+	if err := a.Grant(l, now); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := a.ReclaimCapacity(size, now)
+	if err != nil {
+		t.Fatalf("reclaiming: %v", err)
+	}
+	if rec.Deadline != 0 {
+		t.Errorf("Deadline = %s for an opportunistic reclaim, want none", rec.Deadline)
+	}
+	if rec.Overran {
+		t.Error("an opportunistic reclaim was reported as overrunning a deadline it does not have")
+	}
+}
+
+func TestAMissedDeadlineIsAnError(t *testing.T) {
+	// A caller that gets a nil error keeps offering the same promise. Missing
+	// the deadline is the elastic class failing at the one thing it does, so
+	// it has to be impossible to ignore by accident.
+	a, now := openAgent(t)
+	// A deadline no real reclaim can meet, since the point is the reporting
+	// rather than provoking a genuinely slow unlink.
+	a.cfg.Lease.ReclaimWithin = time.Nanosecond
+	const size = 4 << 20
+	if err := a.Grant(grantable("elastic-a", size), now); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := a.ReclaimCapacity(size, now)
+	if !errors.Is(err, ErrDeadlineMissed) {
+		t.Fatalf("reclaim = %v, want ErrDeadlineMissed", err)
+	}
+	if !rec.Overran {
+		t.Error("Overran was not set on a reclaim that missed its deadline")
+	}
+	// The capacity still came back. A missed deadline is a broken promise, not
+	// a failed reclamation, and reporting it must not undo the work.
+	if got := a.Accounting().Borrowed; got != 0 {
+		t.Errorf("borrowed = %s after a late reclaim, want the capacity returned anyway", got)
 	}
 }

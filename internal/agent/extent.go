@@ -21,8 +21,14 @@ import (
 // builds the name from the identifier and validLeaseID refuses a dot.
 const invalidSuffix = ".invalid"
 
-// ErrNoExtent reports a lease whose capacity was never materialised.
-var ErrNoExtent = errors.New("agent: lease has no extent")
+var (
+	// ErrNoExtent reports a lease whose capacity was never materialised.
+	ErrNoExtent = errors.New("agent: lease has no extent")
+	// ErrDeadlineMissed reports capacity that came back later than the node
+	// promised it would. It is the elastic class's only guarantee, so missing
+	// it is a defect rather than a slow path.
+	ErrDeadlineMissed = errors.New("agent: reclaim missed its deadline")
+)
 
 // Grant accepts a lease and materialises the capacity it describes.
 //
@@ -125,29 +131,74 @@ func (a *Agent) discard(leaseID string) error {
 	return nil
 }
 
+// Reclamation is what one reclaim did, and how long it took against the
+// promise the node made.
+//
+// The elapsed time covers choosing the leases and removing their extents, and
+// RFC-0004 names the two things that dominate reclaim latency as neither of
+// those. Detecting that compute wants the capacity back is excluded because
+// the clock starts once a reclaim has been asked for, and the pressure watch
+// that would do the detecting is not built. Invalidating readers is excluded
+// because nothing serves an extent yet.
+//
+// So a figure comfortably inside the deadline says the parts that exist are
+// cheap. It does not say the promise is met, and it will not until both
+// excluded halves exist to be measured.
+type Reclamation struct {
+	// Result is what the lease manager released.
+	Result lease.Result
+	// Elapsed is how long the reclamation took, measured on the clock rather
+	// than from the caller's timestamp, since the caller's is the wall clock
+	// the lease logic reasons about and can jump.
+	Elapsed time.Duration
+	// Deadline is the promise this reclamation was measured against, and is
+	// zero when no elastic lease was dropped. Opportunistic capacity is taken
+	// without warning and promises nothing, so there is nothing for it to
+	// overrun.
+	Deadline time.Duration
+	// Overran reports a broken promise: an elastic lease was reclaimed and the
+	// capacity took longer to return than the node said it would.
+	Overran bool
+	// Failed names extents that could not be unlinked. Their capacity is
+	// already unreachable and the next reconciliation removes them.
+	Failed []string
+}
+
 // ReclaimCapacity frees at least need bytes and unlinks what it freed.
 //
 // The lease manager chooses which leases go, in reclaim order, since it owns
-// the ladder and the protections around it. This walks the leases it released
-// and removes their extents.
+// the ladder and the protections around it. This walks the leases it released,
+// removes their extents, and times the whole thing against the deadline the
+// node promised.
 //
-// The window between those two things is real and is the reason this returns
-// the leases whose extents outlived their accounting: the manager reports the
-// capacity free before the bytes are gone, so a grant arriving in between could
-// be accepted against space still occupied. Reclaim was measured at
-// milliseconds, which makes the window small rather than absent.
-func (a *Agent) ReclaimCapacity(need pool.Bytes, now time.Time) (lease.Result, []string, error) {
-	res := a.leases.Reclaim(need, now)
-	var failed []string
-	for _, id := range res.Dropped {
+// The window between the manager freeing the accounting and the extents being
+// gone is real: a grant arriving in between could be accepted against space
+// still occupied. Reclaim was measured at milliseconds, which makes the window
+// small rather than absent.
+func (a *Agent) ReclaimCapacity(need pool.Bytes, now time.Time) (Reclamation, error) {
+	start := time.Now()
+	rec := Reclamation{Result: a.leases.Reclaim(need, now)}
+	for _, id := range rec.Result.Dropped {
 		if err := a.discard(id); err != nil && !errors.Is(err, ErrNoExtent) {
-			failed = append(failed, id)
+			rec.Failed = append(rec.Failed, id)
 		}
 	}
-	if len(failed) > 0 {
-		return res, failed, fmt.Errorf("agent: %d reclaimed extents could not be unlinked and await reconciliation", len(failed))
+	rec.Elapsed = time.Since(start)
+	if rec.Result.Bounded {
+		rec.Deadline = a.cfg.Lease.ReclaimWithin
 	}
-	return res, nil, nil
+	rec.Overran = rec.Deadline > 0 && rec.Elapsed > rec.Deadline
+
+	if len(rec.Failed) > 0 {
+		return rec, fmt.Errorf("agent: %d reclaimed extents could not be unlinked and await reconciliation", len(rec.Failed))
+	}
+	if rec.Overran {
+		// Returned as an error because it is a promise the node broke, and a
+		// caller that ignores it will keep offering the same promise.
+		return rec, fmt.Errorf("%w: returning %s took %s against a deadline of %s",
+			ErrDeadlineMissed, rec.Result.Reclaimed, rec.Elapsed.Round(time.Millisecond), rec.Deadline)
+	}
+	return rec, nil
 }
 
 // invalidatedExtents lists extents left mid-discard by an interrupted run, so

@@ -39,7 +39,7 @@ behaviour nobody wrote.
 | Surviving an unreadable journal by starting empty | Built |
 | Device and topology discovery | Built, `internal/topology`, and the agent discovers its own capacity |
 | The pressure watch, and the headroom target it maintains | **Not built** |
-| Timing reclamation against the deadline | **Not built.** Nothing measures elapsed reclaim yet |
+| Timing reclamation against the deadline | Built for the part that exists. A reclaim is timed and one that overruns is an error, but the span covers choosing leases and unlinking extents, not invalidating readers, which is where RFC-0005 expects the time to go |
 | Readiness computed from latency, and the liveness that breaks a wedged lock | **Not built** |
 | Serving the fast tier | **Not built.** Owned by [RFC-0007](0007-fast-tier-data-path.md) |
 | Any interface to a control plane | **Not built.** Grants arrive as local calls |
@@ -311,9 +311,10 @@ capacity planning.
 
 ## Performance implications
 
-Predicted except where noted. Reclaim by unlink is measured at 2.6 ms and unaffected by concurrent
-write load, so the agent's reclaim latency is dominated by detecting the need and by invalidating
-readers, not by the filesystem. Both belong in RFC-0018.
+Predicted except where noted. Reclaim through the agent is measured at 2.8 ms for 7 GiB and 7.4 ms
+under four concurrent `O_DIRECT` writers, so load costs about two and a half times and still leaves
+four orders of magnitude inside a thirty second deadline. The agent's reclaim latency is therefore
+dominated by detecting the need and by invalidating readers, not by the filesystem. Both belong in RFC-0018.
 
 The polling interval for free space is a direct trade between reclaim latency and idle cost, and has
 no defensible value yet.

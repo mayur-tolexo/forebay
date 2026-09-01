@@ -404,6 +404,15 @@ type Result struct {
 	// it would have been in with no lending at all, and the caller must be
 	// able to see that rather than infer it.
 	Shortfall pool.Bytes
+	// Bounded reports whether a live elastic lease was taken to satisfy this
+	// reclaim, which is the only class that promises a deadline.
+	//
+	// The manager knows the class at the moment it releases a lease, and a
+	// caller that had to work it out afterwards would have to copy and sort
+	// every lease first, on the path that runs when the node is under
+	// pressure. Expiry does not set it: a lease whose term simply ran out was
+	// never asked for, so no deadline was engaged.
+	Bounded bool
 	// Dropped names the leases released, cheapest first.
 	Dropped []string
 	// Unfittable names leases that were valid but that the accounting could no
@@ -458,6 +467,9 @@ func (m *Manager) Reclaim(need pool.Bytes, now time.Time) Result {
 			}
 			res.Reclaimed += l.Size
 			res.Dropped = append(res.Dropped, l.ID)
+			if l.Class == Elastic {
+				res.Bounded = true
+			}
 		}
 	}
 
