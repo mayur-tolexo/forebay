@@ -94,6 +94,7 @@ func (a *Agent) allocate(leaseID string, size pool.Bytes) error {
 // that is not there yet, which is the overcommit the pool arithmetic exists to
 // prevent.
 func (a *Agent) Release(leaseID string, now time.Time) (pool.Bytes, error) {
+	a.releasing([]string{leaseID})
 	if err := a.discard(leaseID); err != nil {
 		return 0, err
 	}
@@ -178,6 +179,9 @@ type Reclamation struct {
 func (a *Agent) ReclaimCapacity(need pool.Bytes, now time.Time) (Reclamation, error) {
 	start := time.Now()
 	rec := Reclamation{Result: a.leases.Reclaim(need, now)}
+	// Told before the unlink, not after: an open descriptor keeps the blocks,
+	// so the space would not come back however the accounting reads.
+	a.releasing(rec.Result.Dropped)
 	for _, id := range rec.Result.Dropped {
 		if err := a.discard(id); err != nil && !errors.Is(err, ErrNoExtent) {
 			rec.Failed = append(rec.Failed, id)

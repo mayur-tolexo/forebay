@@ -57,6 +57,11 @@ func run() error {
 		kubeletPort = flag.Int("kubelet-port", 10250, "the kubelet's port")
 		tokenFile   = flag.String("kubelet-token-file", "", "service account token for the kubelet, defaulting to the pod's own")
 		kubeletRoot = flag.String("kubelet-root", "/var/lib/kubelet", "the kubelet's directory, used to check pods are charged against the filesystem the pools are on")
+		serveSocket = flag.String("serve-socket", "", "path to listen on for reads, which is how something that speaks a storage protocol asks this agent for bytes")
+		backendDir  = flag.String("backend-dir", "", "directory the durable backend serves objects from, read through the file driver")
+		tierBytes   = flag.Int64("tier-bytes", 0, "capacity to hold the fast tier, granted to this agent by itself in the absence of a control plane")
+		blockBytes  = flag.Int64("tier-block-bytes", 1<<20, "the unit the fast tier is keyed in")
+		firstReads  = flag.Int("tier-first-reads", 1<<16, "how many first reads are remembered, which decides whether admission on the second read fires at all")
 	)
 	flag.Parse()
 
@@ -200,8 +205,34 @@ func run() error {
 		// is the difference between a caveat and a lie.
 		fmt.Fprintln(os.Stderr, "warning: this build cannot reserve blocks, so borrowed capacity is not really held")
 	}
-	fmt.Fprintln(os.Stderr, "no serving path yet: see docs/rfcs/0007-fast-tier-data-path.md")
+	var reads *serving
+	if *serveSocket == "" {
+		fmt.Fprintln(os.Stderr, "not serving: pass --serve-socket and --backend-dir to answer reads")
+	} else {
+		var err error
+		reads, err = serveReads(a, servingOptions{
+			Socket:     *serveSocket,
+			BackendDir: *backendDir,
+			TierBytes:  pool.Bytes(*tierBytes),
+			BlockBytes: *blockBytes,
+			FirstReads: *firstReads,
+		})
+		if err != nil {
+			return err
+		}
+		defer reads.stop()
+	}
 	if !*watch {
+		if *serveSocket == "" {
+			return nil
+		}
+		// Serving is a reason to stay up. Without this the agent opened the
+		// socket, said so, and exited, taking the socket with it: a caller
+		// that read the line and then dialled found nothing there.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		<-ctx.Done()
+		fmt.Println("forebay-agent: stopped, no longer answering reads")
 		return nil
 	}
 	sources := optionalSources(kubeletOptions{
@@ -212,7 +243,7 @@ func run() error {
 		BorrowedDir: cfg.BorrowedDir,
 		Pools:       borrowedFS,
 	})
-	return watchPressure(a, cfg, borrowedFS, *sysroot, *mountinfo, pool.Bytes(*headroom), *interval, sources...)
+	return watchPressure(a, cfg, borrowedFS, *sysroot, *mountinfo, pool.Bytes(*headroom), *interval, reads, sources...)
 }
 
 // kubeletOptions is what the pod input needs to reach the kubelet and to prove
@@ -325,6 +356,22 @@ func (p *pendingSource) attempt(timeout time.Duration) {
 	p.built, p.lastErr = src, err
 }
 
+// cacheGivenUp names what reclamation took from the tier, when it took any.
+// Reported here rather than as it happens, since that is inside the window the
+// reclaim deadline is measured over.
+func cacheGivenUp(sv *serving, last *int64) string {
+	if sv == nil {
+		return ""
+	}
+	now := sv.Dropped()
+	if now == *last {
+		return ""
+	}
+	n := now - *last
+	*last = now
+	return fmt.Sprintf(", giving up %d cached blocks", n)
+}
+
 // podSource builds the pod input, refusing one that would be watching a
 // different filesystem from the one the pools are on.
 //
@@ -387,7 +434,7 @@ func podSource(ctx context.Context, opts kubeletOptions) (agent.Source, error) {
 //
 // Free space is re-measured each pass rather than derived from the accounting,
 // because the point is to catch writes by workloads that told nobody.
-func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sysroot, mountinfo string, headroom pool.Bytes, interval time.Duration, sources ...agent.Source) error {
+func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sysroot, mountinfo string, headroom pool.Bytes, interval time.Duration, sv *serving, sources ...agent.Source) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -416,6 +463,7 @@ func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sy
 	// only a change is worth printing. It is repeated when it recovers, which
 	// is the transition an operator is waiting for.
 	var lastDegraded string
+	var lastDropped int64
 	report := func(t agent.Tick, err error) {
 		if d := strings.Join(t.Degraded, "; "); d != lastDegraded {
 			switch {
@@ -430,10 +478,14 @@ func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sy
 		case err != nil:
 			fmt.Fprintln(os.Stderr, "forebay-agent: pass failed:", err)
 		case t.Shortfall > 0:
-			fmt.Printf("%s wanted %s back, reclaimed %s, still %s short: the node is now where it would be with no lending at all\n",
-				t.Observed.Source, t.Observed.Need, t.Reclaimed, t.Shortfall)
+			// The count belongs here most of all: this is the pass that could
+			// not meet demand, and having emptied the cache trying is the
+			// part an operator needs.
+			fmt.Printf("%s wanted %s back, reclaimed %s%s, still %s short: the node is now where it would be with no lending at all\n",
+				t.Observed.Source, t.Observed.Need, t.Reclaimed, cacheGivenUp(sv, &lastDropped), t.Shortfall)
 		case t.Reclaimed > 0:
-			fmt.Printf("%s wanted %s back, reclaimed %s\n", t.Observed.Source, t.Observed.Need, t.Reclaimed)
+			fmt.Printf("%s wanted %s back, reclaimed %s%s\n",
+				t.Observed.Source, t.Observed.Need, t.Reclaimed, cacheGivenUp(sv, &lastDropped))
 		}
 	}
 	if err := a.Watch(ctx, agent.WatchConfig{Headroom: headroom, Interval: interval}, free, report, sources...); err != nil {

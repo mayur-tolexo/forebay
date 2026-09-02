@@ -231,6 +231,20 @@ No byte has moved through it. A client holding a layout goes to the data server 
 finishing the path needs the read path in `internal/dataserver` to become something an NFS client can
 talk to, which is the piece the access layer now waits on.
 
+The binary joins them. Until now `internal/fasttier`, the driver contract and the read path had
+callers only in their own tests, so the agent guarded capacity nothing read from. Given a socket and
+a backend it opens both, holds a tier over capacity it grants itself in the absence of a control
+plane, and answers reads. On a GPU node it read a 64 MiB object back three times with the checksum
+intact, and across three restarts, which is where two faults turned up that no test had: the tier's
+lease outlived the process that granted it so the second start refused to serve, and serving without
+watching printed that it was answering reads and then exited, taking the socket with it.
+
+Putting a tier and a reclaiming agent in one process found a third, older than any of this. Nothing
+told the tier when its capacity was taken back, so the extent was unlinked while the tier still held
+it open: the agent reported returning 64 MiB and free space rose by four kilobytes, because blocks
+belong to a descriptor rather than to a name. The holder is now told before the unlink rather than
+after, which is the difference between the promise being kept and the accounting saying it was.
+
 One of the watch's three inputs is still missing, the CSI one. No Ceph or S3 driver exists, there is
 no peer fetch, no control plane interface, and the headroom target the watch needs has no measured
 value.
