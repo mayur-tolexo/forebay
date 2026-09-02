@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 1 |
 | **Depends on** | 0007 |
 
@@ -89,6 +89,41 @@ address in the layout pointed at the metadata server, which is not one, so the r
 the honest boundary of the spike: the metadata server half is answered and the data server half is
 the work.
 
+### The data server answers over a socket
+
+A pNFS client talks to an NFS server, and the read path is Go. Rather than write NFSv4.1 a second
+time, the node agent answers reads on a local socket and an FSAL inside an NFS server asks it, which
+is the same shape as the metadata server: Ganesha speaks the protocol and Forebay answers the
+question.
+
+The protocol is deliberately small, because a C FSAL is its second implementation and every feature
+is one somebody writes twice. One request, one reply, a fixed header, no negotiation. A frame that
+is not this protocol closes the connection rather than being answered, since by then the framing is
+already lost and a reply would land inside whatever the far side thinks it is reading.
+
+What it carries that a plain byte channel would not is the difference between a read past the end of
+an object and a backend that could not answer. An NFS server owes a client different errors for
+those two, and cannot tell them apart from a failed read, so the status is on the wire and a
+malformed request is a third answer again: it will not come right on a retry and the other two might.
+
+Neither side waits on the other for ever. A connection that stops asking is cut off, so is one that
+stops taking its answer, and a reply that stops arriving ends the conversation, because a request
+half sent and a reply half read leave the stream in the same place, which is nowhere. Bounding the
+request and leaving the answer unbounded is not a bound: a reply nobody takes blocks a write with
+nothing to end it, and holds its place for as long as the process lives.
+
+Waiting and working are bounded separately, because they are different questions: how long a caller
+may stay quiet, and how long an exchange may take. One clock covering both spends on the wait what
+the work then needs, and a connection quiet for most of its bound is answered in whatever remains.
+That is the wrong way round: the read after a quiet spell is the one most likely to miss and go to
+the backend, so the slowest request would meet the smallest budget. The caller on this socket
+is an NFS server with a client of its own waiting on it, so waiting indefinitely is not the neutral
+choice it looks like.
+
+There is no authentication. The far side is an NFS server on the same node and the socket's own
+permissions are the boundary, which is a statement about where this may be reached from rather than
+a gap to fill later.
+
 **And what a distribution ships is not what upstream has.** Everything above is read from the source.
 Checked against the 4.3 the target OS packages, on a dev cluster node, that build exports
 `FSAL_encode_file_layout` and not the flexfiles one, so a build from a current stable line is
@@ -144,6 +179,7 @@ that shape and are a workload this tier is for.
 | The flexfiles encoder works, having no in-tree user | **Partly measured.** It encodes a layout a Linux 6.8 client accepts, which is more than nobody had run before. What it has not done is serve a byte, since that needs a data server, so its behaviour under a real read is still unknown | An encoder nobody runs is a body of work discovered late, and the schedule assumes an existing server rather than one being fixed |
 | Fencing all readers of an extent is acceptable because they take a miss on regenerable data | Reasoned, from the fast tier holding only what can be fetched again | The loosely coupled model is unusable and tight coupling becomes mandatory, with the control protocol it costs |
 | A client whose layout is fenced returns it and asks for another rather than failing the read | Reasoned, from RFC 8435's error handling | Reclamation surfaces as IO errors in jobs, which is the outcome this whole design exists to avoid |
+| A read crossing from an NFS server into the node agent is affordable | **Unverified, and the cost this design chose.** Serving pNFS without writing NFSv4.1 twice puts a process boundary on the read path, and a tier meant to beat a fanned-out backend cannot leave the price of its own indirection unmeasured | The data server is written in-process after all, which means writing the protocol, or the hop is paid and the tier's advantage is smaller than the numbers that justified it |
 | Reading through the metadata server is an acceptable fallback | Reasoned. It is the protocol's own answer for a client that gets no layout | A client that cannot speak pNFS cannot use Forebay at all, which narrows the addressable deployment sharply |
 
 ## Design
@@ -307,10 +343,10 @@ RFC-0016 owns.
 
 ## Open questions
 
-- **How a data server speaks NFS.** A client given a flexfiles layout goes to the data server for
-  the bytes, so the read path this project has as a Go library has to become something an NFS client
-  can talk to. That is now the piece the rest of this document waits on, and no RFC owns it because
-  it is this document's own work.
+- **Whether an NFS server in front of the read path is fast enough**, since the node agent now
+  answers reads over a socket rather than in the reader's own process. The hop is a design cost this
+  document accepted without measuring it, and a data path meant to beat a fanned-out backend cannot
+  leave that unmeasured. Owned by [RFC-0018](0018-benchmark-and-falsification-suite.md).
 - **End-to-end revocation latency under load**, with a real metadata server rather than from the
   specification. Owned by [RFC-0018](0018-benchmark-and-falsification-suite.md).
 - **How often a dataloader asks for layouts**, since it decides whether the metadata server is a
