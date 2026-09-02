@@ -38,11 +38,9 @@ func run() error {
 	var (
 		showVersion = flag.Bool("version", false, "print the build identity and exit")
 		borrowed    = flag.String("borrowed-dir", "", "directory holding capacity lent revocably")
-		donated     = flag.String("donated-dir", "", "directory holding durable data, never reclaimed")
 		journal     = flag.String("journal", "", "path to the lease journal")
 		capacity    = flag.Int64("capacity-bytes", 0, "total capacity of the device")
-		compute     = flag.Int64("compute-bytes", 0, "capacity reserved for the workload on this node")
-		donatedSize = flag.Int64("donated-bytes", 0, "capacity permanently given to durable storage")
+		reserved    = flag.Int64("reserved-bytes", 0, "capacity held for everything that is not Forebay, measured when not given")
 		reclaim     = flag.Duration("reclaim-within", 30*time.Second, "how long an elastic lease may take to return capacity")
 		sysroot     = flag.String("sysroot", "/", "filesystem root to discover hardware from")
 		rack        = flag.String("rack", "", "this node's rack, which cannot be discovered and must be declared")
@@ -90,7 +88,6 @@ func run() error {
 
 	cfg := agent.Config{
 		BorrowedDir: *borrowed,
-		DonatedDir:  *donated,
 		JournalPath: *journal,
 		Lease:       leaseCfg,
 	}
@@ -109,23 +106,16 @@ func run() error {
 	// where they will be, not after making them, so a pair of directories the
 	// agent is about to reject does not get written to disk first.
 	borrowedFS := topology.DescribePool(*sysroot, *mountinfo, cfg.BorrowedDir)
-	donatedFS := topology.DescribePool(*sysroot, *mountinfo, cfg.DonatedDir)
-
-	if err := requireOneFilesystem(borrowedFS, donatedFS); err != nil {
-		return err
-	}
-
 	// What this filesystem can actually hand to Forebay, worked out once and
 	// used by both paths below.
-	deliverable, haveDeliverable := deliverableBytes(borrowedFS, cfg.BorrowedDir, cfg.DonatedDir)
+	deliverable, haveDeliverable := deliverableBytes(borrowedFS, cfg.BorrowedDir)
 
 	// Capacity comes from the filesystem the pools actually live on, not from
 	// summing every device. A node with four drives and pools on one of them
 	// can lend what that one holds.
 	acct := pool.Accounting{
 		Capacity: pool.Bytes(*capacity),
-		Compute:  pool.Bytes(*compute),
-		Donated:  pool.Bytes(*donatedSize),
+		Reserved: pool.Bytes(*reserved),
 	}
 	if *capacity == 0 {
 		fmt.Printf("pools on %s\n", borrowedFS)
@@ -149,20 +139,20 @@ func run() error {
 
 		switch {
 		case haveDeliverable:
-			if reserve := acct.Capacity - deliverable; reserve > acct.Compute {
+			if reserve := acct.Capacity - deliverable; reserve > acct.Reserved {
 				// Raised rather than refused: the node is not misconfigured,
 				// it is simply already using its disk, which is the normal
 				// case.
-				fmt.Printf("compute reserve raised to %s, the space this filesystem already holds for others\n", reserve)
-				acct.Compute = reserve
+				fmt.Printf("reserved raised to %s, the space this filesystem already holds for others\n", reserve)
+				acct.Reserved = reserve
 			}
-		case acct.Compute > 0:
+		case acct.Reserved > 0:
 			// The reserve could not be worked out, but an operator declaring
 			// one is exactly what the refusal below asks for, so it has to be
 			// honoured here or that advice is a dead end.
-			fmt.Printf("keeping the declared compute reserve of %s: what this filesystem already holds for others could not be measured\n", acct.Compute)
+			fmt.Printf("keeping the declared compute reserve of %s: what this filesystem already holds for others could not be measured\n", acct.Reserved)
 		default:
-			return fmt.Errorf("could not work out how much of the filesystem holding %s is actually free, so the space already in use cannot be reserved; pass --compute-bytes to declare it", cfg.BorrowedDir)
+			return fmt.Errorf("could not work out how much of the filesystem holding %s is actually free, so the space already in use cannot be reserved; pass --reserved-bytes to declare it", cfg.BorrowedDir)
 		}
 	}
 	if err := acct.Validate(); err != nil {
@@ -175,8 +165,8 @@ func run() error {
 	// asks for exactly that flag: without this, taking our own advice about
 	// unprovable locality would switch off the guard against promising space
 	// the filesystem does not have.
-	if promised := acct.Capacity - acct.Compute - acct.Donated; haveDeliverable && promised > deliverable {
-		return fmt.Errorf("this configuration promises %s but the filesystem holding %s can deliver %s; lower --capacity-bytes or --donated-bytes, or raise --compute-bytes",
+	if promised := acct.Capacity - acct.Reserved; haveDeliverable && promised > deliverable {
+		return fmt.Errorf("this configuration promises %s but the filesystem holding %s can deliver %s; lower --capacity-bytes or raise --reserved-bytes",
 			promised, cfg.BorrowedDir, deliverable)
 	}
 
@@ -192,8 +182,8 @@ func run() error {
 	}
 
 	fmt.Println("forebay-agent", version.String())
-	fmt.Printf("capacity %s  compute %s  donated %s  borrowed %s  free %s\n",
-		acct.Capacity, acct.Compute, acct.Donated, a.Accounting().Borrowed, a.Accounting().Free())
+	fmt.Printf("capacity %s  reserved %s  borrowed %s  free %s\n",
+		acct.Capacity, acct.Reserved, a.Accounting().Borrowed, a.Accounting().Free())
 	fmt.Printf("startup corrected: %d expired, %d no longer fit, %d orphan extents, %d leases without extents, %d interrupted reclaims, %d leftovers\n",
 		len(rec.Expired), len(rec.Unfittable), len(rec.OrphanExtents), len(rec.LeasesWithoutExtents),
 		len(rec.InvalidatedExtents), len(rec.Leftovers))
@@ -250,25 +240,6 @@ func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sy
 	}
 	fmt.Println("forebay-agent: stopped, lock released")
 	return nil
-}
-
-// requireOneFilesystem refuses a configuration whose two pools sit on
-// different devices.
-//
-// One capacity figure is kept for both pools, so one filesystem has to hold
-// both. Split them and the donated bytes are deducted from a device that never
-// held them, while the device that did is never measured at all. Refusing is
-// better than keeping books that cannot be right.
-//
-// A device that could not be identified is not a mismatch. On the discovery
-// path an unidentified device has already been refused for not being provably
-// local, and on the override path the operator has taken the numbers on.
-func requireOneFilesystem(borrowed, donated topology.PoolStorage) error {
-	b, d := borrowed.Device, donated.Device
-	if b == "" || d == "" || b == d {
-		return nil
-	}
-	return fmt.Errorf("the borrowed pool is on %s and the donated pool is on %s, and one capacity figure cannot describe both; put them on the same filesystem", b, d)
 }
 
 // deliverableBytes is how much of the pools' filesystem Forebay can actually

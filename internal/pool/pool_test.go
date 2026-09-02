@@ -31,17 +31,17 @@ func TestFreeAndValidate(t *testing.T) {
 	}{
 		{
 			name:     "balances",
-			acct:     Accounting{Capacity: 8 * TiB, Compute: 1 * TiB, Donated: 2 * TiB, Borrowed: 4 * TiB},
+			acct:     Accounting{Capacity: 8 * TiB, Reserved: 3 * TiB, Borrowed: 4 * TiB},
 			wantFree: 1 * TiB,
 		},
 		{
 			name:     "fully allocated is still valid",
-			acct:     Accounting{Capacity: 4 * TiB, Compute: 1 * TiB, Donated: 1 * TiB, Borrowed: 2 * TiB},
+			acct:     Accounting{Capacity: 4 * TiB, Reserved: 2 * TiB, Borrowed: 2 * TiB},
 			wantFree: 0,
 		},
 		{
 			name:     "overcommitted is a defect",
-			acct:     Accounting{Capacity: 4 * TiB, Compute: 2 * TiB, Donated: 2 * TiB, Borrowed: 1 * TiB},
+			acct:     Accounting{Capacity: 4 * TiB, Reserved: 4 * TiB, Borrowed: 1 * TiB},
 			wantFree: -1 * TiB,
 			wantErr:  ErrOvercommit,
 		},
@@ -66,7 +66,7 @@ func TestFreeAndValidate(t *testing.T) {
 }
 
 func TestLendRefusesRatherThanOvercommits(t *testing.T) {
-	a := Accounting{Capacity: 10 * GiB, Compute: 2 * GiB, Donated: 2 * GiB}
+	a := Accounting{Capacity: 10 * GiB, Reserved: 4 * GiB}
 
 	if err := a.Lend(4 * GiB); err != nil {
 		t.Fatalf("Lend(4GiB) = %v, want nil", err)
@@ -116,7 +116,7 @@ func TestReturnFreesCapacity(t *testing.T) {
 func TestReclaimableExcludesDonated(t *testing.T) {
 	// Donated capacity is never handed back, so it bounds how far a node can
 	// be recovered no matter how much pressure it is under.
-	a := Accounting{Capacity: 8 * TiB, Compute: 1 * TiB, Donated: 3 * TiB, Borrowed: 2 * TiB}
+	a := Accounting{Capacity: 8 * TiB, Reserved: 3 * TiB, Borrowed: 2 * TiB}
 	if got := a.Reclaimable(); got != 2*TiB {
 		t.Errorf("Reclaimable() = %s, want 2.00TiB", got)
 	}
@@ -153,7 +153,7 @@ func TestOverReleaseIsNotANegativeInput(t *testing.T) {
 
 func TestValidateReportsTheSameFieldEveryTime(t *testing.T) {
 	// Two bad fields must not produce a message that changes between runs.
-	a := Accounting{Capacity: -1, Compute: -1}
+	a := Accounting{Capacity: -1, Reserved: -1}
 	first := a.Validate().Error()
 	for i := 0; i < 50; i++ {
 		if got := a.Validate().Error(); got != first {

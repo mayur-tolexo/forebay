@@ -18,14 +18,13 @@ func testConfig(t *testing.T) Config {
 	root := t.TempDir()
 	return Config{
 		BorrowedDir: filepath.Join(root, "borrowed"),
-		DonatedDir:  filepath.Join(root, "donated"),
 		JournalPath: filepath.Join(root, "state", "leases.json"),
 		Lease:       lease.DefaultConfig(),
 	}
 }
 
 func acct() pool.Accounting {
-	return pool.Accounting{Capacity: 8 * pool.TiB, Compute: 1 * pool.TiB, Donated: 2 * pool.TiB}
+	return pool.Accounting{Capacity: 8 * pool.TiB, Reserved: 3 * pool.TiB}
 }
 
 // extent creates the on-disk capacity a lease stands for.
@@ -88,27 +87,32 @@ func TestOnlyOneAgentOwnsANode(t *testing.T) {
 	second.Close()
 }
 
-func TestPoolsMustNotShareOrNestDirectories(t *testing.T) {
-	// The blunt recoveries that make borrowed capacity safe would be data loss
-	// if they could reach donated capacity, so the layout is refused up front.
+func TestTheJournalMayNotLiveInsideThePoolStartupReaps(t *testing.T) {
+	// Reconciliation unlinks everything in the borrowed pool that no lease
+	// accounts for. A journal kept there is removed at startup and the next
+	// grant fails on a directory that is no longer present, so the layout is
+	// refused rather than accepted and then broken.
 	root := t.TempDir()
-	base := Config{JournalPath: filepath.Join(root, "leases.json"), Lease: lease.DefaultConfig()}
+	pool := filepath.Join(root, "pool")
 
-	same := base
-	same.BorrowedDir = filepath.Join(root, "pool")
-	same.DonatedDir = filepath.Join(root, "pool")
-	if _, _, err := Open(same, acct(), t0); !errors.Is(err, ErrSamePool) {
-		t.Errorf("shared directory = %v, want ErrSamePool", err)
+	inside := Config{BorrowedDir: pool, JournalPath: filepath.Join(pool, "state", "leases.json"), Lease: lease.DefaultConfig()}
+	if _, _, err := Open(inside, acct(), t0); !errors.Is(err, ErrNestedPools) {
+		t.Errorf("journal inside the pool = %v, want ErrNestedPools", err)
 	}
 
-	nested := base
-	nested.BorrowedDir = filepath.Join(root, "pool")
-	nested.DonatedDir = filepath.Join(root, "pool", "durable")
-	if _, _, err := Open(nested, acct(), t0); !errors.Is(err, ErrNestedPools) {
-		t.Errorf("nested directory = %v, want ErrNestedPools", err)
+	atRoot := Config{BorrowedDir: pool, JournalPath: filepath.Join(pool, "leases.json"), Lease: lease.DefaultConfig()}
+	if _, _, err := Open(atRoot, acct(), t0); !errors.Is(err, ErrNestedPools) {
+		t.Errorf("journal directly in the pool = %v, want ErrNestedPools", err)
 	}
 
-	missing := base
+	beside := Config{BorrowedDir: pool, JournalPath: filepath.Join(root, "state", "leases.json"), Lease: lease.DefaultConfig()}
+	a, _, err := Open(beside, acct(), t0)
+	if err != nil {
+		t.Fatalf("journal beside the pool = %v, want it accepted", err)
+	}
+	a.Close()
+
+	missing := Config{JournalPath: filepath.Join(root, "leases.json"), Lease: lease.DefaultConfig()}
 	if _, _, err := Open(missing, acct(), t0); !errors.Is(err, ErrNoPoolDir) {
 		t.Errorf("unset directories = %v, want ErrNoPoolDir", err)
 	}
@@ -122,10 +126,6 @@ func TestStartupUnlinksExtentsNoLeaseAccountsFor(t *testing.T) {
 		t.Fatalf("Open = %v", err)
 	}
 	extent(t, a, "ghost")
-	donated := filepath.Join(cfg.DonatedDir, "durable-data")
-	if err := os.WriteFile(donated, []byte("precious"), 0o640); err != nil {
-		t.Fatalf("seeding donated data: %v", err)
-	}
 	a.Close()
 
 	b, rec, err := Open(cfg, acct(), t0.Add(time.Minute))
@@ -139,10 +139,6 @@ func TestStartupUnlinksExtentsNoLeaseAccountsFor(t *testing.T) {
 	}
 	if _, err := os.Stat(extentPath(t, b, "ghost")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("orphan extent survived reconciliation")
-	}
-	// Donated capacity is durable and must never be touched by this.
-	if _, err := os.Stat(donated); err != nil {
-		t.Errorf("donated data was disturbed: %v", err)
 	}
 }
 
@@ -301,7 +297,7 @@ func TestANodeThatCameBackSmallerIsReportedApartFromAgeing(t *testing.T) {
 	// A lapsed term and a node losing capacity are different events, and an
 	// operator reading one should not conclude the other.
 	cfg := testConfig(t)
-	big := pool.Accounting{Capacity: 8 * pool.TiB, Compute: 1 * pool.TiB, Donated: 2 * pool.TiB}
+	big := pool.Accounting{Capacity: 8 * pool.TiB, Reserved: 3 * pool.TiB}
 	a, _, err := Open(cfg, big, t0)
 	if err != nil {
 		t.Fatalf("Open = %v", err)
@@ -314,7 +310,7 @@ func TestANodeThatCameBackSmallerIsReportedApartFromAgeing(t *testing.T) {
 	a.Close()
 
 	// The workload grew while the node was down, so the lease no longer fits.
-	smaller := pool.Accounting{Capacity: 8 * pool.TiB, Compute: 6 * pool.TiB, Donated: 2 * pool.TiB}
+	smaller := pool.Accounting{Capacity: 8 * pool.TiB, Reserved: 6 * pool.TiB}
 	b, rec, err := Open(cfg, smaller, t0.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("restart = %v", err)

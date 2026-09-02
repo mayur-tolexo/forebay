@@ -23,9 +23,8 @@ import (
 // where it could do damage, rather than a condition to degrade through.
 var (
 	ErrLocked      = errors.New("agent: another agent holds this node's pool")
-	ErrSamePool    = errors.New("agent: borrowed and donated pools must be different directories")
-	ErrNoPoolDir   = errors.New("agent: pool directories must be configured")
-	ErrNestedPools = errors.New("agent: one pool directory contains the other")
+	ErrNoPoolDir   = errors.New("agent: the pool directory and journal must be configured")
+	ErrNestedPools = errors.New("agent: the pool contains something it would delete")
 	ErrBadLeaseID  = errors.New("agent: lease id cannot be used as a path")
 )
 
@@ -45,10 +44,6 @@ type Config struct {
 	// regenerable, which is what lets the agent delete anything it cannot
 	// account for.
 	BorrowedDir string
-	// DonatedDir holds durable data. The agent never deletes from it, and it
-	// must be a separate directory, because the blunt recoveries that make
-	// borrowed capacity safe would be data loss here.
-	DonatedDir string
 	// JournalPath records live leases so a restart knows what was lent.
 	JournalPath string
 	// Lease tunes the lease manager. Its reclaim deadline is not optional:
@@ -100,24 +95,22 @@ type Reconciliation struct {
 // under a pair the agent is about to reject, produces an answer about the
 // wrong directory and reports it in place of the real problem.
 func (c Config) Validate() error {
-	if c.BorrowedDir == "" || c.DonatedDir == "" || c.JournalPath == "" {
+	if c.BorrowedDir == "" || c.JournalPath == "" {
 		return ErrNoPoolDir
 	}
 	b, err := filepath.Abs(c.BorrowedDir)
 	if err != nil {
 		return fmt.Errorf("agent: resolving borrowed dir: %w", err)
 	}
-	d, err := filepath.Abs(c.DonatedDir)
+	j, err := filepath.Abs(filepath.Dir(c.JournalPath))
 	if err != nil {
-		return fmt.Errorf("agent: resolving donated dir: %w", err)
+		return fmt.Errorf("agent: resolving journal dir: %w", err)
 	}
-	if b == d {
-		return ErrSamePool
-	}
-	// Nesting is as dangerous as sharing: deleting everything unaccounted for
-	// in the borrowed directory would walk into a donated pool underneath it.
-	if within(b, d) || within(d, b) {
-		return fmt.Errorf("%w: %s and %s", ErrNestedPools, b, d)
+	// Reconciliation unlinks everything in the borrowed pool that no lease
+	// accounts for, so a journal kept inside it is removed at startup and the
+	// next grant fails on a directory that is no longer there.
+	if b == j || within(b, j) {
+		return fmt.Errorf("%w: the journal is inside %s, which startup reaps", ErrNestedPools, b)
 	}
 	return nil
 }
@@ -148,7 +141,7 @@ func Open(cfg Config, acct pool.Accounting, now time.Time) (*Agent, Reconciliati
 	if err := cfg.Validate(); err != nil {
 		return nil, rec, err
 	}
-	for _, dir := range []string{cfg.BorrowedDir, cfg.DonatedDir, filepath.Dir(cfg.JournalPath)} {
+	for _, dir := range []string{cfg.BorrowedDir, filepath.Dir(cfg.JournalPath)} {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return nil, rec, fmt.Errorf("agent: creating %s: %w", dir, err)
 		}

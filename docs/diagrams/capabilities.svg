@@ -1,91 +1,115 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500" width="1200" height="500" role="img" aria-label="Without Forebay: four copies of the same dataset, NVMe sitting idle, and a GPU waiting on data. With Forebay: one copy read as file or object, every spare byte working, and the GPU fed.">
-<defs>
-  <linearGradient id="kGold" gradientUnits="userSpaceOnUse" x1="0" y1="220" x2="0" y2="264"><stop offset="0" stop-color="#FBBF24"/><stop offset="1" stop-color="#B45309"/></linearGradient>
-  <linearGradient id="kSlate" gradientUnits="userSpaceOnUse" x1="0" y1="220" x2="0" y2="264"><stop offset="0" stop-color="#64748B"/><stop offset="1" stop-color="#334155"/></linearGradient>
-  <linearGradient id="kTeal" gradientUnits="userSpaceOnUse" x1="0" y1="220" x2="0" y2="264"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0D9488"/></linearGradient>
-  <linearGradient id="kDead" gradientUnits="userSpaceOnUse" x1="0" y1="220" x2="0" y2="264"><stop offset="0" stop-color="#2B3548"/><stop offset="1" stop-color="#1A2231"/></linearGradient>
-  <radialGradient id="kGlowT" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#14B8A6" stop-opacity="0.20"/><stop offset="1" stop-color="#14B8A6" stop-opacity="0"/></radialGradient>
-  <pattern id="kDots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="#182339"/></pattern>
-  <filter id="kGlow" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  <marker id="kAr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5EEAD4"/></marker>
-  <style>
-    .f{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-    .hd{font-size:13px;font-weight:700;letter-spacing:2.2px}
-    .big{font-size:17px;fill:#E6EDF7}
-    .dim{font-size:17px;fill:#8494AC}
-    .sm{font-size:12.5px;fill:#65758E}
-    .chip{font-size:13px;font-weight:700}
-    .foot{font-size:11.5px;fill:#4E5E78}
-  </style>
-</defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520" role="img" aria-label="Without Forebay: the same dataset copied once per protocol, per clone and per tier, NVMe sitting idle, and a GPU waiting on data. With Forebay: one copy read as file or object, the spare bytes working, and the GPU fed.">
+<style>
+  :root {
+    --ink: #0F172A; --muted: #475569; --faint: #94A3B8;
+    --card: #FFFFFF; --edge: #CBD5E1; --stage: #F8FAFC; --dead: #E2E8F0;
+    --ctl: #4F46E5; --ctl-soft: #E0E7FF;
+    --own: #0D9488; --own-soft: #CCFBF1;
+    --hot: #B45309; --hot-soft: #FEF3C7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #E2E8F0; --muted: #94A3B8; --faint: #64748B;
+      --card: #111A2B; --edge: #24344E; --stage: #0B1220; --dead: #1E293B;
+      --ctl: #818CF8; --ctl-soft: #1E1B4B;
+      --own: #2DD4BF; --own-soft: #042F2E;
+      --hot: #FBBF24; --hot-soft: #451A03;
+    }
+  }
+  .f { font-family: ui-sans-serif, -apple-system, "Segoe UI", Inter, Roboto, sans-serif; }
+  .hd { font-size: 13px; font-weight: 800; letter-spacing: 1.6px; }
+  .big { font-size: 19px; font-weight: 700; fill: var(--ink); }
+  .sm { font-size: 13px; fill: var(--muted); }
+  .chip { font-size: 12.5px; font-weight: 700; }
+  .tiny { font-size: 11.5px; fill: var(--faint); }
+</style>
 
-<rect width="1200" height="500" rx="18" fill="#070C16"/>
-<rect width="1200" height="500" rx="18" fill="url(#kDots)" opacity="0.6"/>
-<ellipse cx="880" cy="250" rx="480" ry="260" fill="url(#kGlowT)"/>
+<rect width="1200" height="520" fill="var(--stage)"/>
 
-<rect x="40" y="40" width="530" height="400" rx="16" fill="#0C111C" stroke="#1E2637" stroke-width="1.3"/>
-<rect x="630" y="40" width="530" height="400" rx="16" fill="#0B1524" stroke="#14B8A6" stroke-width="1.4"/>
+<!-- ============ without ============ -->
+<rect x="40" y="40" width="530" height="410" rx="16" fill="var(--card)" stroke="var(--edge)" stroke-width="1.4"/>
+<text x="70" y="82" class="f hd" fill="var(--faint)">WITHOUT</text>
 
 <g class="f">
-  <text x="70" y="82" class="hd" fill="#5A6B85">WITHOUT</text>
-  <text x="660" y="82" class="hd" fill="#5EEAD4">WITH FOREBAY</text>
-
-  <!-- row 1: copies -->
-  <g>
-    <rect x="70"  y="104" width="150" height="30" rx="6" fill="#1A2231" stroke="#2B3548"/>
-    <rect x="84"  y="118" width="150" height="30" rx="6" fill="#1A2231" stroke="#2B3548"/>
-    <rect x="98"  y="132" width="150" height="30" rx="6" fill="#1A2231" stroke="#2B3548"/>
-    <rect x="112" y="146" width="150" height="30" rx="6" fill="#202A3C" stroke="#3B4A63"/>
-    <text x="187" y="166" class="chip" fill="#8494AC" text-anchor="middle">dataset v17</text>
-    <text x="290" y="134" class="dim">Four copies of the same bytes</text>
-    <text x="290" y="156" class="sm">one per protocol, one per clone, one per tier</text>
-  </g>
-  <g>
-    <rect x="660" y="118" width="150" height="34" rx="7" fill="#312E81" stroke="#6366F1" stroke-width="1.4"/>
-    <text x="735" y="140" class="chip" fill="#C7D2FE" text-anchor="middle">dataset v17</text>
-    <path d="M816 128 H862" stroke="#5EEAD4" stroke-width="1.8" stroke-dasharray="6 6" marker-end="url(#kAr)"><animate attributeName="stroke-dashoffset" values="24;0" dur="1.1s" repeatCount="indefinite"/></path>
-    <path d="M816 146 H862" stroke="#5EEAD4" stroke-width="1.8" stroke-dasharray="6 6" marker-end="url(#kAr)"><animate attributeName="stroke-dashoffset" values="24;0" dur="1.1s" begin="0.55s" repeatCount="indefinite"/></path>
-    <rect x="870" y="112" width="96"  height="26" rx="13" fill="#0F2E2E" stroke="#14B8A6"/><text x="918" y="130" class="chip" fill="#99F6E4" text-anchor="middle">file</text>
-    <rect x="870" y="146" width="96"  height="26" rx="13" fill="#0F2E2E" stroke="#14B8A6"/><text x="918" y="164" class="chip" fill="#99F6E4" text-anchor="middle">object</text>
-    <text x="990" y="134" class="big">Written once.</text>
-    <text x="990" y="156" class="sm" fill="#5EEAD4">Read any way. Copied never.</text>
-  </g>
-
-  <!-- row 2: nvme -->
-  <g>
-    <rect x="70" y="220" width="430" height="44" rx="9" fill="url(#kDead)" stroke="#2B3548"/>
-    <rect x="70" y="220" width="96"  height="44" rx="9" fill="#3A2A12"/>
-    <text x="70" y="292" class="dim">NVMe sitting idle</text>
-    <text x="70" y="313" class="sm">bought, powered, doing nothing</text>
-  </g>
-  <g>
-    <rect x="660" y="220" width="160" height="44" fill="url(#kGold)"><animate attributeName="width" values="160;224;160" keyTimes="0;0.5;1" dur="5s" repeatCount="indefinite"/></rect>
-    <rect x="820" y="220" width="110" height="44" fill="url(#kSlate)"><animate attributeName="x" values="820;884;820" keyTimes="0;0.5;1" dur="5s" repeatCount="indefinite"/></rect>
-    <rect x="930" y="220" width="160" height="44" fill="url(#kTeal)"><animate attributeName="x" values="930;994;930" keyTimes="0;0.5;1" dur="5s" repeatCount="indefinite"/><animate attributeName="width" values="160;96;160" keyTimes="0;0.5;1" dur="5s" repeatCount="indefinite"/></rect>
-    <rect x="660" y="220" width="430" height="44" rx="9" fill="none" stroke="#2A3A56" stroke-width="1.3"/>
-    <text x="660" y="292" class="big">Every spare byte working</text>
-    <text x="660" y="313" class="sm" fill="#5EEAD4">borrowed on loan, returned the instant the job needs it</text>
-  </g>
-
-  <!-- row 3: the gpu -->
-  <g>
-    <rect x="70" y="348" width="120" height="50" rx="11" fill="#151E2E" stroke="#3B4A63" stroke-width="1.5"/>
-    <text x="130" y="379" font-size="17" font-weight="700" fill="#5A6B85" text-anchor="middle">GPU<animate attributeName="opacity" values="1;0.45;1" dur="3.2s" repeatCount="indefinite"/></text>
-    <text x="208" y="372" class="dim">Waiting on data</text>
-    <text x="208" y="393" class="sm">the most expensive idle resource you own</text>
-  </g>
-  <g>
-    <rect x="660" y="348" width="120" height="50" rx="11" fill="#3B2408" stroke="#F59E0B" stroke-width="1.6"/>
-    <text x="720" y="379" font-size="17" font-weight="700" fill="#FCD34D" text-anchor="middle">GPU</text>
-    <rect x="660" y="348" width="120" height="50" rx="11" fill="none" stroke="#FCD34D" stroke-width="2" opacity="0" filter="url(#kGlow)">
-      <animate attributeName="opacity" values="0;0.9;0" dur="2.4s" repeatCount="indefinite"/></rect>
-    <text x="798" y="372" class="big">Fed</text>
-    <text x="798" y="393" class="sm" fill="#FBBF24">and you never had to size a cache, or migrate a byte</text>
-  </g>
+  <rect x="70"  y="104" width="150" height="30" rx="6" fill="var(--dead)" stroke="var(--edge)"/>
+  <rect x="84"  y="118" width="150" height="30" rx="6" fill="var(--dead)" stroke="var(--edge)"/>
+  <rect x="98"  y="132" width="150" height="30" rx="6" fill="var(--dead)" stroke="var(--edge)"/>
+  <rect x="112" y="146" width="150" height="30" rx="6" fill="var(--dead)" stroke="var(--edge)"/>
+  <text x="187" y="166" class="chip" fill="var(--muted)" text-anchor="middle">dataset v17</text>
+  <text x="290" y="132" class="big">Four copies of the same bytes</text>
+  <text x="290" y="156" class="sm">one per protocol, one per clone, one per tier</text>
 </g>
 
-<path d="M578 232 L604 250 L578 268" fill="none" stroke="#5EEAD4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+<g class="f">
+  <rect x="70" y="224" width="430" height="44" rx="9" fill="var(--dead)" stroke="var(--edge)" stroke-width="1.2"/>
+  <rect x="70" y="224" width="96" height="44" rx="9" fill="var(--hot-soft)" stroke="var(--hot)" stroke-width="1.2"/>
+  <text x="70" y="300" class="big">NVMe sitting idle</text>
+  <text x="70" y="322" class="sm">bought, powered, doing nothing</text>
+</g>
 
-<text x="40" y="478" class="f foot">Design phase. Nothing here is shipped, and performance claims are unproven until measured.</text>
-<text x="1160" y="478" class="f foot" text-anchor="end">github.com/mayur-tolexo/forebay</text>
+<g class="f">
+  <rect x="70" y="352" width="120" height="56" rx="10" fill="var(--dead)" stroke="var(--edge)" stroke-width="1.2"/>
+  <text x="130" y="386" class="chip" fill="var(--muted)" text-anchor="middle">GPU</text>
+  <text x="210" y="378" class="big">Waiting on data</text>
+  <text x="210" y="400" class="sm">the most expensive idle resource you own</text>
+</g>
+
+<!-- ============ divider ============ -->
+<g stroke="var(--own)" stroke-width="3" fill="none" stroke-linecap="round">
+  <path d="M584 232 L604 245 L584 258"/>
+</g>
+
+<!-- ============ with ============ -->
+<rect x="630" y="40" width="530" height="410" rx="16" fill="var(--card)" stroke="var(--own)" stroke-width="1.6"/>
+<text x="660" y="82" class="f hd" fill="var(--own)">WITH FOREBAY</text>
+
+<g class="f">
+  <rect x="660" y="118" width="150" height="34" rx="7" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.4"/>
+  <text x="735" y="140" class="chip" fill="var(--ctl)" text-anchor="middle">dataset v17</text>
+  <g stroke="var(--own)" stroke-width="2" stroke-dasharray="6 5" fill="none" marker-end="url(#kAr)">
+    <path d="M818 128 L862 122"/><path d="M818 142 L862 154"/>
+  </g>
+  <rect x="870" y="108" width="96" height="26" rx="13" fill="var(--own-soft)" stroke="var(--own)"/>
+  <text x="918" y="126" class="chip" fill="var(--own)" text-anchor="middle">file</text>
+  <rect x="870" y="142" width="96" height="26" rx="13" fill="var(--own-soft)" stroke="var(--own)"/>
+  <text x="918" y="160" class="chip" fill="var(--own)" text-anchor="middle">object</text>
+  <text x="990" y="132" class="big">Written once.</text>
+  <text x="990" y="156" class="sm" fill="var(--own)">Read either way. Copied never.</text>
+</g>
+
+<g class="f">
+  <clipPath id="kBar"><rect x="660" y="224" width="430" height="44" rx="9"/></clipPath>
+  <g clip-path="url(#kBar)">
+    <rect x="660" y="224" width="258" height="44" fill="var(--hot-soft)"/>
+    <rect x="918" y="224" width="172" height="44" fill="var(--own-soft)"/>
+    <g fill="var(--own)" opacity="0.5">
+      <rect x="930" y="234" width="22" height="11" rx="2"/><rect x="960" y="234" width="22" height="11" rx="2"/>
+      <rect x="990" y="234" width="22" height="11" rx="2"/><rect x="1020" y="234" width="22" height="11" rx="2"/>
+      <rect x="1050" y="234" width="22" height="11" rx="2"/>
+      <rect x="930" y="249" width="22" height="11" rx="2"/><rect x="960" y="249" width="22" height="11" rx="2"/>
+      <rect x="990" y="249" width="22" height="11" rx="2"/><rect x="1020" y="249" width="22" height="11" rx="2"/>
+      <rect x="1050" y="249" width="22" height="11" rx="2"/>
+    </g>
+  </g>
+  <rect x="660" y="224" width="430" height="44" rx="9" fill="none" stroke="var(--edge)" stroke-width="1.2"/>
+  <text x="660" y="300" class="big">The spare bytes working</text>
+  <text x="660" y="322" class="sm">borrowed on loan, returned the instant the job needs them</text>
+</g>
+
+<g class="f">
+  <rect x="660" y="352" width="120" height="56" rx="10" fill="var(--hot-soft)" stroke="var(--hot)" stroke-width="1.4"/>
+  <text x="720" y="386" class="chip" fill="var(--hot)" text-anchor="middle">GPU</text>
+  <text x="800" y="378" class="big">Fed</text>
+  <text x="800" y="400" class="sm">and nobody had to size a cache or migrate a byte</text>
+</g>
+
+<g class="f">
+  <text x="40" y="490" class="tiny">The node agent runs and lends real capacity. Nothing serves data yet, and every performance claim here is unmeasured.</text>
+  <text x="1160" y="490" text-anchor="end" class="tiny">github.com/mayur-tolexo/forebay</text>
+</g>
+
+<defs>
+  <marker id="kAr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0 0 L10 5 L0 10 z" fill="var(--own)"/></marker>
+</defs>
 </svg>

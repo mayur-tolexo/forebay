@@ -4,7 +4,6 @@
   <linearGradient id="sWater" gradientUnits="userSpaceOnUse" x1="0" y1="132" x2="0" y2="196"><stop offset="0" stop-color="#5EEAD4"/><stop offset="1" stop-color="#0D9488"/></linearGradient>
   <linearGradient id="sFlow" gradientUnits="userSpaceOnUse" x1="0" y1="200" x2="0" y2="232"><stop offset="0" stop-color="#FCD34D"/><stop offset="1" stop-color="#F59E0B"/></linearGradient>
   <linearGradient id="sGold" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBBF24"/><stop offset="1" stop-color="#B45309"/></linearGradient>
-  <linearGradient id="sSlate" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#64748B"/><stop offset="1" stop-color="#334155"/></linearGradient>
   <linearGradient id="sTeal" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#0F766E"/></linearGradient>
   <radialGradient id="sgI" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#6366F1" stop-opacity="0.24"/><stop offset="1" stop-color="#6366F1" stop-opacity="0"/></radialGradient>
   <radialGradient id="sgT" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#14B8A6" stop-opacity="0.20"/><stop offset="1" stop-color="#14B8A6" stop-opacity="0"/></radialGradient>
@@ -38,14 +37,12 @@
 <!-- pool bar -->
 <text x="76" y="438" class="f" font-size="13" fill="#5A6B85" letter-spacing="1.6" font-weight="700">LOCAL NVMe ON EVERY GPU NODE</text>
 <g clip-path="url(#sBar)">
-  <rect x="76"  y="452" width="250" height="46" fill="url(#sGold)"/>
-  <rect x="326" y="452" width="200" height="46" fill="url(#sSlate)"/>
+  <rect x="76"  y="452" width="450" height="46" fill="url(#sGold)"/>
   <rect x="526" y="452" width="250" height="46" fill="url(#sTeal)"/>
   <rect x="76"  y="452" width="700" height="14" fill="#FFFFFF" opacity="0.08"/>
 </g>
 <rect x="76" y="452" width="700" height="46" rx="9" fill="none" stroke="#233149"/>
-<text x="201" y="524" class="f" font-size="14" font-weight="700" fill="#FBBF24" text-anchor="middle" letter-spacing="0.6">COMPUTE</text>
-<text x="426" y="524" class="f" font-size="14" font-weight="700" fill="#94A3B8" text-anchor="middle" letter-spacing="0.6">DONATED</text>
+<text x="301" y="524" class="f" font-size="14" font-weight="700" fill="#FBBF24" text-anchor="middle" letter-spacing="0.6">RESERVED</text>
 <text x="651" y="524" class="f" font-size="14" font-weight="700" fill="#2DD4BF" text-anchor="middle" letter-spacing="0.6">BORROWED</text>
 <text x="651" y="546" class="f" font-size="13" fill="#6B7C96" text-anchor="middle">reclaim is a drop, never a migration</text>
 
@@ -56,5 +53,5 @@
 </g>
 
 <text x="76" y="600" class="f" font-size="15" fill="#5A6B85">github.com/mayur-tolexo/forebay</text>
-<text x="1204" y="600" class="f" font-size="15" fill="#5A6B85" text-anchor="end">design phase · 26 RFCs open</text>
+<text x="1124" y="600" class="f" font-size="15" fill="#5A6B85" text-anchor="end">node agent runs &#183; 28 RFCs open</text>
 </svg>

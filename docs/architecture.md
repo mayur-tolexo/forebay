@@ -81,7 +81,7 @@ flowchart LR
         end
         subgraph n1 ["GPU node"]
             a1["forebay-agent<br/>DaemonSet"]
-            p1["local NVMe<br/>compute · donated · borrowed"]
+            p1["local NVMe<br/>reserved · borrowed"]
             g1["GPU workload pod"]
         end
         subgraph n2 ["GPU node"]
@@ -119,8 +119,7 @@ Every node's NVMe divides three ways. The division is bytes, not devices.
 
 | Pool | Sized by | Holds | Returned |
 | --- | --- | --- | --- |
-| Compute | Whatever the node has not given away | Whatever the workload writes | Never held by Forebay |
-| Donated | Operator configuration | Durable data, through a backend driver | Never |
+| Reserved | Measured, as what the filesystem already holds | Everything that is not Forebay | Never held by Forebay |
 | Borrowed | Outstanding leases | Regenerable data only | On reclamation, by deletion |
 
 Borrowed capacity never holds anything whose loss matters, so reclaiming it is a delete rather than a

@@ -56,10 +56,15 @@ var (
 type Accounting struct {
 	// Capacity is the total the device provides.
 	Capacity Bytes
-	// Compute is reserved for the workload on the node and is never lent.
-	Compute Bytes
-	// Donated is permanently given to durable storage and is never reclaimed.
-	Donated Bytes
+	// Reserved is what this filesystem already holds for everything that is
+	// not Forebay: the operating system, container images, the workload, and
+	// any durable data donated to another store that happens to live here. It
+	// is measured rather than declared, and it is never lent.
+	//
+	// One term rather than several, because Forebay treats them identically
+	// and cannot tell them apart anyway: they are all bytes on the device that
+	// belong to somebody else.
+	Reserved Bytes
 	// Borrowed is lent revocably and holds only regenerable data.
 	Borrowed Bytes
 }
@@ -68,7 +73,7 @@ type Accounting struct {
 // accounting is inconsistent, which Validate reports as a defect rather than
 // silently clamping, since capacity arithmetic that does not balance is a bug.
 func (a Accounting) Free() Bytes {
-	return a.Capacity - a.Compute - a.Donated - a.Borrowed
+	return a.Capacity - a.Reserved - a.Borrowed
 }
 
 // Validate reports whether the three pools plus free space still equal device
@@ -81,8 +86,8 @@ func (a Accounting) Validate() error {
 		name string
 		v    Bytes
 	}{
-		{"capacity", a.Capacity}, {"compute", a.Compute},
-		{"donated", a.Donated}, {"borrowed", a.Borrowed},
+		{"capacity", a.Capacity}, {"reserved", a.Reserved},
+		{"borrowed", a.Borrowed},
 	} {
 		if f.v < 0 {
 			return fmt.Errorf("%w: %s is %d", ErrNegative, f.name, f.v)
@@ -90,7 +95,7 @@ func (a Accounting) Validate() error {
 	}
 	if a.Free() < 0 {
 		return fmt.Errorf("%w: %s allocated of %s",
-			ErrOvercommit, a.Compute+a.Donated+a.Borrowed, a.Capacity)
+			ErrOvercommit, a.Reserved+a.Borrowed, a.Capacity)
 	}
 	return nil
 }
