@@ -41,8 +41,27 @@ has to make rather than an unknown.
 `nfs-layouttype4-4`, alongside `CONFIG_NFS_V4_1=y` and `CONFIG_NFS_V4_2=y`. The commitment in
 RFC-0001 not to write a client survives contact with a real node image.
 
+**The metadata server is an FSAL, not an NFS server.** Investigated 2026-09-02, reading the V4, V5
+and V6 source. Ganesha moves, and the last row below is the kind of finding that changes.
+
+| What Ganesha supplies | Evidence, in the source |
+| --- | --- |
+| The pNFS metadata operations | `[NFS4_OP_LAYOUTGET] = { .funct = nfs4_op_layoutget }` in the compound dispatch table, under no build flag, beside the layout return, commit and device operations |
+| The hooks an FSAL implements to become one | `layoutget`, `getdeviceinfo` and `fs_layouttypes` in `fsal_api.h` |
+| A flexfiles layout encoder | `FSAL_encode_flex_file_layout` in all three lines, taking `ffds_user` and `ffds_group`, which the header calls the synthetic uid for the RPC to the data server. That is the fencing lever, exposed as an argument |
+| Data server registration | `pnfs_ds_insert`, `pnfs_ds_put`, `pnfs_ds_remove` |
+| Six worked examples | CEPH, GLUSTER, GPFS, KVSFS, LIZARDFS and SAUNAFS. `FSAL_CEPH` sets `ops->layoutget`, `ops->getdeviceinfo` and `ops->fs_layouttypes`, which is the whole of becoming one |
+
+**None of those six emits a flexfiles layout.** Every one advertises `LAYOUT4_NFSV4_1_FILES`, so the
+encoder has no in-tree caller and Forebay would be its first.
+
+**And what a distribution ships is not what upstream has.** Everything above is read from the source.
+Checked against the 4.3 the target OS packages, on a dev cluster node, that build exports
+`FSAL_encode_file_layout` and not the flexfiles one, so a build from a current stable line is
+required rather than the distribution package.
+
 **What is still unmeasured** is end-to-end revocation latency under load with a real metadata server,
-since neither of the findings above involved a running pNFS deployment. That measurement belongs in
+since none of the findings above involved a running pNFS deployment. That measurement belongs in
 RFC-0018.
 
 ## What of this is built
@@ -55,7 +74,8 @@ tier, which is the thing this layer exists to expose. `internal/fasttier` has a 
 | Assumption | Basis | Risk if wrong |
 | --- | --- | --- |
 | Flexfiles fencing revokes a layout without the client cooperating | **Measured against the specification**, RFC 8435, not against a running server | Reclamation waits out a lease period, and RFC-0005's deadline cannot be met while pNFS is the access path |
-| A metadata server can be built on an existing NFS server rather than written | **Unverified, and the highest risk here.** NFS-Ganesha's FSAL architecture is the presumed seam, and whether it can host a flexfiles metadata server the way this design needs has not been tried | The access layer becomes an NFSv4.1 implementation, which is a different project and one RFC-0001 would not have started |
+| A metadata server can be built on an existing NFS server rather than written | **Measured against the source, not a running server.** NFS-Ganesha implements the pNFS metadata operations, exposes `layoutget`, `getdeviceinfo` and `fs_layouttypes` as FSAL hooks, and ships `FSAL_encode_flex_file_layout` taking the synthetic uid and gid this design fences with. Six in-tree FSALs already implement a metadata server, so the shape is established. What is written is an FSAL, not an NFS server | The access layer becomes an NFSv4.1 implementation, which is a different project and one RFC-0001 would not have started |
+| The flexfiles encoder works, having no in-tree user | **Unverified, and now the highest risk here.** All six FSALs that implement a metadata server advertise `LAYOUT4_NFSV4_1_FILES`; none calls the flexfiles encoder, so Forebay would be its first user and it is exercised by nobody | An encoder nobody runs is a body of work discovered late, and the schedule assumes an existing server rather than one being fixed |
 | Fencing all readers of an extent is acceptable because they take a miss on regenerable data | Reasoned, from the fast tier holding only what can be fetched again | The loosely coupled model is unusable and tight coupling becomes mandatory, with the control protocol it costs |
 | A client whose layout is fenced returns it and asks for another rather than failing the read | Reasoned, from RFC 8435's error handling | Reclamation surfaces as IO errors in jobs, which is the outcome this whole design exists to avoid |
 | Reading through the metadata server is an acceptable fallback | Reasoned. It is the protocol's own answer for a client that gets no layout | A client that cannot speak pNFS cannot use Forebay at all, which narrows the addressable deployment sharply |
