@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 1 |
 | **Depends on** | 0007, 0008 |
 
@@ -49,7 +49,7 @@ kill criterion on its own. Everything else the project believes about performanc
 | The access patterns that decide the outcome can be characterised well enough to replay | Unverified, and the reason workload definition is an experiment rather than a fixture | The suite measures a workload nobody runs, favourably |
 | The project will publish a result that kills it | Unverified, and not a measurement. It is a question about people, which is why pre-registration exists rather than a promise | The suite becomes marketing, and the kill criteria never fire |
 | RFC-0001's five criteria are the right ones to be falsifiable against | Reasoned. They were derived before any result existed, which is the only time such a list is honest | The suite is rigorous about the wrong questions |
-| A measurement rig small enough to be cheap can still answer the existential questions | Reasoned, from three of the five criteria needing a fleet survey or one node rather than a cluster | The decisive experiments wait on hardware the project does not have, which is the current state |
+| A measurement rig small enough to be cheap can still answer the existential questions | Reasoned, from three of the five criteria needing a fleet survey or one node rather than a cluster. The rig now exists, which removes the obstacle to trying and is not evidence the answer will come | The decisive experiments that remain are the fleet surveys, which need clusters the project does not own and cannot buy its way into |
 
 ## Design
 
@@ -186,6 +186,18 @@ agent, which exists and now grants, reclaims and unlinks real extents: when free
 available to a competing writer, and whether reclamation measurably harms the job that owns the node.
 A sixth was answered while the agent was built, which is how it got into the table above.
 
+The crossover experiment is the one that changed. It needs one node and one backend, and until the
+agent could read from a durable store it had neither in the same place. It now has both: a node with
+current accelerators and NVMe, an S3-compatible store the agent reads misses from, and a tier
+holding blocks between them. The experiment that can end the project is therefore runnable, which
+the fleet surveys and everything above one node still are not.
+
+That rig also decides the shape of the comparison. Both arms have to read the same bytes the same
+way, and the tier arm crosses a socket the backend arm need not, so a run that reports only the two
+end numbers has measured locality and indirection together and cannot say in what proportion. The
+crossover pre-registration therefore carries three arms rather than two, the third being the backend
+read through the same socket, which is also the Tier 2 question RFC-0008 defers here.
+
 So this document's declared dependencies are two unbuilt RFCs and most of its existential work needs
 neither. The dependency row is honest about what the *suite* needs to be complete, and it is not a
 reason to wait.
@@ -272,13 +284,16 @@ fleets rather than per fleet.
 
 ## Open questions
 
-- **What hardware the project can actually measure on.** Everything in Tier 1 needs a node with a
-  current accelerator, current NVMe and a durable backend, and the project has none. This is not a
-  question anybody can answer by engineering, and no RFC owns it, because it is a question about
-  access and funding rather than design.
-- **What the driver conformance suite runs against**, since proving a driver needs a real backend
-  and a contributor may not have one. Owned here, and unanswered: it is the same access problem as
-  the question above, arriving at a contributor rather than at the project.
+- **What hardware the project can measure on beyond one node.** Answered for the node-scoped
+  experiments: a node with current accelerators and NVMe, reading from an S3-compatible durable
+  backend, runs the crossover experiment and both reclamation experiments. Unanswered above one
+  node, since the rack and multi-rack rows in Tier 3 need hardware the project does not have. No RFC
+  owns the remainder, because it is a question about access and funding rather than design.
+- **What the driver conformance suite runs against.** Answered in the narrow sense: the suite is
+  importable and runs unchanged against an S3-compatible store, so a driver for one can be proved
+  without this project reviewing it. Unanswered for a contributor writing a driver for a store they
+  cannot reach, which is the access problem arriving at a contributor rather than at the project.
+  Owned here, since no other document can carry it.
 - **How traces are reduced before they leave the cluster that produced them**, which decides whether
   the workload experiments can use real data at all. Owned by
   [RFC-0016](0016-multi-tenancy-qos-and-security.md), which owns disclosure.
