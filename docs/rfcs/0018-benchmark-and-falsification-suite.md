@@ -35,7 +35,7 @@ that own the decisions they bear on.
 | --- | --- | --- |
 | Ceph RGW fan-out at 995 MB/s against local disk at 400 MB/s | [RFC-0001](0001-thesis-scope-and-non-goals.md) | One environment the project does not control, and the payload crossing the network was compressed while the local read was not |
 | `unlink` returning in 2.5 to 2.6 ms | [RFC-0005](0005-capacity-pools-and-elastic-leases.md) | It measured when the call returned, not when the capacity became usable by somebody else |
-| Reclaiming 7 GiB through the agent in 2.759 ms, and 7.415 ms under four concurrent `O_DIRECT` writers | [RFC-0005](0005-capacity-pools-and-elastic-leases.md) | Covers choosing leases and unlinking extents, which RFC-0004 says are not what dominates |
+| Reclaiming 7 GiB through the agent in 2.759 ms, and 7.415 ms under four concurrent `O_DIRECT` writers | [RFC-0005](0005-capacity-pools-and-elastic-leases.md) | Covers choosing leases and unlinking extents, which RFC-0004 says are not what dominates, and both were taken while the device still had headroom. The same reclaim costs 142 to 773 ms once the drive is at its sustained write rate |
 | Granting 2 GiB in 5 ms, with `fallocate` committing the blocks | [RFC-0005](0005-capacity-pools-and-elastic-leases.md) | One filesystem, one device |
 
 That is four measurements against the twenty-five experiments below, and none of the four settles a
@@ -144,9 +144,9 @@ nothing.
 | Whether inference-serving nodes have idle NVMe at all, which the training-shaped survey above does not cover | 3 | A fleet survey, no code |
 | How much of the available value static provisioning captures on the same workload | 4 | One node, both arms |
 | What fraction of a real workload's storage traffic is regenerable, which bounds what a regenerable-only tier can ever be worth | 2 | Traces, no code |
-| Whether reclamation measurably harms the job that owns the node | 1 | One node, the agent |
+| ~~Whether reclamation measurably harms the job that owns the node~~ | 1 | **Answered on one node, and it does not.** Taking back 16 GiB spread over 32 leases, through the agent's own reclaim path, leaves the workload's rate and its worst single write where they were, in all three regimes the device has: with headroom at one writer, saturated at four, and at the sustained write rate it falls to afterwards. Read against a control arm that lends the same capacity and never takes it back, run alternately with the treatment, since a device that slows as it is written would otherwise hand whichever arm ran second the blame. In the collapsed regime both arms read 535 MiB/s, which is the drive rather than the reclaim. What bounds the answer is resolution: a reclaim of a few milliseconds overlaps one or two of the writer's intervals, so the during column rests on a couple of samples |
 | When freed capacity becomes observably available to a competing writer, which is what compute waits for, rather than when `unlink` returns | 1 | One node, no data path |
-| ~~Whether sub-second reclaim holds under simultaneous IO pressure~~ | 1 | **Answered.** 2.759 ms idle against 7.415 ms under four concurrent writers, so load costs about two and a half times and the absolute number stays four orders of magnitude inside the deadline |
+| Whether sub-second reclaim holds under simultaneous IO pressure | 1 | **Reopened, and the earlier answer was measured in the wrong regime.** 2.759 ms idle against 7.415 ms under four concurrent writers held while the device had headroom. Held at its sustained write rate, where a drive that took 6.5 GiB/s settles to 535 MiB/s, the same reclaim of 16 GiB took 142, 655 and 773 ms. It is still sub-second on this device, and it is two orders of magnitude nearer the deadline than the earlier figure implied. The number tracks the device's state rather than the concurrency: idle it is 3.7 to 19 ms, and the collapse arrives with the drive's write cliff rather than with the writers |
 | How long revoking a reader takes against a running metadata server under load, and whether it fences one client or every reader of an extent | 1 | A pNFS deployment |
 
 **Tier 2, sizes a design decision.**
@@ -160,7 +160,7 @@ nothing.
 | Whether a rack-local hop beats going straight to a fanned-out backend | Whether the rack tier exists | RFC-0002, RFC-0007 |
 | What a read costs crossing from the NFS server into the node agent, against reading the same bytes in one process | **Attempted and not answered.** The first pass took the price off a store-warm arm against a store-cold one and was measuring the store's cache. Corrected to two cold arms, the store's own first-touch variance swamps the difference: the same read in process gave 34, 35, 54 and 72 MiB/s on equivalent objects, and the socket arm ranged either side of it. An answer needs a store whose cache state is controlled, or a working set large enough that its variance averages out | RFC-0008 |
 | The headroom a node keeps free for reclamation to stay ahead of a workload's writes | The agent's pressure design | RFC-0004 |
-| The reclaim deadline default, derived from pod admission behaviour and measured end-to-end reclaim | RFC-0005's central promise | RFC-0005 |
+| The reclaim deadline default, derived from pod admission behaviour and measured end-to-end reclaim | RFC-0005's central promise. Half measured: the reclaim itself ranges from 3.7 ms on an idle device to 773 ms on one held at its sustained write rate, so a default has to be set against the loaded figure and the loaded figure is the one nobody had | RFC-0005 |
 | The churn budget and the post-reclaim cooldown, whose shipped values are conservative guesses | Whether churn protection is real | RFC-0005 |
 | Whether compressing the fast tier pays for CPU taken from the dataloader | Whether the tier compresses | RFC-0020 |
 | How many copies the IO path actually has on a realistic stack | Whether the no-copy policy is achieved | RFC-0020 |
