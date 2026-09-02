@@ -107,36 +107,44 @@ want "the bytes a client reads are the object's" \
 
 # A file with no object behind it, and the same with the agent stopped: both
 # must fail rather than hand back this FSAL's padding as file contents.
+#
+# On the exit status, not just the byte count. A read that hangs until timeout
+# kills it also leaves an empty file, so counting bytes alone calls a wedged
+# export a pass.
+read_verdict() {
+	rc=0
+	timeout 60 dd if="$1" of="$2" bs=4096 count=1 2>/dev/null || rc=$?
+	case "$rc" in
+	0) echo served ;;
+	124) echo hung ;;
+	*) echo failed ;;
+	esac
+}
+
 truncate -s 4096 "$mnt/nobacking"
-timeout 60 dd if="$mnt/nobacking" of="$work/nb.bin" bs=4096 count=1 2>/dev/null || true
-want "a file with no object behind it reads nothing" \
+want "a file with no object behind it fails the read" \
+	"$(read_verdict "$mnt/nobacking" "$work/nb.bin")" "failed"
+want "and hands back no bytes" \
 	"$(wc -c < "$work/nb.bin" | tr -d ' ')" "0"
 
 # With the agent still up, so this is about the read path and not about the
 # backend being gone. A read that jumps past its own completion leaves a share
-# reservation held, and the export then blocks rather than failing: the check
-# is that this returns at all, not what it returns.
-# Reported, not asserted. After a read returns NFS4ERR_IO the export stops
-# answering, and where that stalls has not been chased down: Ganesha logs the
-# error as converted and non-retryable, so the FSAL did its part. It is a known
-# gap in grafting this onto a namespace that is not Forebay's, and it prints
-# every run so it is not quietly forgotten.
+# reservation held, and every later read on the export then blocks.
 #
-# An if, because set -e aborts a command substitution the moment ls fails.
-if timeout 20 ls "$mnt" >/dev/null 2>&1; then
-	listed=answered
-elif [ $? -eq 124 ]; then
-	listed=hung
-else
-	listed=answered
-fi
-say "known gap: the export after a failed read" "$listed"
+# Read the good file again, through the same export, and check the bytes are
+# still right. Not a listing: READDIR on a non-empty MEM export hangs on stock
+# Ganesha, with this FSAL's hook removed entirely, so it would be measuring
+# that and not this.
+timeout 120 dd if="$mnt/shard" of="$work/again.bin" bs=1M 2>/dev/null || true
+want "a failed read does not wedge the export" \
+	"$("$root/fsal/forebay-client-check" --sum "$work/again.bin")" "$expected"
 
 killall -9 forebay-agent 2>/dev/null || true
 sleep 2
 truncate -s 4096 "$mnt/fresh"
-timeout 60 dd if="$mnt/fresh" of="$work/fr.bin" bs=4096 count=1 2>/dev/null || true
-want "with the agent stopped, a fresh read gets nothing" \
+want "with the agent stopped, a fresh read fails" \
+	"$(read_verdict "$mnt/fresh" "$work/fr.bin")" "failed"
+want "and hands back no bytes" \
 	"$(wc -c < "$work/fr.bin" | tr -d ' ')" "0"
 
 echo

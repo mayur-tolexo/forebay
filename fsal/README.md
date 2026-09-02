@@ -70,10 +70,11 @@ done_cb(obj_hdl, fb_status, read_arg, caller_arg);
 
 **Break out of the loop, do not jump past the end of it.** The first version
 used `goto exit`, which skips `fsal_complete_io` and the share counters below
-it. The reservation stayed held, the export wedged, and every later operation
-on it blocked, including listing the directory. Ganesha's own threads then sat
-in uninterruptible IO on the mount they were serving, so the process could not
-be killed either.
+it. The reservation stayed held, and the read that took that path never
+returned: `dd` on a file with no object behind it hangs until something kills
+it, where the fixed version fails in milliseconds with `EIO`. The NFS script
+tells the two apart, and reports a read killed by its own timeout as a failure
+rather than as a read that returned nothing.
 
 
 The three answers matter more than the hook does. Falling back is right when
@@ -90,13 +91,12 @@ that export reads Forebay's bytes:
 | The object on the backend | 4278984864 |
 | Read over NFS | 4278984864 |
 | What the memory FSAL would have returned | 3254779904 |
-| A file the backend does not have, read over NFS | 397312, which is 4096 x 97, the FSAL's own padding |
 
-The third row is the control: the bytes are Forebay's rather than the FSAL's.
-The last two are the reason the hook has three answers. Before it did, both
-returned 4096 bytes of the letter a, presented to the client as the file's
-contents. Fabricated bytes are worse than an error because nothing about them
-looks like one.
+The third row is the control: the bytes a client reads are Forebay's rather
+than the FSAL's. A file the backend does not have now fails the read and hands
+back nothing; before the hook had three answers it returned 4096 bytes of the
+letter a, presented to the client as the file's contents. Fabricated bytes are
+worse than an error because nothing about them looks like one.
 
 ## Running it
 
@@ -109,11 +109,11 @@ looks like one.
 Both scripts keep their working directory when something fails, because a test
 that tidies away the logs leaves nothing to look at.
 
-**A known gap the NFS script prints every run.** After a read returns
-`NFS4ERR_IO`, the export stops answering. Ganesha logs the error as converted
-and non-retryable, so the FSAL returned what it should; where it stalls after
-that has not been chased down. It is reported rather than asserted, since this
-is a spike grafted onto a namespace that is not Forebay's.
+**Do not list this export.** `READDIR` hangs on a `FSAL_MEM` export that has a
+file in it, on stock Ganesha with this hook removed entirely: `ls` answers on an
+empty export and hangs once one file exists, while `stat` on that same file
+answers fine. It is not reached by anything here, and the scripts open files by
+name for that reason.
 
 ## What this is not
 
