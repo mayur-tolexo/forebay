@@ -97,7 +97,7 @@ them without a fork.
 | Durable backend driver contract with capability negotiation | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 | Driver conformance suite, so a third-party driver can prove itself | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 | Ceph driver | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
-| S3 driver | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
+| S3 driver | In progress | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 | OpenEBS driver | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 | Protocol plug-ins above the fast tier | Planned | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
 | Bring an existing array as a backend | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
@@ -252,7 +252,19 @@ it open: the agent reported returning 64 MiB and free space rose by four kilobyt
 belong to a descriptor rather than to a name. The holder is now told before the unlink rather than
 after, which is the difference between the promise being kept and the accounting saying it was.
 
-What is left is most of it. One of the watch's three inputs is still missing, the CSI one. No Ceph or S3 driver exists, there is
+A driver reads from a real object store. `driver/s3driver`
+([0006](docs/rfcs/0006-durable-backend-driver-contract.md)) signs its own requests, because a vendor
+SDK would be larger than everything else here put together and this project takes no dependencies.
+It declares read-range, object-size, write-object and delete-object, and declines snapshot and clone
+rather than emulating them with a copy.
+
+It passes the conformance suite against Ceph RGW, not only against a fake of one. That distinction
+earned itself: a store answers a read running off the end of an object two different ways, a 416 for
+an offset at the end and a short 206 for a length that overruns, and a fake is written to agree with
+whatever the driver already does. The signer is checked against Amazon's own published vector, which
+is the one part that is either exactly right or silently wrong.
+
+What is left is most of it. One of the watch's three inputs is still missing, the CSI one. No Ceph driver exists, nothing yet chooses the S3 one at startup, there is
 no peer fetch, no control plane interface, and the headroom target the watch needs has no measured
 value.
 
