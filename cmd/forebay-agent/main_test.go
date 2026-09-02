@@ -788,7 +788,7 @@ func TestTheAgentAnswersReadsWhenAskedTo(t *testing.T) {
 	sock := filepath.Join(os.TempDir(), fmt.Sprintf("fb%d", time.Now().UnixNano()))
 	defer os.Remove(sock)
 	serving, err := serveReads(a, servingOptions{
-		Socket: sock, BackendDir: backend,
+		Socket: sock, Backend: backendOptions{Dir: backend},
 		TierBytes: testCapacity / 2, BlockBytes: 1 << 20, FirstReads: 64,
 	})
 	if err != nil {
@@ -830,8 +830,8 @@ func TestServingIsRefusedWithoutWhatItNeeds(t *testing.T) {
 		opts servingOptions
 	}{
 		{"no backend", servingOptions{Socket: "/tmp/x", TierBytes: 1 << 20, BlockBytes: 1 << 20}},
-		{"no tier capacity", servingOptions{Socket: "/tmp/x", BackendDir: dir, BlockBytes: 1 << 20}},
-		{"a backend that is not there", servingOptions{Socket: "/tmp/x", BackendDir: filepath.Join(dir, "absent"), TierBytes: 1 << 20, BlockBytes: 1 << 20}},
+		{"no tier capacity", servingOptions{Socket: "/tmp/x", Backend: backendOptions{Dir: dir}, BlockBytes: 1 << 20}},
+		{"a backend that is not there", servingOptions{Socket: "/tmp/x", Backend: backendOptions{Dir: filepath.Join(dir, "absent")}, TierBytes: 1 << 20, BlockBytes: 1 << 20}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if s, err := serveReads(a, c.opts); err == nil {
@@ -870,7 +870,7 @@ func TestAnAgentThatRestartsCanServeAgain(t *testing.T) {
 		}
 		sock := filepath.Join(os.TempDir(), fmt.Sprintf("fb%d-%d", time.Now().UnixNano(), run))
 		serving, err := serveReads(a, servingOptions{
-			Socket: sock, BackendDir: backend,
+			Socket: sock, Backend: backendOptions{Dir: backend},
 			// A different size each run, so adopting the old lease rather
 			// than replacing it would serve the wrong capacity.
 			TierBytes: pool.Bytes(testCapacity / int64(run+1)), BlockBytes: 1 << 20, FirstReads: 8,
@@ -925,7 +925,7 @@ func TestReclaimingTakesTheTierWithIt(t *testing.T) {
 	sock := filepath.Join(os.TempDir(), fmt.Sprintf("fbr%d", time.Now().UnixNano()))
 	defer os.Remove(sock)
 	sv, err := serveReads(a, servingOptions{
-		Socket: sock, BackendDir: backend,
+		Socket: sock, Backend: backendOptions{Dir: backend},
 		TierBytes: 64 << 20, BlockBytes: 1 << 20, FirstReads: 64,
 	})
 	if err != nil {

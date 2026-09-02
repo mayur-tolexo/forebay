@@ -59,6 +59,9 @@ func run() error {
 		kubeletRoot = flag.String("kubelet-root", "/var/lib/kubelet", "the kubelet's directory, used to check pods are charged against the filesystem the pools are on")
 		serveSocket = flag.String("serve-socket", "", "path to listen on for reads, which is how something that speaks a storage protocol asks this agent for bytes")
 		backendDir  = flag.String("backend-dir", "", "directory the durable backend serves objects from, read through the file driver")
+		s3Endpoint  = flag.String("backend-s3-endpoint", "", "scheme and host of an S3-compatible durable backend, instead of --backend-dir. Credentials come from "+accessKeyEnv+" and "+secretKeyEnv)
+		s3Bucket    = flag.String("backend-s3-bucket", "", "bucket the S3 backend serves objects from")
+		s3Region    = flag.String("backend-s3-region", "", "region the S3 backend signs for, defaulting to us-east-1")
 		tierBytes   = flag.Int64("tier-bytes", 0, "capacity to hold the fast tier, granted to this agent by itself in the absence of a control plane")
 		blockBytes  = flag.Int64("tier-block-bytes", 1<<20, "the unit the fast tier is keyed in")
 		firstReads  = flag.Int("tier-first-reads", 1<<16, "how many first reads are remembered, which decides whether admission on the second read fires at all")
@@ -207,12 +210,17 @@ func run() error {
 	}
 	var reads *serving
 	if *serveSocket == "" {
-		fmt.Fprintln(os.Stderr, "not serving: pass --serve-socket and --backend-dir to answer reads")
+		fmt.Fprintln(os.Stderr, "not serving: pass --serve-socket and a backend to answer reads")
 	} else {
 		var err error
 		reads, err = serveReads(a, servingOptions{
-			Socket:     *serveSocket,
-			BackendDir: *backendDir,
+			Socket: *serveSocket,
+			Backend: backendOptions{
+				Dir:      *backendDir,
+				Endpoint: *s3Endpoint,
+				Bucket:   *s3Bucket,
+				Region:   *s3Region,
+			},
 			TierBytes:  pool.Bytes(*tierBytes),
 			BlockBytes: *blockBytes,
 			FirstReads: *firstReads,

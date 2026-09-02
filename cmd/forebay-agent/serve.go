@@ -6,13 +6,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/mayur-tolexo/forebay/driver"
-	"github.com/mayur-tolexo/forebay/driver/filedriver"
 	"github.com/mayur-tolexo/forebay/internal/agent"
 	"github.com/mayur-tolexo/forebay/internal/dataserver"
 	"github.com/mayur-tolexo/forebay/internal/fasttier"
@@ -28,7 +25,7 @@ const selfLease = "self-granted-tier"
 // servingOptions is what the read path needs to exist.
 type servingOptions struct {
 	Socket     string
-	BackendDir string
+	Backend    backendOptions
 	TierBytes  pool.Bytes
 	BlockBytes int64
 	FirstReads int
@@ -48,20 +45,13 @@ func (s *serving) Dropped() int64 { return s.dropped.Load() }
 
 // serveReads joins the pieces that answer a read and starts listening.
 func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
-	switch {
-	case opts.BackendDir == "":
-		return nil, fmt.Errorf("serving needs --backend-dir, since a miss is answered from the durable backend")
-	case opts.TierBytes <= 0:
+	if opts.TierBytes <= 0 {
 		return nil, fmt.Errorf("serving needs --tier-bytes, since a tier with no capacity holds nothing")
 	}
 
-	fd, err := filedriver.New(opts.BackendDir)
+	backend, err := openBackend(opts.Backend)
 	if err != nil {
-		return nil, fmt.Errorf("opening the backend: %w", err)
-	}
-	backend, err := driver.Open(fd)
-	if err != nil {
-		return nil, fmt.Errorf("opening the backend: %w", err)
+		return nil, err
 	}
 
 	tier, err := fasttier.New(fasttier.Config{
@@ -118,7 +108,7 @@ func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
 
 	// The name scopes what the tier holds, so two directories both called
 	// "data" must not share it.
-	name, err := filepath.Abs(opts.BackendDir)
+	name, err := opts.Backend.scope()
 	if err != nil {
 		tier.Close()
 		return nil, fmt.Errorf("naming the backend: %w", err)
@@ -149,7 +139,7 @@ func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
 	}()
 
 	fmt.Printf("answering reads on %s, %s of tier over %s, missing to %s\n",
-		opts.Socket, opts.TierBytes, extent, opts.BackendDir)
+		opts.Socket, opts.TierBytes, extent, describe(opts.Backend))
 	fmt.Fprintln(os.Stderr, "the tier's capacity is a lease this agent granted itself, which a control plane would otherwise do")
 
 	return &serving{

@@ -264,7 +264,18 @@ an offset at the end and a short 206 for a length that overruns, and a fake is w
 whatever the driver already does. The signer is checked against Amazon's own published vector, which
 is the one part that is either exactly right or silently wrong.
 
-What is left is most of it. One of the watch's three inputs is still missing, the CSI one. No Ceph driver exists, nothing yet chooses the S3 one at startup, there is
+The agent reads from that store rather than from a directory. `--backend-s3-endpoint` and
+`--backend-s3-bucket` stand in for `--backend-dir`, one or the other and never both, since a node
+reading from two stores would serve whichever the flags named first and nothing in a client's answer
+would show it. Credentials come from the environment: a flag is visible in ps and in a container's
+own spec.
+
+On a GPU node, against Ceph RGW, a client read a 9 MiB object through the agent and the checksum
+matched the object. Deleting the object from the store and reading it again returned the same
+checksum, which is the fast tier answering rather than the backend, while a read of a range it had
+never held went to the store and failed as it should.
+
+What is left is most of it. One of the watch's three inputs is still missing, the CSI one. No Ceph driver exists, there is
 no peer fetch, no control plane interface, and the headroom target the watch needs has no measured
 value.
 
