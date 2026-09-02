@@ -55,6 +55,40 @@ and V6 source. Ganesha moves, and the last row below is the kind of finding that
 **None of those six emits a flexfiles layout.** Every one advertises `LAYOUT4_NFSV4_1_FILES`, so the
 encoder has no in-tree caller and Forebay would be its first.
 
+**It is not only unused, it is unreachable.** Ganesha exports its library through a version script,
+and the flexfiles helpers are absent from it, so an FSAL that calls them does not link:
+`undefined reference to FSAL_encode_ff_device_versions4`. They are public in the headers,
+non-static and documented, and simply left off the list. Exporting them is a patch upstream rather
+than a fork.
+
+| Symbol | Absent from the export list | Needed to link the FSAL below |
+| --- | --- | --- |
+| `FSAL_encode_flex_file_layout` | yes | yes |
+| `FSAL_encode_ff_device_versions4` | yes | yes |
+| `FSAL_encode_ipv4_netaddr` | yes | not by this one, which does not call it |
+| `xdr_fsal_deviceid` | yes | not by this one, which does not call it |
+
+That the first two are required is measured, by the link failing without them. The other two are
+absent on the same terms and would stop any FSAL that calls them, which this one does not, so
+whether a fuller metadata server needs them is reasoned rather than tried.
+
+**With those exports a stock client takes a flexfiles layout.** A 172-line FSAL, built on
+`FSAL_MEM`, advertises `LAYOUT4_FLEX_FILES` from `fs_layouttypes`, describes one data server from
+`getdeviceinfo` and encodes a whole-file layout from `layoutget`; Ganesha's own helpers do the XDR.
+Against it, Linux 6.8 reports `pnfs=LAYOUT_FLEX_FILES` in `/proc/self/mountstats`, where the same
+export without the FSAL reports `pnfs=not configured`.
+
+The two readings came from one `mountstats` holding two mounts, and the lines carry no mountpoint,
+so which is which follows from the order they were made rather than from the output. The reading is
+sound, since only a server advertising a layout type makes a client report one and the two servers
+differed by nothing else, but it is one step short of an artifact that stands alone. Repeating it
+means rebuilding Ganesha, and a repeat should capture the mountpoint beside the reading.
+
+What that does not show is a byte moving. The client then goes to the data server for I/O, and the
+address in the layout pointed at the metadata server, which is not one, so the read blocked. That is
+the honest boundary of the spike: the metadata server half is answered and the data server half is
+the work.
+
 **And what a distribution ships is not what upstream has.** Everything above is read from the source.
 Checked against the 4.3 the target OS packages, on a dev cluster node, that build exports
 `FSAL_encode_file_layout` and not the flexfiles one, so a build from a current stable line is
@@ -106,8 +140,8 @@ that shape and are a workload this tier is for.
 | Assumption | Basis | Risk if wrong |
 | --- | --- | --- |
 | Flexfiles fencing revokes a layout without the client cooperating | **Measured against the specification**, RFC 8435, not against a running server | Reclamation waits out a lease period, and RFC-0005's deadline cannot be met while pNFS is the access path |
-| A metadata server can be built on an existing NFS server rather than written | **Measured against the source, not a running server.** NFS-Ganesha implements the pNFS metadata operations, exposes `layoutget`, `getdeviceinfo` and `fs_layouttypes` as FSAL hooks, and ships `FSAL_encode_flex_file_layout` taking the synthetic uid and gid this design fences with. Six in-tree FSALs already implement a metadata server, so the shape is established. What is written is an FSAL, not an NFS server | The access layer becomes an NFSv4.1 implementation, which is a different project and one RFC-0001 would not have started |
-| The flexfiles encoder works, having no in-tree user | **Unverified, and now the highest risk here.** All six FSALs that implement a metadata server advertise `LAYOUT4_NFSV4_1_FILES`; none calls the flexfiles encoder, so Forebay would be its first user and it is exercised by nobody | An encoder nobody runs is a body of work discovered late, and the schedule assumes an existing server rather than one being fixed |
+| A metadata server can be built on an existing NFS server rather than written | **Measured against a running server.** A 172-line FSAL over NFS-Ganesha V6.5 advertised the flexible file layout and Linux 6.8 negotiated it. Two helper symbols had to be exported first, without which it does not link. NFS-Ganesha implements the pNFS metadata operations, exposes `layoutget`, `getdeviceinfo` and `fs_layouttypes` as FSAL hooks, and ships `FSAL_encode_flex_file_layout` taking the synthetic uid and gid this design fences with. Six in-tree FSALs already implement a metadata server, so the shape is established. What is written is an FSAL, not an NFS server | The access layer becomes an NFSv4.1 implementation, which is a different project and one RFC-0001 would not have started |
+| The flexfiles encoder works, having no in-tree user | **Partly measured.** It encodes a layout a Linux 6.8 client accepts, which is more than nobody had run before. What it has not done is serve a byte, since that needs a data server, so its behaviour under a real read is still unknown | An encoder nobody runs is a body of work discovered late, and the schedule assumes an existing server rather than one being fixed |
 | Fencing all readers of an extent is acceptable because they take a miss on regenerable data | Reasoned, from the fast tier holding only what can be fetched again | The loosely coupled model is unusable and tight coupling becomes mandatory, with the control protocol it costs |
 | A client whose layout is fenced returns it and asks for another rather than failing the read | Reasoned, from RFC 8435's error handling | Reclamation surfaces as IO errors in jobs, which is the outcome this whole design exists to avoid |
 | Reading through the metadata server is an acceptable fallback | Reasoned. It is the protocol's own answer for a client that gets no layout | A client that cannot speak pNFS cannot use Forebay at all, which narrows the addressable deployment sharply |
@@ -273,9 +307,10 @@ RFC-0016 owns.
 
 ## Open questions
 
-- **Whether NFS-Ganesha can host this metadata server**, which is the assumption this document is
-  most exposed to. It needs a spike against a running server rather than an argument, and no RFC
-  owns it because it is this document's own work before it can be accepted.
+- **How a data server speaks NFS.** A client given a flexfiles layout goes to the data server for
+  the bytes, so the read path this project has as a Go library has to become something an NFS client
+  can talk to. That is now the piece the rest of this document waits on, and no RFC owns it because
+  it is this document's own work.
 - **End-to-end revocation latency under load**, with a real metadata server rather than from the
   specification. Owned by [RFC-0018](0018-benchmark-and-falsification-suite.md).
 - **How often a dataloader asks for layouts**, since it decides whether the metadata server is a
