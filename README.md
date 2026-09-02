@@ -181,6 +181,7 @@ forebay-agent --borrowed-dir=/var/lib/forebay/borrowed \
 | Lends capacity as real bytes | One preallocated extent per lease, so reclaiming is an unlink rather than a compaction. An interface with no caller yet: granting is the control plane's job and there is no control plane |
 | Takes it back on a deadline | Invalidates before unlinking, times the reclaim, and treats overrunning as a broken promise. Reached today only through the watch, since nothing an operator can run grants a lease |
 | Keeps a floor of free space | Polls the filesystem and reclaims the shortfall, reporting one it cannot meet |
+| Sees pressure before it lands | Reads pods from this node's own kubelet rather than the API server, so a partition cannot block reclamation, and counts what they have asked for but not yet written. Free space cannot see that until it is gone |
 | Survives being killed | Replays its journal, reconciles it against the disk in both directions, and finishes an interrupted reclaim |
 | Refuses to run twice | One agent per node, and a wedged one is killed by its own liveness probe so a replacement can take the lock |
 
@@ -188,8 +189,8 @@ Everything above is exercised on a GPU node with local NVMe rather than only in 
 rows that need a lease were driven by a stand-in for the control plane rather than by the agent
 binary.
 
-**Nothing serves data yet, and nothing grants.** There is no fast tier, no access layer, no backend
-driver and no control plane, so a running agent guards capacity that nothing lends and nothing reads
+**Nothing serves data yet, and nothing grants.** There is no CSI driver, no access layer and no
+control plane, so a running agent guards capacity that nothing lends and nothing reads
 from. That is Phase 1's remaining work.
 
 ## The honest part

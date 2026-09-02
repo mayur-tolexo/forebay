@@ -1,0 +1,45 @@
+{
+ "node": {
+  "fs": {
+   "time": "2026-09-02T04:14:44Z",
+   "availableBytes": 1413445918720,
+   "capacityBytes": 2013991550976,
+   "usedBytes": 498164928512,
+   "inodesFree": 120484222,
+   "inodes": 124960768,
+   "inodesUsed": 4476546
+  }
+ },
+ "pods": [
+  {
+   "podRef": {
+    "name": "fb-kp",
+    "namespace": "default",
+    "uid": "c9ba8471-0812-4ec4-a7e9-16c2c54b85d5"
+   },
+   "ephemeral-storage": {
+    "usedBytes": 1105920
+   }
+  },
+  {
+   "podRef": {
+    "name": "virt-handler-dl248",
+    "namespace": "kubevirt",
+    "uid": "a10c47ce-1244-4f31-aeec-ea1bc452a1cc"
+   },
+   "ephemeral-storage": {
+    "usedBytes": 34189312
+   }
+  },
+  {
+   "podRef": {
+    "name": "neevai-runner-dev-wkld-idr-hrjsr-runner-p2b9z",
+    "namespace": "arc-systems",
+    "uid": "172c5e0b-b884-4120-8351-dbfacc5f0b81"
+   },
+   "ephemeral-storage": {
+    "usedBytes": 798720
+   }
+  }
+ ]
+}

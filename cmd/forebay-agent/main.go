@@ -14,10 +14,13 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/mayur-tolexo/forebay/internal/agent"
+	"github.com/mayur-tolexo/forebay/internal/kubelet"
 	"github.com/mayur-tolexo/forebay/internal/lease"
 	"github.com/mayur-tolexo/forebay/internal/pool"
 	"github.com/mayur-tolexo/forebay/internal/topology"
@@ -50,6 +53,10 @@ func run() error {
 		watch       = flag.Bool("watch", false, "stay running, keeping free space above the headroom target")
 		headroom    = flag.Int64("headroom-bytes", 0, "free space the agent keeps on top of what is committed, required by --watch")
 		interval    = flag.Duration("watch-interval", 10*time.Second, "how often free space is polled")
+		kubeletHost = flag.String("kubelet-host", "", "this node's address, to read pods bound to it. Without one the watch is reactive")
+		kubeletPort = flag.Int("kubelet-port", 10250, "the kubelet's port")
+		tokenFile   = flag.String("kubelet-token-file", "", "service account token for the kubelet, defaulting to the pod's own")
+		kubeletRoot = flag.String("kubelet-root", "/var/lib/kubelet", "the kubelet's directory, used to check pods are charged against the filesystem the pools are on")
 	)
 	flag.Parse()
 
@@ -197,7 +204,182 @@ func run() error {
 	if !*watch {
 		return nil
 	}
-	return watchPressure(a, cfg, borrowedFS, *sysroot, *mountinfo, pool.Bytes(*headroom), *interval)
+	sources := optionalSources(kubeletOptions{
+		Host:        *kubeletHost,
+		Port:        *kubeletPort,
+		TokenFile:   *tokenFile,
+		Root:        *kubeletRoot,
+		BorrowedDir: cfg.BorrowedDir,
+		Pools:       borrowedFS,
+	})
+	return watchPressure(a, cfg, borrowedFS, *sysroot, *mountinfo, pool.Bytes(*headroom), *interval, sources...)
+}
+
+// kubeletOptions is what the pod input needs to reach the kubelet and to prove
+// it is watching the filesystem the pools are on.
+//
+// A struct rather than five positional strings: transposing the kubelet's
+// directory and the pool's would compile and compare the wrong pair of paths,
+// which is the check this has already been got wrong once.
+type kubeletOptions struct {
+	Host        string
+	Port        int
+	TokenFile   string
+	Root        string
+	BorrowedDir string
+	Pools       topology.PoolStorage
+}
+
+// optionalSources builds the inputs the watch can have on top of free space.
+//
+// The pod input is proved once here so that a healthy start is quiet. Leaving
+// it all to the background would mean the first pass always found it
+// unfinished, and an operator who sees a degraded input on every restart
+// learns to skim past the one that matters.
+func optionalSources(opts kubeletOptions) []agent.Source {
+	if opts.Host == "" {
+		return nil
+	}
+	p := &pendingSource{opts: opts}
+	p.attempt(startupProbe)
+	return []agent.Source{p}
+}
+
+// buildTimeout is what proving the pod input gets, which is deliberately more
+// than a watch pass would give it.
+//
+// The check reads the node filesystem from the kubelet, and on a node with
+// hundreds of pods that response is large. Bounding it by the pass would tie
+// the budget to how often the watch polls, and a first attempt that could not
+// finish in time would retry for ever against the same too-small budget.
+const buildTimeout = 15 * time.Second
+
+// startupProbe is what the first attempt gets, before the watch begins.
+//
+// Short, because the agent should not wait on the kubelet to start guarding
+// the node, and it does not have to: a first attempt that does not finish in
+// time costs only that the pod input starts a pass or two later. Long enough
+// that it will normally succeed, since the check measured 121ms to 247ms
+// against a real kubelet.
+const startupProbe = 2 * time.Second
+
+// pendingSource is the pod input before it has been proved usable.
+//
+// Building it needs the kubelet, and the kubelet is not always there when the
+// agent starts: on a reboot the two come up together and the agent may well be
+// first. Exiting would leave the node unwatched through exactly the minutes
+// when image pulls are filling the disk, and building it once and giving up
+// would mean a kubelet that arrives a second late is never used.
+//
+// So the attempt is made in the background and repeated until it succeeds,
+// off the watch's own timing. A pass never waits on the kubelet handshake, and
+// a failure is reported the way any other source failure is, which is what
+// stops a missing input from looking like a quiet cluster: an input that was
+// asked for and is not working says so on every pass, rather than once at
+// startup and never again.
+type pendingSource struct {
+	opts kubeletOptions
+
+	// mu guards the rest. The watch asks its sources from one goroutine, but
+	// the attempts run on another, and Step is exported to anyone who wants
+	// to drive a pass themselves.
+	mu       sync.Mutex
+	built    agent.Source
+	lastErr  error
+	building bool
+}
+
+// Name says which observation this is, whether or not it is working yet.
+func (p *pendingSource) Name() string { return "pod requests" }
+
+// Observe asks the source if there is one, and otherwise reports why not
+// while an attempt to build one runs behind it.
+func (p *pendingSource) Observe(ctx context.Context, cfg agent.WatchConfig, available pool.Bytes) (pool.Bytes, error) {
+	p.mu.Lock()
+	built, lastErr := p.built, p.lastErr
+	if built == nil && !p.building {
+		p.building = true
+		go p.attempt(buildTimeout)
+	}
+	p.mu.Unlock()
+
+	switch {
+	case built != nil:
+		return built.Observe(ctx, cfg, available)
+	case lastErr != nil:
+		return 0, lastErr
+	default:
+		return 0, errors.New("still checking the kubelet is watching the filesystem the pools are on")
+	}
+}
+
+// attempt proves the input usable, on its own budget rather than the watch's.
+func (p *pendingSource) attempt(timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	src, err := podSource(ctx, p.opts)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.building = false
+	p.built, p.lastErr = src, err
+}
+
+// podSource builds the pod input, refusing one that would be watching a
+// different filesystem from the one the pools are on.
+//
+// Pods are charged for ephemeral storage against the kubelet's filesystem. If
+// the pools live on a second device, a pod writing everything it asked for
+// takes nothing from Forebay, and acting on that signal would reclaim a job's
+// cache for pressure that cannot reach it. The two filesystems are told apart
+// by size, which is checked once here rather than every pass.
+func podSource(ctx context.Context, opts kubeletOptions) (agent.Source, error) {
+	// Identity first, and first in the order it runs as well as in the order
+	// it is trusted. Sizes match on any two drives of the same model, which
+	// is what a GPU node usually has, so a size check alone can pass on the
+	// wrong device. Two stat calls settle it, and settling it here means a
+	// node whose pools are on another device refuses without ever asking the
+	// kubelet: this runs on every pass, and that answer is never going to
+	// change.
+	same, unreachable := topology.SameFilesystem(opts.Root, opts.BorrowedDir)
+	if unreachable == nil && !same {
+		return nil, fmt.Errorf("%s and %s are on different filesystems, so what pods are charged for says nothing about the space Forebay lends", opts.Root, opts.BorrowedDir)
+	}
+
+	token, err := kubelet.TokenFromFile(opts.TokenFile)
+	if err != nil {
+		return nil, err
+	}
+	client := kubelet.New(opts.Host, opts.Port, token)
+	capacity, _, err := client.NodeFS(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not check the kubelet is watching the same filesystem as the pools: %w", err)
+	}
+
+	switch {
+	case unreachable == nil:
+		fmt.Println("pods are charged against the filesystem the pools are on, checked by device")
+	default:
+		// Falling back rather than refusing, because the agent not being able
+		// to see the kubelet's directory is a packaging detail and not
+		// evidence about the device. Size is the weaker answer and is
+		// reported as one, so nobody reads it as identity.
+		total, ok := opts.Pools.TotalBytes.Known()
+		if !ok {
+			return nil, fmt.Errorf("the filesystem holding the pools could not be measured and %w, so there is no way to tell pods are charged against it", unreachable)
+		}
+		if int64(total) != capacity {
+			// Exact bytes as well as the rounded size, because two
+			// filesystems that differ by less than the display precision
+			// otherwise produce a refusal naming the same size twice. The
+			// unreachable path is named too, so it is clear the stronger
+			// check did not run.
+			return nil, fmt.Errorf("%w, so the device could not be compared; and the kubelet charges pods against a %s filesystem (%d bytes) while the pools are on a %s one (%d bytes), so pod requests say nothing about the space Forebay lends",
+				unreachable, pool.Bytes(capacity), capacity, pool.Bytes(total), total)
+		}
+		fmt.Printf("%v, so pods are only known to be charged against a filesystem of the same size as the pools', not the same one\n", unreachable)
+	}
+	return kubelet.NewSource(client, capacity)
 }
 
 // watchPressure runs the agent until it is signalled, keeping free space above
@@ -205,7 +387,7 @@ func run() error {
 //
 // Free space is re-measured each pass rather than derived from the accounting,
 // because the point is to catch writes by workloads that told nobody.
-func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sysroot, mountinfo string, headroom pool.Bytes, interval time.Duration) error {
+func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sysroot, mountinfo string, headroom pool.Bytes, interval time.Duration, sources ...agent.Source) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -223,8 +405,27 @@ func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sy
 		device = "an unidentified device"
 	}
 	fmt.Printf("watching %s, keeping %s free, polling every %s\n", device, headroom, interval)
-	fmt.Fprintln(os.Stderr, "only free space is polled: the two inputs that would give warning before a workload writes need RFC-0014")
+	if len(sources) == 0 {
+		fmt.Fprintln(os.Stderr, "only free space is polled, so pressure is noticed once the space has gone: pass --kubelet-host to watch pods too")
+	} else {
+		for _, s := range sources {
+			fmt.Printf("also watching %s\n", s.Name())
+		}
+	}
+	// A source that stays broken would otherwise repeat itself every pass, so
+	// only a change is worth printing. It is repeated when it recovers, which
+	// is the transition an operator is waiting for.
+	var lastDegraded string
 	report := func(t agent.Tick, err error) {
+		if d := strings.Join(t.Degraded, "; "); d != lastDegraded {
+			switch {
+			case d == "":
+				fmt.Println("all inputs readable again")
+			default:
+				fmt.Fprintln(os.Stderr, "forebay-agent: degraded, continuing on what is left:", d)
+			}
+			lastDegraded = d
+		}
 		switch {
 		case err != nil:
 			fmt.Fprintln(os.Stderr, "forebay-agent: pass failed:", err)
@@ -235,7 +436,7 @@ func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sy
 			fmt.Printf("%s wanted %s back, reclaimed %s\n", t.Observed.Source, t.Observed.Need, t.Reclaimed)
 		}
 	}
-	if err := a.Watch(ctx, agent.WatchConfig{Headroom: headroom, Interval: interval}, free, report); err != nil {
+	if err := a.Watch(ctx, agent.WatchConfig{Headroom: headroom, Interval: interval}, free, report, sources...); err != nil {
 		return err
 	}
 	fmt.Println("forebay-agent: stopped, lock released")

@@ -1,13 +1,20 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/mayur-tolexo/forebay/internal/agent"
 	"github.com/mayur-tolexo/forebay/internal/pool"
@@ -407,5 +414,342 @@ func TestWatchingWithoutAHeadroomTargetIsRefused(t *testing.T) {
 	err := withArgs(t, append(nodeArgs(t, root), "--watch")...)
 	if !errors.Is(err, agent.ErrNoHeadroom) {
 		t.Errorf("watch with no headroom = %v, want ErrNoHeadroom", err)
+	}
+}
+
+// kubeletServing answers /stats/summary with a node filesystem of the given
+// size, which is the one field the pod source is checked against.
+func kubeletServing(t *testing.T, capacity int64) (host string, port int) {
+	t.Helper()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"node":{"fs":{"capacityBytes":%d,"availableBytes":1}},"pods":[]}`, capacity)
+	}))
+	t.Cleanup(srv.Close)
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Hostname(), p
+}
+
+// tokenFile writes a service account token for the source to read.
+func tokenFile(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("tok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestThePodSourceIsRefusedOnADifferentDevice(t *testing.T) {
+	// Identity, not size. Pods are charged against the kubelet's filesystem,
+	// so if the pools are on a second device a pod writing everything it
+	// asked for takes nothing from Forebay, and acting on that would reclaim
+	// a job's cache for pressure that cannot reach it.
+	host, port := kubeletServing(t, 1<<40)
+	// A path that exists but is not the pool directory's filesystem cannot be
+	// conjured in a unit test, so the refusal is driven by size here and the
+	// device comparison has its own test in internal/topology.
+	fs := topology.PoolStorage{TotalBytes: topology.DiscoveredValue[int64](2 << 40)}
+
+	_, err := podSource(context.Background(), kubeletOptions{Host: host, Port: port, TokenFile: tokenFile(t), Root: filepath.Join(t.TempDir(), "absent"), BorrowedDir: t.TempDir(), Pools: fs})
+	if err == nil {
+		t.Fatal("the pod source was accepted while watching another filesystem")
+	}
+	if !strings.Contains(err.Error(), "say nothing about the space Forebay lends") {
+		t.Errorf("the refusal does not explain itself: %v", err)
+	}
+}
+
+func TestThePodSourceIsAcceptedOnTheSameDevice(t *testing.T) {
+	// Two directories under one temporary root are on one filesystem, so the
+	// device check answers yes and the size never has to be consulted. The
+	// kubelet here reports a deliberately different size to prove that.
+	host, port := kubeletServing(t, 1<<40)
+	root := t.TempDir()
+	kubeletRoot, borrowed := filepath.Join(root, "kubelet"), filepath.Join(root, "borrowed")
+	for _, d := range []string{kubeletRoot, borrowed} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fs := topology.PoolStorage{TotalBytes: topology.DiscoveredValue[int64](9 << 40)}
+
+	src, err := podSource(context.Background(), kubeletOptions{Host: host, Port: port, TokenFile: tokenFile(t), Root: kubeletRoot, BorrowedDir: borrowed, Pools: fs})
+	if err != nil {
+		t.Fatalf("podSource: %v", err)
+	}
+	if src.Name() != "pod requests" {
+		t.Errorf("Name = %q", src.Name())
+	}
+}
+
+func TestTheFallbackNamesThePathItCouldNotReach(t *testing.T) {
+	// If the pools' own directory is the unreachable one, a message blaming
+	// the kubelet root sends an operator to check a mount that is fine.
+	const size = 2013991550976
+	host, port := kubeletServing(t, size)
+	fs := topology.PoolStorage{TotalBytes: topology.DiscoveredValue[int64](size + 1)}
+	borrowed := filepath.Join(t.TempDir(), "absent")
+
+	_, err := podSource(context.Background(), kubeletOptions{Host: host, Port: port, TokenFile: tokenFile(t), Root: t.TempDir(), BorrowedDir: borrowed, Pools: fs})
+	if err == nil {
+		t.Fatal("want a refusal")
+	}
+	if !strings.Contains(err.Error(), borrowed) {
+		t.Errorf("the refusal names the wrong path: %v", err)
+	}
+}
+
+func TestThePodSourceFallsBackToSizeWhenTheKubeletDirIsUnreachable(t *testing.T) {
+	// The agent not being able to see the kubelet's directory is a packaging
+	// detail, not evidence about the device, so it falls back rather than
+	// refusing a node that is fine.
+	const size = 2013991550976
+	host, port := kubeletServing(t, size)
+	fs := topology.PoolStorage{TotalBytes: topology.DiscoveredValue[int64](size)}
+
+	if _, err := podSource(context.Background(), kubeletOptions{Host: host, Port: port, TokenFile: tokenFile(t), Root: filepath.Join(t.TempDir(), "absent"), BorrowedDir: t.TempDir(), Pools: fs}); err != nil {
+		t.Fatalf("podSource: %v", err)
+	}
+}
+
+func TestThePodSourceIsRefusedWhenNothingCanBeCompared(t *testing.T) {
+	// No device to compare and no size either. Guessing the two filesystems
+	// match is the mistake this check exists to prevent.
+	host, port := kubeletServing(t, 1<<40)
+	_, err := podSource(context.Background(), kubeletOptions{Host: host, Port: port, TokenFile: tokenFile(t), Root: filepath.Join(t.TempDir(), "absent"), BorrowedDir: t.TempDir(), Pools: topology.PoolStorage{TotalBytes: topology.UnknownValue[int64]()}})
+	if err == nil {
+		t.Fatal("the pod source was accepted against an unmeasured filesystem")
+	}
+}
+
+// settle waits for the source to reach a steady answer, since the attempt to
+// build it runs behind the pass rather than inside it.
+func settle(t *testing.T, src agent.Source, want bool) error {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var err error
+	for time.Now().Before(deadline) {
+		_, err = src.Observe(context.Background(), agent.WatchConfig{Headroom: 1}, 0)
+		if (err == nil) == want {
+			return err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return err
+}
+
+func TestAnUnreachableKubeletDoesNotStopTheAgentStarting(t *testing.T) {
+	// On a reboot the agent and the kubelet come up together, and the agent
+	// may well be first. Exiting would crash-loop it through exactly the
+	// minutes when image pulls are filling the disk, and the free-space watch
+	// it could have been running is the one that still works.
+	//
+	// Port 1 refuses connections, which is what an unreachable kubelet looks
+	// like from here.
+	got := optionalSources(kubeletOptions{
+		Host: "127.0.0.1", Port: 1, TokenFile: tokenFile(t),
+		Root: t.TempDir(), BorrowedDir: t.TempDir(),
+		Pools: topology.PoolStorage{TotalBytes: topology.DiscoveredValue[int64](1 << 40)},
+	})
+	if len(got) != 1 {
+		t.Fatalf("got %d sources, want the input to exist and report itself broken", len(got))
+	}
+	// Present but failing, so the watch names it every pass. An input that
+	// was asked for and silently absent looks exactly like a quiet cluster.
+	if err := settle(t, got[0], false); err == nil {
+		t.Error("an unreachable kubelet reported no problem")
+	}
+}
+
+func TestProvingTheInputDoesNotRunInsideAPass(t *testing.T) {
+	// A kubelet too slow to answer within the startup probe must not then be
+	// waited on by the watch. Proving it is retried behind the passes, so a
+	// pass costs nothing while that happens, and a check bounded by the pass
+	// would instead tie its budget to how often free space is polled.
+	slow := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(3 * time.Second)
+		fmt.Fprint(w, `{"node":{"fs":{"capacityBytes":1099511627776,"availableBytes":1}},"pods":[]}`)
+	}))
+	defer slow.Close()
+	host, port := hostPortOf(t, slow.URL)
+
+	src := optionalSources(kubeletOptions{
+		Host: host, Port: port, TokenFile: tokenFile(t),
+		Root: t.TempDir(), BorrowedDir: t.TempDir(),
+		Pools: topology.PoolStorage{TotalBytes: topology.DiscoveredValue[int64](1099511627776)},
+	})[0]
+
+	// The pass returns without waiting on the kubelet, and says why.
+	start := time.Now()
+	_, err := src.Observe(context.Background(), agent.WatchConfig{Headroom: 1}, 0)
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Errorf("the pass waited %s on the kubelet handshake", elapsed)
+	}
+	if err == nil {
+		t.Error("a source that is not proved yet reported no problem")
+	}
+}
+
+func TestAHealthyStartSaysNothingAboutBeingDegraded(t *testing.T) {
+	// The first pass finding the input unproved would put a degraded line in
+	// front of an operator on every restart and rollout, which is how the one
+	// that matters gets skimmed past.
+	const size = 1099511627776
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/pods" {
+			fmt.Fprint(w, `{"items":[]}`)
+			return
+		}
+		fmt.Fprintf(w, `{"node":{"fs":{"capacityBytes":%d,"availableBytes":1}},"pods":[]}`, size)
+	}))
+	defer srv.Close()
+	host, port := hostPortOf(t, srv.URL)
+
+	root := t.TempDir()
+	kubeletRoot, borrowed := filepath.Join(root, "kubelet"), filepath.Join(root, "borrowed")
+	for _, d := range []string{kubeletRoot, borrowed} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := optionalSources(kubeletOptions{
+		Host: host, Port: port, TokenFile: tokenFile(t),
+		Root: kubeletRoot, BorrowedDir: borrowed,
+		Pools: topology.PoolStorage{TotalBytes: topology.DiscoveredValue[int64](size)},
+	})[0]
+
+	// The very first pass, with no waiting and no retry: working already.
+	if _, err := src.Observe(context.Background(), agent.WatchConfig{Headroom: 1}, 0); err != nil {
+		t.Errorf("a healthy kubelet reported degraded on the first pass: %v", err)
+	}
+}
+
+func TestThePodInputStartsWorkingWhenTheKubeletArrives(t *testing.T) {
+	// Building it once and giving up would mean a kubelet that came up a
+	// second after the agent was never used for the life of the process.
+	var mu sync.Mutex
+	var calls int
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		refusing := calls == 1
+		mu.Unlock()
+		if refusing {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		if r.URL.Path == "/pods" {
+			fmt.Fprint(w, `{"items":[]}`)
+			return
+		}
+		fmt.Fprint(w, `{"node":{"fs":{"capacityBytes":1099511627776,"availableBytes":1}},"pods":[]}`)
+	}))
+	defer srv.Close()
+	host, port := hostPortOf(t, srv.URL)
+
+	root := t.TempDir()
+	kubeletRoot, borrowed := filepath.Join(root, "kubelet"), filepath.Join(root, "borrowed")
+	for _, d := range []string{kubeletRoot, borrowed} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := optionalSources(kubeletOptions{
+		Host: host, Port: port, TokenFile: tokenFile(t),
+		Root: kubeletRoot, BorrowedDir: borrowed,
+		Pools: topology.PoolStorage{TotalBytes: topology.DiscoveredValue[int64](1099511627776)},
+	})[0]
+
+	if err := settle(t, src, true); err != nil {
+		t.Errorf("the input did not start working once the kubelet did: %v", err)
+	}
+}
+
+// hostPortOf splits a test server's URL.
+func hostPortOf(t *testing.T, raw string) (string, int) {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Hostname(), port
+}
+
+func TestNoKubeletAskedForMeansNoPodInput(t *testing.T) {
+	// The watch is reactive by default and says so; asking for nothing is not
+	// a failure to report.
+	if got := optionalSources(kubeletOptions{Host: "", Port: 10250, TokenFile: "", Root: "", BorrowedDir: "", Pools: topology.PoolStorage{}}); got != nil {
+		t.Errorf("got %d sources without being asked for any", len(got))
+	}
+}
+
+func TestAWorkingKubeletBecomesASource(t *testing.T) {
+	// The other half: the same path returns the source when it can be built,
+	// so the fallback above is not swallowing a working input.
+	const size = 2013991550976
+	host, port := kubeletServing(t, size)
+	root := t.TempDir()
+	kubeletRoot, borrowed := filepath.Join(root, "kubelet"), filepath.Join(root, "borrowed")
+	for _, d := range []string{kubeletRoot, borrowed} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := optionalSources(kubeletOptions{Host: host, Port: port, TokenFile: tokenFile(t), Root: kubeletRoot, BorrowedDir: borrowed, Pools: topology.PoolStorage{TotalBytes: topology.DiscoveredValue[int64](size)}})
+	if len(got) != 1 {
+		t.Fatalf("got %d sources from a working kubelet, want 1", len(got))
+	}
+	if got[0].Name() != "pod requests" {
+		t.Errorf("Name = %q", got[0].Name())
+	}
+}
+
+func TestADeviceMismatchNeverAsksTheKubelet(t *testing.T) {
+	// This check runs on every pass, and a mismatch is an answer that will
+	// not change while the process lives. Asking the kubelet first would pull
+	// its whole stats response every pass for ever, to reach a verdict two
+	// stat calls already had.
+	var mu sync.Mutex
+	var requests int
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		mu.Unlock()
+		fmt.Fprint(w, `{"node":{"fs":{"capacityBytes":1,"availableBytes":1}},"pods":[]}`)
+	}))
+	defer srv.Close()
+	host, port := hostPortOf(t, srv.URL)
+
+	// /dev is its own mount on every platform this runs on. Asserted rather
+	// than assumed, because a test that quietly stopped comparing two
+	// filesystems would pass for the wrong reason.
+	borrowed := t.TempDir()
+	if same, err := topology.SameFilesystem("/dev", borrowed); err != nil || same {
+		t.Fatalf("this test needs two filesystems: SameFilesystem(/dev, %s) = %v, %v", borrowed, same, err)
+	}
+
+	_, err := podSource(context.Background(), kubeletOptions{
+		Host: host, Port: port, TokenFile: tokenFile(t),
+		Root: "/dev", BorrowedDir: borrowed,
+		Pools: topology.PoolStorage{TotalBytes: topology.DiscoveredValue[int64](1)},
+	})
+	if err == nil {
+		t.Fatal("two filesystems were accepted")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if requests != 0 {
+		t.Errorf("the kubelet was asked %d time(s) for a verdict stat already had", requests)
 	}
 }

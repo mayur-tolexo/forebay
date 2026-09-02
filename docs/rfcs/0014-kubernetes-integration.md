@@ -17,18 +17,58 @@ believe they own the same bytes.
 
 ## What of this is built
 
-**None of it.** There is no operator, no CRD, no CSI driver, and nothing reads the Kubernetes API.
+**The pod input, and nothing else.** There is no operator, no CRD and no CSI driver.
 
-The agent's pressure watch has three inputs in its design and one in its code: it polls free space,
-and the two that would give warning before a workload writes anything are the ones this document
-supplies. That is why the watch is reactive today, and why `internal/agent` says so at startup.
+`internal/agent` gained the seam this document asks for: the watch takes sources, each naming itself
+and reporting a shortfall, and reclaims against the largest. It holds no Kubernetes type, which is
+the property that lets a Slurm adapter be written without touching it. `internal/kubelet` is the
+first source. It reads `/pods` and `/stats/summary` from this node's own kubelet, counts what live
+pods have requested and not yet written, and adds no dependency, because the types are the small
+subset of those responses that answers the question.
+
+On a GPU node with local NVMe, holding an 8 GiB lease against a target six GiB under free space:
+
+| | Sees | Reclaims |
+| --- | --- | --- |
+| Free space alone | nothing | nothing |
+| With the pod source | 4.00 GiB | the lease, 8 GiB of extents down to 30 bytes |
+
+That gap is the whole point of the input: the space is spoken for and has not been written, so
+polling cannot see it yet.
+
+Two things bound what the input is allowed to claim. It counts what Kubernetes charges a pod rather
+than the sum of its containers, since init containers run and exit before the app starts and summing
+them reclaims for a demand that cannot exist. And the input refuses to work unless the kubelet's
+filesystem is the one the pools are on, compared by device rather than by size, because a node with
+two matched drives has two filesystems of identical size: if the pools sit on the second one, a pod
+writing everything it asked for takes nothing from Forebay, and every reclaim that signal drove would
+be for pressure that cannot reach it.
+
+A pod asking for more than that filesystem holds is dropped and named rather than counted. The API
+server clamps an over-large request to the largest signed 64-bit value instead of refusing it, and
+the kubelet then rejects the pod, but there is a window in which it is Pending and counting it would
+either wrap negative and report no pressure at all or reclaim every lease on the node. Neither is a
+demand anyone was going to meet, so it is treated the way an unreadable request is.
+
+The pod input is never a reason for the agent not to run. It is proved once as the agent starts, so a
+healthy node says nothing about being degraded, and if that does not succeed the attempt repeats in
+the background until it does, so a kubelet that is not up yet costs nothing and is used the moment it
+arrives. An input that was asked for and cannot work says so on every pass rather than once. The
+retries stay off the watch's own timing, because the check reads a response that grows with the pods
+on the node and its budget should not be a consequence of how often free space is polled.
+
+The device comparison runs before any of that. It is two local calls, and settling a mismatch there
+means a node whose pools are on another device never asks the kubelet for a verdict that cannot
+change. A watch started without `--kubelet-host` says at startup that it is reactive.
+
+The CSI volume input is still missing, so the watch has two of the three inputs the design wants.
 
 ## Assumptions
 
 | Assumption | Basis | Risk if wrong |
 | --- | --- | --- |
 | The kubelet will tell a node-local process which pods are bound to it | Reasoned, from the kubelet's own API being how every node-local agent learns this | The agent reads the API server instead, and reclamation becomes blockable by a partition, which RFC-0004 forbids |
-| Pods that will write a lot declare an ephemeral-storage request often enough to be worth watching | **Unverified**, and the reason free space is polled regardless | The declared-request input is noise and only polling is real, which makes the watch permanently reactive |
+| Pods that will write a lot declare an ephemeral-storage request often enough to be worth watching | **Measured, and it looks weak.** On one GPU node, 3 of 64 pods declared an ephemeral-storage request, and one of those three was our own probe. The input is real and cheap, but on this evidence it is silent about most of what runs, which is why free space is polled regardless | The declared-request input is noise and only polling is real, which makes the watch permanently reactive |
 | Reclamation is fast enough that admitting a pod against capacity Forebay holds is safe | **Partly measured.** Reclaiming through the agent is 2.8 ms for 7 GiB and 7.4 ms under concurrent writes, so the filesystem is not the constraint. Detecting the need and invalidating readers is unmeasured and is what RFC-0004 expects to dominate, so the measured half is not the half that decides this | The scheduler has to be told about borrowed capacity after all, which makes a node with Forebay advertise less than one without |
 | A user asks for a dataset, not for capacity | Reasoned, from borrowed capacity being cache rather than storage a user can hold | The CSI driver has to hand out reclaimable space as a volume, which promises a durability it cannot keep |
 
@@ -168,7 +208,9 @@ state it would have been in with no lending at all, which is the floor this desi
 
 **The kubelet is unreachable but the node is fine.** The agent loses its warning input and keeps
 polling free space, so it degrades to reactive rather than stopping. Saying which mode it is in
-matters more than the degradation.
+matters more than the degradation. This holds at startup as well as during a pass: on a reboot the
+agent and the kubelet come up together and the agent may be first, so refusing to start would leave
+the node unwatched through exactly the minutes when image pulls are filling the disk.
 
 **A CRD says something the cluster cannot honour.** A dataset asking for a capability no configured
 backend declares is refused when it is declared, per RFC-0006, and not when somebody reads it.
@@ -211,7 +253,9 @@ control plane's own credentials become the weak point, which is
 ## Open questions
 
 - **Whether a declared ephemeral-storage request predicts writing well enough to be worth acting
-  on.** If it does not, the watch stays reactive whatever this document builds. Owned by
+  on.** Counting one node makes this look weak: almost nothing declares. What that does not settle
+  is whether the few that declare are the ones that write, which is the version of the question that
+  decides whether the input is worth having. Owned by
   [RFC-0018](0018-benchmark-and-falsification-suite.md), which owns workload definition.
 - **What scratch should be**, given that a job wanting fast losable space is asking for what the
   borrowed pool holds, and no Kubernetes volume type makes that promise. No RFC owns it: it is a
