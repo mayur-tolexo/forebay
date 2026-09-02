@@ -47,7 +47,7 @@ terminate.
 
 | | A mature array platform | Forebay |
 | --- | --- | --- |
-| Capacity that appears from idle compute nodes and returns itself | No. It sells you the array | Built · [0005](rfcs/0005-capacity-pools-and-elastic-leases.md). The agent lends real preallocated extents and takes them back when a workload eats the free space, on a GPU node. Nothing reads from that capacity yet |
+| Capacity that appears from idle compute nodes and returns itself | No. It sells you the array | Built · [0005](rfcs/0005-capacity-pools-and-elastic-leases.md). The agent lends real preallocated extents and takes them back when a workload eats the free space, on a GPU node, and reads are served from that capacity. Nothing mounts it yet |
 | Placement that follows the accelerator, by GPU, NUMA and PCIe topology | No. It sees its own media only | Built · [0003](rfcs/0003-topology-model.md), for the discovery half. Nothing places by it yet |
 | Telling the scheduler where the data already is | No. It has no scheduler to talk to | Planned · [0022](rfcs/0022-data-aware-scheduling.md) |
 | Pre-filling a rack before the pod is admitted | No | Planned · [0022](rfcs/0022-data-aware-scheduling.md) |
@@ -55,7 +55,7 @@ terminate.
 | Prefetch driven by dataset manifests and dataloader hints | No | Planned · [0011](rfcs/0011-prefetch-and-dataset-manifests.md) |
 | Checkpoint fast-ack with a stated durability policy | Partially, generically | Planned · [0013](rfcs/0013-checkpoint-path.md) |
 | Datasets, versions and experiments instead of volumes and LUNs | No | Planned · [0012](rfcs/0012-dataset-object-model.md) |
-| Runs on the storage you already bought, from any vendor | No, by design | Specified · [0006](rfcs/0006-durable-backend-driver-contract.md) |
+| Runs on the storage you already bought, from any vendor | No, by design | Partly built · [0006](rfcs/0006-durable-backend-driver-contract.md). The contract exists and refuses anything a driver did not declare, and the conformance suite is importable so a third party can prove a driver for a store this project has never seen. No Ceph or S3 driver is written |
 | Open source, no licence per terabyte | No | Apache 2.0 |
 
 The honest summary: **a mature array is better than Forebay at being an array, and will be for a long
