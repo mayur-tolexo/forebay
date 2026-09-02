@@ -3,6 +3,7 @@ package topology
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -587,5 +588,44 @@ func TestAPoolThatWasNeverWrittenHoldsNothing(t *testing.T) {
 	got, ok := OccupiedBytes(filepath.Join(t.TempDir(), "never-made")).Known()
 	if !ok || got != 0 {
 		t.Errorf("OccupiedBytes of an absent pool = %d/%v, want a known 0", got, ok)
+	}
+}
+
+func TestSameFilesystemComparesDeviceNotSize(t *testing.T) {
+	// Two directories on one filesystem are the same filesystem however
+	// different they look, which is what a size comparison gets wrong on a
+	// node with two matched drives.
+	root := t.TempDir()
+	a := filepath.Join(root, "a")
+	b := filepath.Join(root, "b")
+	for _, d := range []string{a, b} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	same, err := SameFilesystem(a, b)
+	if err != nil || !same {
+		t.Errorf("SameFilesystem(%s, %s) = %v, %v; want true and no error", a, b, same, err)
+	}
+}
+
+func TestAPathThatCannotBeReachedIsNotAnAnswer(t *testing.T) {
+	// Not being able to see a path is a different thing from having learned
+	// it is a different filesystem, and a caller that conflates them refuses
+	// a node that is fine.
+	absent := filepath.Join(t.TempDir(), "absent")
+	_, err := SameFilesystem(absent, t.TempDir())
+	if err == nil {
+		t.Fatal("an unreachable path was reported as a known answer")
+	}
+	// Which path, not merely that one of them failed: an operator told only
+	// that something was unreachable checks whichever they guess.
+	if !strings.Contains(err.Error(), absent) {
+		t.Errorf("the error does not name the path it could not reach: %v", err)
+	}
+
+	_, err = SameFilesystem(t.TempDir(), absent)
+	if err == nil || !strings.Contains(err.Error(), absent) {
+		t.Errorf("the second path being unreachable is not named: %v", err)
 	}
 }

@@ -255,3 +255,26 @@ func (p PoolStorage) String() string {
 	avail, _ := p.AvailableBytes.Known()
 	return fmt.Sprintf("%s (%s), %d bytes total, %d available", device, local, total, avail)
 }
+
+// SameFilesystem reports whether two paths sit on the same filesystem.
+//
+// It compares the device the kernel reports for each, which is identity rather
+// than a resemblance. Two matched NVMe drives in one node have the same size
+// and the same layout, so anything that compares those cannot tell them apart,
+// and a node with matched drives is the ordinary case rather than the exotic
+// one.
+//
+// A path that cannot be reached is an error naming that path, not a no: a
+// caller that cannot see a path has not learned it is a different filesystem,
+// and one told only that something was unreachable goes looking at whichever
+// of the two it happened to guess.
+func SameFilesystem(a, b string) (bool, error) {
+	var sa, sb syscall.Stat_t
+	if err := syscall.Stat(a, &sa); err != nil {
+		return false, fmt.Errorf("%s could not be reached: %w", a, err)
+	}
+	if err := syscall.Stat(b, &sb); err != nil {
+		return false, fmt.Errorf("%s could not be reached: %w", b, err)
+	}
+	return sa.Dev == sb.Dev, nil
+}

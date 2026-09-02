@@ -1,0 +1,216 @@
+{
+ "kind": "PodList",
+ "apiVersion": "v1",
+ "items": [
+  {
+   "metadata": {
+    "name": "virt-handler-dl248",
+    "namespace": "kubevirt"
+   },
+   "spec": {
+    "containers": [
+     {
+      "resources": {
+       "requests": {
+        "cpu": "10m",
+        "memory": "325Mi"
+       }
+      }
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "metadata": {
+    "name": "neevai-runner-dev-wkld-idr-hrjsr-runner-p2b9z",
+    "namespace": "arc-systems"
+   },
+   "spec": {
+    "containers": [
+     {
+      "resources": {
+       "limits": {
+        "cpu": "3",
+        "ephemeral-storage": "20Gi",
+        "memory": "4Gi"
+       },
+       "requests": {
+        "cpu": "2",
+        "ephemeral-storage": "10Gi",
+        "memory": "2Gi"
+       }
+      }
+     },
+     {
+      "resources": {
+       "limits": {
+        "cpu": "1",
+        "memory": "2Gi"
+       },
+       "requests": {
+        "cpu": "500m",
+        "memory": "1Gi"
+       }
+      }
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "metadata": {
+    "name": "neev-gpu-1787754579",
+    "namespace": "org-6ycdb869amg-prj-dwq2ofy8nq3"
+   },
+   "spec": {
+    "containers": [
+     {
+      "resources": {
+       "limits": {
+        "cpu": "8",
+        "ephemeral-storage": "50Gi",
+        "memory": "32Gi"
+       },
+       "requests": {
+        "cpu": "8",
+        "ephemeral-storage": "50Gi",
+        "memory": "32Gi"
+       },
+       "claims": [
+        {
+         "name": "gpu-claim"
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "status": {
+    "phase": "Failed"
+   }
+  },
+  {
+   "metadata": {
+    "name": "fb-kp",
+    "namespace": "default"
+   },
+   "spec": {
+    "containers": [
+     {
+      "resources": {
+       "requests": {
+        "ephemeral-storage": "2Gi"
+       }
+      }
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "metadata": {
+    "name": "fb-init",
+    "namespace": "default"
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "app",
+      "image": "busybox:1.36",
+      "resources": {
+       "requests": {
+        "ephemeral-storage": "1Gi"
+       }
+      }
+     }
+    ],
+    "initContainers": [
+     {
+      "name": "setup",
+      "image": "busybox:1.36",
+      "resources": {
+       "requests": {
+        "ephemeral-storage": "20Gi"
+       }
+      }
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "metadata": {
+    "name": "fb-sidecar",
+    "namespace": "default"
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "app",
+      "image": "busybox:1.36",
+      "resources": {
+       "requests": {
+        "ephemeral-storage": "1Gi"
+       }
+      }
+     }
+    ],
+    "initContainers": [
+     {
+      "name": "proxy",
+      "image": "busybox:1.36",
+      "resources": {
+       "requests": {
+        "ephemeral-storage": "3Gi"
+       }
+      },
+      "restartPolicy": "Always"
+     },
+     {
+      "name": "setup",
+      "image": "busybox:1.36",
+      "resources": {
+       "requests": {
+        "ephemeral-storage": "2Gi"
+       }
+      }
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  },
+  {
+   "metadata": {
+    "name": "fb-unreadable",
+    "namespace": "default"
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "app",
+      "image": "busybox:1.36",
+      "resources": {
+       "requests": {
+        "ephemeral-storage": "banana"
+       }
+      }
+     }
+    ]
+   },
+   "status": {
+    "phase": "Running"
+   }
+  }
+ ]
+}
