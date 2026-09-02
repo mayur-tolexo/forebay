@@ -158,6 +158,7 @@ nothing.
 | How much of a reader's working set one lease holds, which turns a per-block refetch into the burst a reader feels | The cost of reclamation | RFC-0007 |
 | How long to wait on a peer before abandoning it for the backend | Whether peer fetch helps or hurts | RFC-0007 |
 | Whether a rack-local hop beats going straight to a fanned-out backend | Whether the rack tier exists | RFC-0002, RFC-0007 |
+| What a read costs crossing from the NFS server into the node agent, against reading the same bytes in one process | Whether serving pNFS through a socket is affordable, since a data path meant to beat a fanned-out backend cannot leave the price of its own indirection unmeasured | RFC-0008 |
 | The headroom a node keeps free for reclamation to stay ahead of a workload's writes | The agent's pressure design | RFC-0004 |
 | The reclaim deadline default, derived from pod admission behaviour and measured end-to-end reclaim | RFC-0005's central promise | RFC-0005 |
 | The churn budget and the post-reclaim cooldown, whose shipped values are conservative guesses | Whether churn protection is real | RFC-0005 |

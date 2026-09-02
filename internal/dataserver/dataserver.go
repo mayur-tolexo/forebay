@@ -13,10 +13,20 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/mayur-tolexo/forebay/driver"
 	"github.com/mayur-tolexo/forebay/internal/fasttier"
 )
+
+// ErrRefused marks a request this will not answer, as opposed to one it
+// could not answer.
+//
+// The two need different replies. A caller that asked for something
+// nonsensical has to be told so, and a caller whose backend was briefly down
+// has to be told something else, or it retries the first for ever and gives up
+// on the second.
+var ErrRefused = errors.New("dataserver: refused")
 
 // Server serves one backend through one fast tier.
 type Server struct {
@@ -24,9 +34,11 @@ type Server struct {
 	backend *driver.Backend
 	// name scopes cached blocks to the backend they came from, since the same
 	// object name in two backends is two different objects.
-	name    string
-	maxRead int64
-	block   int64
+	name     string
+	maxRead  int64
+	idle     time.Duration
+	exchange time.Duration
+	block    int64
 
 	mu    sync.Mutex
 	stats Stats
@@ -63,6 +75,13 @@ type Config struct {
 	// Backend names the store the blocks came from, and scopes them in the
 	// tier: the same object name in two backends is two different objects.
 	Backend string
+	// Idle bounds how long a caller may go without asking. Zero means
+	// DefaultIdle.
+	Idle time.Duration
+	// Exchange bounds serving one request and delivering its answer, and
+	// starts when the request arrives rather than when the wait for it did.
+	// Zero means DefaultExchangeBudget.
+	Exchange time.Duration
 	// MaxRead bounds one read. Zero means DefaultMaxRead.
 	//
 	// The bound is on what is asked for, not on what exists, because the
@@ -86,13 +105,24 @@ func New(tier *fasttier.Cache, backend *driver.Backend, cfg Config) (*Server, er
 		return nil, errors.New("dataserver: the backend needs a name, since it scopes what the tier holds")
 	case cfg.MaxRead < 0:
 		return nil, fmt.Errorf("dataserver: a read bound of %d is not a size", cfg.MaxRead)
+	case cfg.Idle < 0:
+		return nil, fmt.Errorf("dataserver: an idle bound of %s is not a duration to wait", cfg.Idle)
+	case cfg.Exchange < 0:
+		return nil, fmt.Errorf("dataserver: an exchange bound of %s is not a duration to wait", cfg.Exchange)
 	}
 	if cfg.MaxRead == 0 {
 		cfg.MaxRead = DefaultMaxRead
 	}
+	if cfg.Idle == 0 {
+		cfg.Idle = DefaultIdle
+	}
+	if cfg.Exchange == 0 {
+		cfg.Exchange = DefaultExchangeBudget
+	}
 	return &Server{
 		tier: tier, backend: backend,
-		name: cfg.Backend, maxRead: cfg.MaxRead, block: tier.BlockSize(),
+		name: cfg.Backend, maxRead: cfg.MaxRead,
+		idle: cfg.Idle, exchange: cfg.Exchange, block: tier.BlockSize(),
 	}, nil
 }
 
@@ -105,21 +135,23 @@ func New(tier *fasttier.Cache, backend *driver.Backend, cfg Config) (*Server, er
 func (s *Server) ReadRange(ctx context.Context, tenant, object string, offset, length int64) ([]byte, error) {
 	switch {
 	case tenant == "":
-		return nil, errors.New("dataserver: no tenant, and blocks are not shared between them")
+		return nil, fmt.Errorf("%w: no tenant, and blocks are not shared between them", ErrRefused)
 	case object == "":
-		return nil, errors.New("dataserver: no object")
+		return nil, fmt.Errorf("%w: no object", ErrRefused)
 	case offset < 0 || length < 0:
-		return nil, fmt.Errorf("dataserver: %d bytes from %d is not a range", length, offset)
+		return nil, fmt.Errorf("%w: %d bytes from %d is not a range", ErrRefused, length, offset)
 	case length == 0:
 		return nil, nil
 	case offset > (1<<63-1)-length:
-		return nil, fmt.Errorf("dataserver: %d bytes from %d runs past what an offset can count", length, offset)
+		return nil, fmt.Errorf("%w: %d bytes from %d runs past what an offset can count", ErrRefused, length, offset)
 	case length > s.maxRead:
+		// Refused rather than failed: asking for more than a read may ask for
+		// is the caller's mistake and will not come right on a retry.
 		// Refused before anything is allocated. The answer is sized from the
 		// length asked for and the object's real size is not known until the
 		// backend is asked, so a large enough number reaches the allocator
 		// first and the process does not survive it.
-		return nil, fmt.Errorf("dataserver: %d bytes is more than the %d a single read may ask for", length, s.maxRead)
+		return nil, fmt.Errorf("%w: %d bytes is more than the %d a single read may ask for", ErrRefused, length, s.maxRead)
 	}
 
 	end := offset + length

@@ -182,6 +182,7 @@ forebay-agent --borrowed-dir=/var/lib/forebay/borrowed \
 | Takes it back on a deadline | Invalidates before unlinking, times the reclaim, and treats overrunning as a broken promise. Reached today only through the watch, since nothing an operator can run grants a lease |
 | Keeps a floor of free space | Polls the filesystem and reclaims the shortfall, reporting one it cannot meet |
 | Serves a byte range | From the fast tier where the blocks are resident and from the durable backend where they are not, absorbing the miss rather than passing it on, so capacity taken back mid-read is a slower answer and never an error. Nothing speaks NFS yet, so the caller is a Go caller |
+| Answers reads over a socket | So something that speaks a protocol can ask it. The status carries the difference between a read past the end of an object, a request that will never be valid, and a backend that could not answer this time, because the three need different answers to a client |
 | Sees pressure before it lands | Reads pods from this node's own kubelet rather than the API server, so a partition cannot block reclamation, and counts what they have asked for but not yet written. Free space cannot see that until it is gone |
 | Survives being killed | Replays its journal, reconciles it against the disk in both directions, and finishes an interrupted reclaim |
 | Refuses to run twice | One agent per node, and a wedged one is killed by its own liveness probe so a replacement can take the lock |
