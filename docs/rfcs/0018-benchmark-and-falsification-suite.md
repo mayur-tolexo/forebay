@@ -139,7 +139,7 @@ nothing.
 
 | Experiment | Kill criterion | Needs |
 | --- | --- | --- |
-| Where the locality crossover sits between node-local bandwidth and a node's achievable share of backend fan-out | 2 | One node, one backend |
+| ~~Where the locality crossover sits between node-local bandwidth and a node's achievable share of backend fan-out~~ | 2 | **Answered on one node, and there is no crossover inside the sweep.** Reading a 64 MiB object in 1 MiB blocks, reading a 256 MiB object in 1 MiB blocks, with the tier's extent evicted from the page cache before each measured run so the bytes come off the device, the tier serves 341 MiB/s at one reader against the backend's 72, and 2003 against 110 at sixteen. That is between five and eighteen times, and the backend flattens at 110 from four readers up, at nine per cent of a 10 GbE link, so what flattens is the store's answer to this node rather than the node's network. Left in the page cache the same tier reads 465 and 4419, so caching is worth between one and a half and two and a half times and is not where the result comes from. The remaining caveat is the backend: 110 is one shared store's answer on one day rather than a property of the technology, and its first-touch reads vary between 34 and 110 across runs |
 | How much idle compute-local NVMe exists across real fleets, over what window, and whether the idle periods are long enough to be worth borrowing | 3 | A fleet survey, no code |
 | Whether inference-serving nodes have idle NVMe at all, which the training-shaped survey above does not cover | 3 | A fleet survey, no code |
 | How much of the available value static provisioning captures on the same workload | 4 | One node, both arms |
@@ -158,7 +158,7 @@ nothing.
 | How much of a reader's working set one lease holds, which turns a per-block refetch into the burst a reader feels | The cost of reclamation | RFC-0007 |
 | How long to wait on a peer before abandoning it for the backend | Whether peer fetch helps or hurts | RFC-0007 |
 | Whether a rack-local hop beats going straight to a fanned-out backend | Whether the rack tier exists | RFC-0002, RFC-0007 |
-| What a read costs crossing from the NFS server into the node agent, against reading the same bytes in one process | Whether serving pNFS through a socket is affordable, since a data path meant to beat a fanned-out backend cannot leave the price of its own indirection unmeasured | RFC-0008 |
+| What a read costs crossing from the NFS server into the node agent, against reading the same bytes in one process | **Attempted and not answered.** The first pass took the price off a store-warm arm against a store-cold one and was measuring the store's cache. Corrected to two cold arms, the store's own first-touch variance swamps the difference: the same read in process gave 34, 35, 54 and 72 MiB/s on equivalent objects, and the socket arm ranged either side of it. An answer needs a store whose cache state is controlled, or a working set large enough that its variance averages out | RFC-0008 |
 | The headroom a node keeps free for reclamation to stay ahead of a workload's writes | The agent's pressure design | RFC-0004 |
 | The reclaim deadline default, derived from pod admission behaviour and measured end-to-end reclaim | RFC-0005's central promise | RFC-0005 |
 | The churn budget and the post-reclaim cooldown, whose shipped values are conservative guesses | Whether churn protection is real | RFC-0005 |
@@ -185,6 +185,24 @@ fraction, which are questions about other people's clusters and traces. Two more
 agent, which exists and now grants, reclaims and unlinks real extents: when freed capacity becomes
 available to a competing writer, and whether reclamation measurably harms the job that owns the node.
 A sixth was answered while the agent was built, which is how it got into the table above.
+
+The crossover experiment has run, and the harness is `cmd/forebay-bench`. It executes one plan
+against every arm, checksums what each arm assembled so two arms cannot be compared on speed while
+disagreeing about the bytes, and prints what each arm carried before it prints a number, because a
+result that cannot say is not a locality result.
+
+It also cannot prove an object is cold to the tier. Told to read one that has already been admitted,
+it reports the tier's rate under a backend arm's name, which is how a 2079 MiB/s cold read appeared
+during this work. Until the harness can ask the tier what it holds, a cold arm is only as honest as
+the objects it was handed.
+
+It does defeat the page cache, on the arm where that matters. A working set that fits in memory
+would measure cache and NVMe together, so the tier's extent is evicted before each measured run with
+`fadvise`, targeted at that file rather than dropping the whole machine's cache, which on a shared
+node would charge every other workload for the measurement. The eviction is counted with `mincore`
+rather than assumed, and a run whose eviction did not take is refused: a cached read reported as a
+device read is indistinguishable from a fast disk, and nothing in the number would say which it
+was.
 
 The crossover experiment is the one that changed. It needs one node and one backend, and until the
 agent could read from a durable store it had neither in the same place. It now has both: a node with
