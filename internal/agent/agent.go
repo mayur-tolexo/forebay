@@ -56,6 +56,8 @@ type Agent struct {
 	cfg    Config
 	lock   *os.File
 	leases *lease.Manager
+	// releasingFn is told which leases are about to lose their extents.
+	releasingFn func(leaseIDs []string)
 }
 
 // Reconciliation reports what startup had to correct.
@@ -282,6 +284,20 @@ func (a *Agent) reconcile(now time.Time) (Reconciliation, error) {
 		rec.LeasesWithoutExtents = append(rec.LeasesWithoutExtents, id)
 	}
 	return rec, nil
+}
+
+// OnReleasing registers what to tell before a lease's extent is unlinked.
+//
+// An unlinked file with an open descriptor keeps its blocks, so a holder that
+// learns afterwards leaves the space allocated. Who the holder is stays out of
+// this package.
+func (a *Agent) OnReleasing(f func(leaseIDs []string)) { a.releasingFn = f }
+
+// releasing tells the holder, if there is one.
+func (a *Agent) releasing(leaseIDs []string) {
+	if a.releasingFn != nil && len(leaseIDs) > 0 {
+		a.releasingFn(leaseIDs)
+	}
 }
 
 // Accounting reports the node's current capacity split.

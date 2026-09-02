@@ -13,10 +13,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"bytes"
 	"github.com/mayur-tolexo/forebay/internal/agent"
+	"github.com/mayur-tolexo/forebay/internal/dataserver"
+	"github.com/mayur-tolexo/forebay/internal/lease"
 	"github.com/mayur-tolexo/forebay/internal/pool"
 	"github.com/mayur-tolexo/forebay/internal/topology"
 )
@@ -751,5 +755,253 @@ func TestADeviceMismatchNeverAsksTheKubelet(t *testing.T) {
 	defer mu.Unlock()
 	if requests != 0 {
 		t.Errorf("the kubelet was asked %d time(s) for a verdict stat already had", requests)
+	}
+}
+
+func TestTheAgentAnswersReadsWhenAskedTo(t *testing.T) {
+	// Until this the fast tier and the driver contract had callers only in
+	// their own tests, so the agent guarded capacity nothing read from. This
+	// is the first time the pieces answer a read in the binary.
+	dir := t.TempDir()
+	backend := filepath.Join(dir, "backend")
+	if err := os.Mkdir(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := make([]byte, 3*(1<<20)+128)
+	for i := range content {
+		content[i] = byte(i % 251)
+	}
+	if err := os.WriteFile(filepath.Join(backend, "obj"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	a, _, err := agent.Open(agent.Config{
+		BorrowedDir: filepath.Join(dir, "borrowed"),
+		JournalPath: filepath.Join(dir, "state", "leases.json"),
+		Lease:       lease.Config{ReclaimWithin: 30 * time.Second},
+	}, pool.Accounting{Capacity: testCapacity, Reserved: 0}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("fb%d", time.Now().UnixNano()))
+	defer os.Remove(sock)
+	serving, err := serveReads(a, servingOptions{
+		Socket: sock, BackendDir: backend,
+		TierBytes: testCapacity / 2, BlockBytes: 1 << 20, FirstReads: 64,
+	})
+	if err != nil {
+		t.Fatalf("serving: %v", err)
+	}
+	defer serving.stop()
+
+	c, err := dataserver.Dial("unix", sock, dataserver.ClientConfig{MaxReply: 4 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// A read that spans whole blocks and the short tail, so the answer comes
+	// from the backend through the tier and back out over the socket.
+	got, err := c.ReadRange("t1", "obj", 0, int64(len(content)))
+	if err != nil {
+		t.Fatalf("reading through the agent: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Errorf("read back %d bytes, want %d", len(got), len(content))
+	}
+}
+
+func TestServingIsRefusedWithoutWhatItNeeds(t *testing.T) {
+	dir := t.TempDir()
+	a, _, err := agent.Open(agent.Config{
+		BorrowedDir: filepath.Join(dir, "borrowed"),
+		JournalPath: filepath.Join(dir, "state", "leases.json"),
+		Lease:       lease.Config{ReclaimWithin: 30 * time.Second},
+	}, pool.Accounting{Capacity: testCapacity}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	for _, c := range []struct {
+		name string
+		opts servingOptions
+	}{
+		{"no backend", servingOptions{Socket: "/tmp/x", TierBytes: 1 << 20, BlockBytes: 1 << 20}},
+		{"no tier capacity", servingOptions{Socket: "/tmp/x", BackendDir: dir, BlockBytes: 1 << 20}},
+		{"a backend that is not there", servingOptions{Socket: "/tmp/x", BackendDir: filepath.Join(dir, "absent"), TierBytes: 1 << 20, BlockBytes: 1 << 20}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if s, err := serveReads(a, c.opts); err == nil {
+				s.stop()
+				t.Error("accepted")
+			}
+		})
+	}
+}
+
+func TestAnAgentThatRestartsCanServeAgain(t *testing.T) {
+	// A lease outlives the process that granted it, so a restart replays the
+	// tier's from the journal and granting it again is refused. Found on a
+	// node rather than here: the second start reported "id already granted"
+	// and served nothing, which is a state a machine reaches on its own.
+	dir := t.TempDir()
+	backend := filepath.Join(dir, "backend")
+	if err := os.Mkdir(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("bytes that outlive a restart")
+	if err := os.WriteFile(filepath.Join(backend, "obj"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := agent.Config{
+		BorrowedDir: filepath.Join(dir, "borrowed"),
+		JournalPath: filepath.Join(dir, "state", "leases.json"),
+		Lease:       lease.Config{ReclaimWithin: 30 * time.Second},
+	}
+	acct := pool.Accounting{Capacity: testCapacity}
+
+	for run := 1; run <= 3; run++ {
+		a, _, err := agent.Open(cfg, acct, time.Now())
+		if err != nil {
+			t.Fatalf("run %d: opening: %v", run, err)
+		}
+		sock := filepath.Join(os.TempDir(), fmt.Sprintf("fb%d-%d", time.Now().UnixNano(), run))
+		serving, err := serveReads(a, servingOptions{
+			Socket: sock, BackendDir: backend,
+			// A different size each run, so adopting the old lease rather
+			// than replacing it would serve the wrong capacity.
+			TierBytes: pool.Bytes(testCapacity / int64(run+1)), BlockBytes: 1 << 20, FirstReads: 8,
+		})
+		if err != nil {
+			a.Close()
+			t.Fatalf("run %d: serving: %v", run, err)
+		}
+		c, err := dataserver.Dial("unix", sock, dataserver.ClientConfig{MaxReply: 1 << 20})
+		if err != nil {
+			t.Fatalf("run %d: dialling: %v", run, err)
+		}
+		got, err := c.ReadRange("t1", "obj", 0, int64(len(content)))
+		if err != nil {
+			t.Errorf("run %d: reading: %v", run, err)
+		} else if !bytes.Equal(got, content) {
+			t.Errorf("run %d: read back %q", run, got)
+		}
+		c.Close()
+		serving.stop()
+		a.Close()
+		os.Remove(sock)
+	}
+}
+
+func TestReclaimingTakesTheTierWithIt(t *testing.T) {
+	// An unlinked extent whose descriptor is still open keeps its blocks, so
+	// the tier has to let go before the file does. Found on a node: the agent
+	// reported returning 64MiB and free space rose by 4KiB.
+	dir := t.TempDir()
+	backend := filepath.Join(dir, "backend")
+	if err := os.Mkdir(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := make([]byte, 8<<20)
+	for i := range content {
+		content[i] = byte(i)
+	}
+	if err := os.WriteFile(filepath.Join(backend, "obj"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a, _, err := agent.Open(agent.Config{
+		BorrowedDir: filepath.Join(dir, "borrowed"),
+		JournalPath: filepath.Join(dir, "state", "leases.json"),
+		Lease:       lease.Config{ReclaimWithin: 30 * time.Second},
+	}, pool.Accounting{Capacity: 512 << 20}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("fbr%d", time.Now().UnixNano()))
+	defer os.Remove(sock)
+	sv, err := serveReads(a, servingOptions{
+		Socket: sock, BackendDir: backend,
+		TierBytes: 64 << 20, BlockBytes: 1 << 20, FirstReads: 64,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sv.stop()
+
+	c, err := dataserver.Dial("unix", sock, dataserver.ClientConfig{MaxReply: 8 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	// Three reads: the second admits, the third hits.
+	for i := 0; i < 3; i++ {
+		if _, err := c.ReadRange("t1", "obj", 0, int64(len(content))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, resident := sv.tier.Stats(); resident == 0 {
+		t.Fatal("nothing was cached, so this proves nothing about losing it")
+	}
+
+	if _, err := a.ReclaimCapacity(64<<20, time.Now()); err != nil {
+		t.Fatalf("reclaiming: %v", err)
+	}
+	if _, _, resident := sv.tier.Stats(); resident != 0 {
+		t.Errorf("%d blocks are still held after the capacity was returned", resident)
+	}
+	// Counted rather than printed, since the hook runs inside the window the
+	// reclaim deadline is measured over.
+	if sv.Dropped() == 0 {
+		t.Error("giving up the tier was not counted, so nothing can report it")
+	}
+
+	// And the read still works, from the backend rather than from a file
+	// nobody can reach.
+	before := sv.srv.Stats()
+	got, err := c.ReadRange("t1", "obj", 0, 1<<20)
+	if err != nil {
+		t.Fatalf("reading after reclamation: %v", err)
+	}
+	if !bytes.Equal(got, content[:1<<20]) {
+		t.Error("the bytes after reclamation are not the object's")
+	}
+	if after := sv.srv.Stats(); after.Hits != before.Hits {
+		t.Errorf("a read after reclamation came from the tier, which no longer has capacity")
+	}
+}
+
+func TestGivingUpTheCacheIsReportedOnEveryPassThatDoesIt(t *testing.T) {
+	// A shortfall pass reclaims too, and can empty the tier doing it. Not
+	// counting it there loses the number and attributes it to whichever
+	// later pass happens to report one.
+	var dropped atomic.Int64
+	sv := &serving{dropped: &dropped}
+	var last int64
+
+	dropped.Store(100)
+	first := cacheGivenUp(sv, &last)
+	dropped.Store(110)
+	second := cacheGivenUp(sv, &last)
+
+	if !strings.Contains(first, "100") {
+		t.Errorf("first report = %q, want the 100 blocks it gave up", first)
+	}
+	if !strings.Contains(second, "10") || strings.Contains(second, "110") {
+		t.Errorf("second report = %q, want only the 10 since the last one", second)
+	}
+	if got := cacheGivenUp(sv, &last); got != "" {
+		t.Errorf("a pass that gave up nothing said %q", got)
+	}
+}
+
+func TestNotServingReportsNothingAboutTheCache(t *testing.T) {
+	var last int64
+	if got := cacheGivenUp(nil, &last); got != "" {
+		t.Errorf("an agent that is not serving said %q", got)
 	}
 }
