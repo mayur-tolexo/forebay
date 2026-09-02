@@ -124,6 +124,15 @@ There is no authentication. The far side is an NFS server on the same node and t
 permissions are the boundary, which is a statement about where this may be reached from rather than
 a gap to fill later.
 
+A client has read through it. `fsal/` holds the protocol's second implementation in C and enough of
+an FSAL to prove the path: with the hook in NFS-Ganesha's memory FSAL, a stock Linux 6.8 client
+mounting that export read a 32 MiB object and the bytes summed to what the backend holds,
+4278124615, rather than to the 3254779904 the FSAL would have returned itself. A file the backend
+does not have fell back to the FSAL, so the hook is selective rather than swallowing every read.
+
+The namespace in that spike is the FSAL's and only the bytes are Forebay's, which is the honest
+boundary of it: a real FSAL carries its own namespace and handles.
+
 **And what a distribution ships is not what upstream has.** Everything above is read from the source.
 Checked against the 4.3 the target OS packages, on a dev cluster node, that build exports
 `FSAL_encode_file_layout` and not the flexfiles one, so a build from a current stable line is
