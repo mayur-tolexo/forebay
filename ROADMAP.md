@@ -202,10 +202,37 @@ The fast tier's node-local half is in `internal/fasttier`
 the second read so a single epoch cannot empty the cache, eviction preferring capacity that is
 leaving anyway, and a revoked block read as a miss rather than an error.
 
-Two of the pressure watch's three inputs are missing, so it learns about pressure once the space has
-already gone rather than before a workload writes. Nothing reads from the tier, no Ceph or S3 driver
-exists, there is no peer fetch, no control plane interface, and the headroom target the watch needs
-has no measured value.
+The watch now sees pressure before it lands. `internal/kubelet`
+([0014](docs/rfcs/0014-kubernetes-integration.md)) reads pods from the node's own kubelet rather than
+the API server, so a partition cannot block reclamation, and counts what live pods have asked for and
+not yet written, which polled free space cannot see until it is gone. On a GPU node, holding an 8 GiB
+lease against a target six GiB below free space, polling saw nothing and the pod input saw 4 GiB and
+took the lease back. That node also answered a question the RFC had marked unverified and not in the
+input's favour: 3 of its 64 pods declared an ephemeral-storage request at all.
+
+Something reads from the tier. `internal/dataserver`
+([0008](docs/rfcs/0008-access-layer-pnfs.md)) answers a byte range from the fast tier where the
+blocks are resident and from the durable backend where they are not, and absorbs the miss rather than
+passing it on, because the caller above it will be an unmodified NFS client that cannot be told to
+try again. It is the first caller `internal/fasttier` has outside its own tests and the first the
+driver contract has at all. Serving the last block of an object needed the contract to grow an
+optional `object-size`: without it an object smaller than one block is entirely tail and is never
+cached, which five reads of a hundred-byte object made ten backend requests to demonstrate.
+
+The pNFS half is a spike rather than code, and it answered its question. A 172-line FSAL over
+NFS-Ganesha V6.5 advertises the flexible file layout and a stock Linux 6.8 client negotiates it,
+reporting `pnfs=LAYOUT_FLEX_FILES` where the same export without the FSAL reports
+`pnfs=not configured`. Four flexfiles helper symbols had to be added to Ganesha's export list first:
+they are public in the headers and left off the version script, so an FSAL that calls them does not
+link. That is a patch upstream rather than a fork.
+
+No byte has moved through it. A client holding a layout goes to the data server for I/O, so
+finishing the path needs the read path in `internal/dataserver` to become something an NFS client can
+talk to, which is the piece the access layer now waits on.
+
+One of the watch's three inputs is still missing, the CSI one. No Ceph or S3 driver exists, there is
+no peer fetch, no control plane interface, and the headroom target the watch needs has no measured
+value.
 
 **Done when** a GPU job runs on a node whose spare NVMe is serving the fabric, capacity is reclaimed
 mid-job without the job noticing, and the benchmark reports a number either way.

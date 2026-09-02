@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-Apache--2.0-4F46E5?style=flat-square"></a>
-  <img alt="Status" src="https://img.shields.io/badge/status-node%20agent%20runs%2C%20nothing%20serves-F59E0B?style=flat-square">
+  <img alt="Status" src="https://img.shields.io/badge/status-reads%20served%2C%20nothing%20mountable-F59E0B?style=flat-square">
   <img alt="Go" src="https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square">
   <a href="docs/rfcs/README.md"><img alt="RFCs" src="https://img.shields.io/badge/RFCs-28%20open-14B8A6?style=flat-square"></a>
 </p>
@@ -190,9 +190,10 @@ Everything above is exercised on a GPU node with local NVMe rather than only in 
 rows that need a lease were driven by a stand-in for the control plane rather than by the agent
 binary.
 
-**Nothing speaks a storage protocol yet, and nothing grants.** There is no metadata server, no CSI
-driver and no control plane, so a running agent guards capacity that nothing lends and nothing reads
-from. That is Phase 1's remaining work.
+**Nothing is mountable yet, and nothing grants.** A read goes through a Go call, not a filesystem:
+there is no metadata server to hand a client a layout, no CSI driver and no control plane, so a
+running agent guards capacity that nothing lends. That is Phase 1's remaining work, and the metadata
+server is the piece everything else waits on.
 
 ## The honest part
 
