@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-Apache--2.0-4F46E5?style=flat-square"></a>
-  <img alt="Status" src="https://img.shields.io/badge/status-reads%20served%2C%20nothing%20mountable-F59E0B?style=flat-square">
+  <img alt="Status" src="https://img.shields.io/badge/status-an%20NFS%20client%20has%20read%20through%20it-F59E0B?style=flat-square">
   <img alt="Go" src="https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square">
   <a href="docs/rfcs/README.md"><img alt="RFCs" src="https://img.shields.io/badge/RFCs-28%20open-14B8A6?style=flat-square"></a>
 </p>
@@ -181,8 +181,10 @@ forebay-agent --borrowed-dir=/var/lib/forebay/borrowed \
 | Lends capacity as real bytes | One preallocated extent per lease, so reclaiming is an unlink rather than a compaction. An interface with no caller yet: granting is the control plane's job and there is no control plane |
 | Takes it back on a deadline | Invalidates before unlinking, times the reclaim, and treats overrunning as a broken promise. Reached today only through the watch, since nothing an operator can run grants a lease |
 | Keeps a floor of free space | Polls the filesystem and reclaims the shortfall, reporting one it cannot meet |
-| Serves a byte range | From the fast tier where the blocks are resident and from the durable backend where they are not, absorbing the miss rather than passing it on, so capacity taken back mid-read is a slower answer and never an error. Nothing speaks NFS yet, so the caller is a Go caller |
+| Serves a byte range | From the fast tier where the blocks are resident and from the durable backend where they are not, absorbing the miss rather than passing it on, so capacity taken back mid-read is a slower answer and never an error |
 | Answers reads over a socket | The agent opens it, holds a fast tier over capacity it lent itself, and misses to the durable backend, so something that speaks a protocol can ask it for bytes. The status carries the difference between a read past the end of an object, a request that will never be valid, and a backend that could not answer this time, because the three need different answers to a client |
+| Answers an NFS client | Through a C client for that socket and a read hook in an NFS server's own file layer, so a stock Linux client mounting it reads bytes that came from the tier or the backend. A spike: the namespace is the NFS server's and only the bytes are Forebay's |
+| Gives the capacity back | Reclaiming a lease tells the tier before the extent is unlinked, so the blocks go with it. Told afterwards, the space stays allocated behind an open descriptor while every count says it was returned |
 | Sees pressure before it lands | Reads pods from this node's own kubelet rather than the API server, so a partition cannot block reclamation, and counts what they have asked for but not yet written. Free space cannot see that until it is gone |
 | Survives being killed | Replays its journal, reconciles it against the disk in both directions, and finishes an interrupted reclaim |
 | Refuses to run twice | One agent per node, and a wedged one is killed by its own liveness probe so a replacement can take the lock |
@@ -191,11 +193,15 @@ Everything above is exercised on a GPU node with local NVMe rather than only in 
 rows that need a lease were driven by a stand-in for the control plane rather than by the agent
 binary.
 
-**Nothing is mountable yet, and nothing grants but the agent itself.** A read goes through a socket,
-not a filesystem:
-there is no metadata server to hand a client a layout, no CSI driver and no control plane, so a
-running agent guards capacity that nothing lends. That is Phase 1's remaining work, and the metadata
-server is the piece everything else waits on.
+**A client has read through it once, which is a demonstration rather than a system.** The namespace
+belonged to the NFS server and only the bytes were Forebay's, the agent granted itself the lease its
+tier sits on because nothing else can, and the backend was a directory on the same disk as the tier,
+so the numbers say the path is correct and not that the tier is worth having.
+
+What is missing is most of it: no metadata server to hand a client a layout, so nothing is mountable
+without a patched one; no CSI driver; no control plane, so a running agent guards capacity nothing
+lends; and no measurement of whether node-local NVMe beats a fanned-out backend, which is the
+question the whole thesis rests on.
 
 ## The honest part
 

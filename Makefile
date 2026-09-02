@@ -27,7 +27,11 @@ build: ## Build both binaries into bin/
 	$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN)/ ./cmd/...
 
 .PHONY: check
-check: fmt-check vet test cover-check ## Everything CI enforces
+check: fmt-check vet test cover-check csrc ## Everything CI enforces
+
+.PHONY: csrc
+csrc: ## Compile the C that builds without Ganesha, which is the client and not the hook
+	$(MAKE) -C fsal all
 
 .PHONY: test
 test: ## Run tests with the race detector

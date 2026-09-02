@@ -227,9 +227,16 @@ more are missing on the same terms without this FSAL needing them: they are publ
 and left off the version script, so an FSAL that calls them does not link. That is a patch upstream
 rather than a fork.
 
-No byte has moved through it. A client holding a layout goes to the data server for I/O, so
-finishing the path needs the read path in `internal/dataserver` to become something an NFS client can
-talk to, which is the piece the access layer now waits on.
+A byte has moved through it. `fsal/` holds the protocol's second implementation in C and a read hook
+for an NFS server's own file layer, and with those a stock Linux 6.8 client mounted an export and
+read an object whose bytes summed to what the backend holds rather than to what that file layer would
+have returned itself. Writing that client cost three behaviours the Go side had already learned: a
+deadline that covers an exchange rather than each poll, a dial that is retried rather than given up
+on, and a failure that is an error rather than a fallback filling a client's buffer with padding.
+
+It is a demonstration and not a system. The namespace belonged to the NFS server and only the bytes
+were Forebay's; a real metadata server hands out layouts and a real data server carries its own
+handles.
 
 The binary joins them. Until now `internal/fasttier`, the driver contract and the read path had
 callers only in their own tests, so the agent guarded capacity nothing read from. Given a socket and
@@ -245,7 +252,7 @@ it open: the agent reported returning 64 MiB and free space rose by four kilobyt
 belong to a descriptor rather than to a name. The holder is now told before the unlink rather than
 after, which is the difference between the promise being kept and the accounting saying it was.
 
-One of the watch's three inputs is still missing, the CSI one. No Ceph or S3 driver exists, there is
+What is left is most of it. One of the watch's three inputs is still missing, the CSI one. No Ceph or S3 driver exists, there is
 no peer fetch, no control plane interface, and the headroom target the watch needs has no measured
 value.
 
