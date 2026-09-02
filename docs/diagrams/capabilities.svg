@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520" role="img" aria-label="Without Forebay: the same dataset copied once per protocol, per clone and per tier, NVMe sitting idle, and a GPU waiting on data. With Forebay: one copy read as file or object, the spare bytes working, and the GPU fed.">
 <style>
   :root {
-    --ink: #0F172A; --muted: #475569; --faint: #94A3B8;
+    --ink: #0F172A; --muted: #475569; --faint: #64748B;
     --card: #FFFFFF; --edge: #CBD5E1; --stage: #F8FAFC; --dead: #E2E8F0;
     --ctl: #4F46E5; --ctl-soft: #E0E7FF;
     --own: #0D9488; --own-soft: #CCFBF1;
