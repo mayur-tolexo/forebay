@@ -26,6 +26,10 @@ func (e *eager) ReadRange(context.Context, string, int64, int64) ([]byte, error)
 	e.reached[driver.ReadRange] = true
 	return []byte("ok"), nil
 }
+
+// SizeOf answers, because an eager driver claims everything.
+func (e *eager) SizeOf(context.Context, string) (int64, error) { return 0, nil }
+
 func (e *eager) WriteObject(context.Context, string, []byte) error {
 	e.reached[driver.WriteObject] = true
 	return nil

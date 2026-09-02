@@ -291,6 +291,13 @@ func (c *Cache) evictOneLocked() bool {
 	return false
 }
 
+// BlockSize is the unit the cache is keyed in.
+//
+// A caller that splits a read into blocks has to use this number and not one
+// of its own: a block admitted at a different size is a block that can never
+// be found again, and one larger than this is refused.
+func (c *Cache) BlockSize() int64 { return c.cfg.BlockSize }
+
 // Stats reports what the tier has done, so a hit rate is observable rather
 // than inferred.
 func (c *Cache) Stats() (hits, misses, resident int) {

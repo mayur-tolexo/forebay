@@ -88,7 +88,7 @@ func Check(f Fixture) []error {
 
 	var found []error
 	for _, check := range []func(*driver.Backend, *session) []error{
-		declaration, ranges, refusals, declared,
+		declaration, ranges, sizes, refusals, declared,
 	} {
 		found = append(found, check(b, s)...)
 	}
@@ -162,6 +162,27 @@ func ranges(b *driver.Backend, s *session) []error {
 // test that guard and pass for any driver at all. What has to be established
 // is that the driver itself refuses, since Driver is the interface a third
 // party implements and can be called directly.
+// sizes checks object-size against the fixture's own object.
+//
+// Deliberately not folded in with the capabilities that need a write. A store
+// that only reads is the shape most likely to declare this one, and a check
+// that lives behind write-object never runs against it.
+func sizes(b *driver.Backend, s *session) []error {
+	if !b.Supports(driver.ObjectSize) {
+		return nil
+	}
+	// Exact, not an upper bound. A caller uses this to decide that a short
+	// block is a whole block: too small and it caches a fragment as if it
+	// were complete, too large and it asks for bytes that are not there.
+	switch got, err := b.SizeOf(context.Background(), s.fixture.Object); {
+	case err != nil:
+		return []error{fmt.Errorf("object-size is declared but failed: %w", err)}
+	case got != int64(len(s.fixture.Content)):
+		return []error{fmt.Errorf("object-size said %s holds %d bytes, the fixture says %d", s.fixture.Object, got, len(s.fixture.Content))}
+	}
+	return nil
+}
+
 func refusals(_ *driver.Backend, s *session) []error {
 	f := s.fixture
 	var found []error
@@ -178,6 +199,7 @@ func refusals(_ *driver.Backend, s *session) []error {
 			return f.Driver.WriteObject(ctx, s.scratch(1), []byte("x"))
 		}},
 		{driver.DeleteObject, func() error { return f.Driver.DeleteObject(ctx, s.scratch(1)) }},
+		{driver.ObjectSize, func() error { _, err := f.Driver.SizeOf(ctx, f.Object); return err }},
 		{driver.Snapshot, func() error { _, err := f.Driver.SnapshotObject(ctx, f.Object); return err }},
 		{driver.Clone, func() error {
 			s.made = append(s.made, s.scratch(2))

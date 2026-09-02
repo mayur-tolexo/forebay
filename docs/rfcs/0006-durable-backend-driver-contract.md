@@ -87,6 +87,7 @@ technologies can be made to do in general.
 | Capability | Means | Ceph | S3 |
 | --- | --- | --- | --- |
 | `read-range` | Read a byte range of an object. **Mandatory** | yes | yes |
+| `object-size` | Say how many bytes an object holds | yes | yes |
 | `write-object` | Create an immutable object | yes | yes |
 | `delete-object` | Remove one | yes | yes |
 | `snapshot` | Point-in-time capture the backend manages | yes | no |

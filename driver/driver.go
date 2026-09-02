@@ -23,6 +23,12 @@ const (
 	// else still holds datasets and serves misses.
 	ReadRange Capability = "read-range"
 
+	// ObjectSize answers how large an object is. Optional, because a store
+	// that can only read a range is still a durable backend, but a caller
+	// splitting an object into fixed blocks cannot tell a short answer from a
+	// short object without it, and so cannot cache the last block of one.
+	ObjectSize Capability = "object-size"
+
 	WriteObject  Capability = "write-object"
 	DeleteObject Capability = "delete-object"
 	Snapshot     Capability = "snapshot"
@@ -88,6 +94,8 @@ type Driver interface {
 	Declare() Declaration
 	// ReadRange reads length bytes from offset. Mandatory.
 	ReadRange(ctx context.Context, object string, offset, length int64) ([]byte, error)
+	// SizeOf reports how many bytes an object holds.
+	SizeOf(ctx context.Context, object string) (int64, error)
 	// WriteObject creates an immutable object.
 	WriteObject(ctx context.Context, object string, data []byte) error
 	// DeleteObject removes one.

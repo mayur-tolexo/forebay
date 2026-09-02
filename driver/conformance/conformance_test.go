@@ -37,6 +37,12 @@ func (h *honest) refuse(c driver.Capability) error {
 	return fmt.Errorf("%w: %s", driver.ErrNotSupported, c)
 }
 
+func (h *honest) SizeOf(context.Context, string) (int64, error) {
+	if err := h.refuse(driver.ObjectSize); err != nil {
+		return 0, err
+	}
+	return int64(len(h.content)), nil
+}
 func (h *honest) WriteObject(context.Context, string, []byte) error {
 	return h.refuse(driver.WriteObject)
 }
@@ -74,7 +80,7 @@ func TestTheSuiteCatchesAnUndeclaredCapabilityThatWorks(t *testing.T) {
 		t.Fatal("the suite passed a driver that does what it says it cannot")
 	}
 	// One finding per undeclared capability the driver quietly performs.
-	if len(found) != 4 {
+	if len(found) != 5 {
 		t.Errorf("the suite reported %d findings, want one per undeclared capability: %v", len(found), found)
 	}
 }
@@ -84,5 +90,47 @@ func TestADeclarationWithoutReadRangeIsRefused(t *testing.T) {
 	_, err := driver.Open(&honest{caps: []driver.Capability{driver.WriteObject}})
 	if err == nil || !strings.Contains(err.Error(), "read-range") {
 		t.Errorf("Open = %v, want a refusal naming read-range", err)
+	}
+}
+
+// readOnlyLiar reads and declares object-size, and reports a size that is
+// nothing like the object's.
+type readOnlyLiar struct{ content []byte }
+
+func (r *readOnlyLiar) Declare() driver.Declaration {
+	return driver.Declaration{
+		Contract:     1,
+		Capabilities: []driver.Capability{driver.ReadRange, driver.ObjectSize},
+	}
+}
+func (r *readOnlyLiar) SizeOf(context.Context, string) (int64, error) { return 999999, nil }
+func (r *readOnlyLiar) ReadRange(_ context.Context, _ string, off, n int64) ([]byte, error) {
+	if off+n > int64(len(r.content)) {
+		return nil, driver.ErrRange
+	}
+	return r.content[off : off+n], nil
+}
+func (r *readOnlyLiar) WriteObject(context.Context, string, []byte) error {
+	return driver.ErrNotSupported
+}
+func (r *readOnlyLiar) DeleteObject(context.Context, string) error { return driver.ErrNotSupported }
+func (r *readOnlyLiar) SnapshotObject(context.Context, string) (string, error) {
+	return "", driver.ErrNotSupported
+}
+func (r *readOnlyLiar) CloneObject(context.Context, string, string) error {
+	return driver.ErrNotSupported
+}
+
+func TestASizeIsCheckedOnABackendThatCannotWrite(t *testing.T) {
+	// A store that only reads is the shape most likely to declare
+	// object-size, and a check living behind write-object would never run
+	// against it. The number is trusted to decide that a short block is a
+	// whole block, so a wrong one is cached as though it were complete.
+	found := check(&readOnlyLiar{content: []byte("abcdefgh")})
+	if len(found) != 1 {
+		t.Fatalf("want the lie caught, got %d findings: %v", len(found), found)
+	}
+	if !strings.Contains(found[0].Error(), "object-size") {
+		t.Errorf("caught something else: %v", found[0])
 	}
 }
