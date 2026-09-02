@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 1 |
 | **Depends on** | 0004, 0005 |
 
@@ -67,7 +67,7 @@ The CSI volume input is still missing, so the watch has two of the three inputs 
 
 | Assumption | Basis | Risk if wrong |
 | --- | --- | --- |
-| The kubelet will tell a node-local process which pods are bound to it | Reasoned, from the kubelet's own API being how every node-local agent learns this | The agent reads the API server instead, and reclamation becomes blockable by a partition, which RFC-0004 forbids |
+| The kubelet will tell a node-local process which pods are bound to it | **Measured on one node.** `/pods` and `/stats/summary` answered a pod on the node it runs on, authorised by a service account with `nodes/proxy` and `nodes/stats` and nothing else | The agent reads the API server instead, and reclamation becomes blockable by a partition, which RFC-0004 forbids |
 | Pods that will write a lot declare an ephemeral-storage request often enough to be worth watching | **Measured, and it looks weak.** On one GPU node, 3 of 64 pods declared an ephemeral-storage request, and one of those three was our own probe. The input is real and cheap, but on this evidence it is silent about most of what runs, which is why free space is polled regardless | The declared-request input is noise and only polling is real, which makes the watch permanently reactive |
 | Reclamation is fast enough that admitting a pod against capacity Forebay holds is safe | **Partly measured.** Reclaiming through the agent is 2.8 ms for 7 GiB and 7.4 ms under concurrent writes, so the filesystem is not the constraint. Detecting the need and invalidating readers is unmeasured and is what RFC-0004 expects to dominate, so the measured half is not the half that decides this | The scheduler has to be told about borrowed capacity after all, which makes a node with Forebay advertise less than one without |
 | A user asks for a dataset, not for capacity | Reasoned, from borrowed capacity being cache rather than storage a user can hold | The CSI driver has to hand out reclaimable space as a volume, which promises a durability it cannot keep |
