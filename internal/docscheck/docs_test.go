@@ -201,7 +201,14 @@ func TestAcceptedRFCsOwnEveryOpenQuestion(t *testing.T) {
 	t.Logf("checked %d accepted RFCs", checked)
 }
 
-var rfcCountPattern = regexp.MustCompile(`All (\d+) RFCs`)
+// Both places the README states a count: the prose link and the badge. The
+// badge was missed the first time, and a number nothing checks is a number
+// that goes stale.
+var rfcCountPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`All (\d+) RFCs`),
+	regexp.MustCompile(`RFCs-(\d+)%20open`),
+	regexp.MustCompile(`(\d+) RFCs open`),
+}
 
 func TestTheAdvertisedRFCCountIsTheRealOne(t *testing.T) {
 	// A number written in prose does not move when a file is added, and the
@@ -223,16 +230,27 @@ func TestTheAdvertisedRFCCountIsTheRealOne(t *testing.T) {
 		t.Fatal("found no numbered RFCs, so this test proves nothing")
 	}
 
-	body, err := os.ReadFile(filepath.Join(root, "README.md"))
-	if err != nil {
-		t.Fatalf("reading README.md: %v", err)
-	}
-	m := rfcCountPattern.FindStringSubmatch(string(body))
-	if m == nil {
-		t.Fatal(`README.md no longer says "All N RFCs", so this check has stopped checking anything`)
-	}
-	if m[1] != strconv.Itoa(want) {
-		t.Errorf("README.md advertises %s RFCs, but there are %d", m[1], want)
+	// Every file that states the count, including the social card, which is an
+	// image but is also text and rots like any other number.
+	for _, f := range []string{"README.md", filepath.Join("docs", "brand", "social-card.svg")} {
+		body, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		matched := false
+		for _, pattern := range rfcCountPatterns {
+			m := pattern.FindStringSubmatch(string(body))
+			if m == nil {
+				continue
+			}
+			matched = true
+			if m[1] != strconv.Itoa(want) {
+				t.Errorf("%s advertises %s RFCs, but there are %d", f, m[1], want)
+			}
+		}
+		if !matched {
+			t.Errorf("%s no longer states an RFC count, so this check has stopped checking it", f)
+		}
 	}
 }
 

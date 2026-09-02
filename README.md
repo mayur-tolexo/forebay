@@ -13,9 +13,9 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-Apache--2.0-4F46E5?style=flat-square"></a>
-  <img alt="Status" src="https://img.shields.io/badge/status-design%20phase-F59E0B?style=flat-square">
+  <img alt="Status" src="https://img.shields.io/badge/status-node%20agent%20runs%2C%20nothing%20serves-F59E0B?style=flat-square">
   <img alt="Go" src="https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square">
-  <a href="docs/rfcs/README.md"><img alt="RFCs" src="https://img.shields.io/badge/RFCs-27%20open-14B8A6?style=flat-square"></a>
+  <a href="docs/rfcs/README.md"><img alt="RFCs" src="https://img.shields.io/badge/RFCs-28%20open-14B8A6?style=flat-square"></a>
 </p>
 
 <p align="center">
@@ -107,12 +107,11 @@ flowchart LR
     class job compute
 ```
 
-Every node's NVMe splits three ways:
+Every node's NVMe splits two ways:
 
-| Pool | Owner | Holds | Reclaimed by |
+| | Owner | Holds | Reclaimed by |
 | --- | --- | --- | --- |
-| **Compute** | The job on the node | Anything it wants | Never touched |
-| **Donated** | Forebay, permanently | Durable data | Never reclaimed |
+| **Reserved** | Everyone else | The OS, images, the job, anything donated to another store | Never touched |
 | **Borrowed** | Forebay, revocably | Regenerable data only | **Dropping it** |
 
 Borrowed capacity never holds anything whose loss matters, so reclaiming it is a delete rather than a
@@ -147,7 +146,6 @@ kind: CapacityPolicy
 metadata:
   name: gpu-nodes
 spec:
-  donated: 2Ti                  # permanent. holds durable data
   borrowed:
     max: 4Ti                    # elastic. regenerable data only
     class: elastic              # guaranteed | elastic | opportunistic
@@ -173,7 +171,6 @@ back when compute needs the space.
 
 ```sh
 forebay-agent --borrowed-dir=/var/lib/forebay/borrowed \
-              --donated-dir=/var/lib/forebay/donated \
               --journal=/var/lib/forebay/state/leases.json \
               --watch --headroom-bytes=$((64 * 1024 * 1024 * 1024))
 ```

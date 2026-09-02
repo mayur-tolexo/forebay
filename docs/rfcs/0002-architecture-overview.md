@@ -23,7 +23,7 @@ the whole picture as description.
 
 | Part of the architecture | State |
 | --- | --- |
-| Three pools and the arithmetic between them | Built, `internal/pool` |
+| The split between what may be lent and what may not, and the arithmetic between them | Built, `internal/pool` |
 | The node agent's authority over its own capacity | Built, a grant it cannot honour is refused |
 | Lease classes, the reclaim ladder and the journal | Built, `internal/lease` |
 | The agent's startup: lock, replay, reconcile, then accept | Built, `internal/agent` |
@@ -98,14 +98,13 @@ substituting something weaker.
 Refusing loudly is the point. Silent degradation in a storage system is how data ends up less
 durable than its owner believes it to be. RFC-0006 specifies the contract.
 
-### Three pools per node
+### What a node may lend, and what it may not
 
-Every node's NVMe is divided into three pools with different owners and different rules.
+Every node's NVMe divides into what Forebay may lend and what it may not.
 
-| Pool | Owned by | Holds | Reclaimed by |
+| | Owned by | Holds | Reclaimed by |
 | --- | --- | --- | --- |
-| Compute | The job on the node | Anything the job wants | Never touched |
-| Donated | Forebay, permanently | Durable data via a backend driver | Never reclaimed |
+| Reserved | Everyone else | The operating system, images, the job, and any durable data donated to another store | Never touched |
 | Borrowed | Forebay, revocably | Regenerable data only | Dropping it |
 
 The rule that makes elasticity safe is the last row. Borrowed capacity never holds anything whose

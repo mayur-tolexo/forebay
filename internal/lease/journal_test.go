@@ -197,7 +197,7 @@ func TestRestoreDropsLeasesTheNodeCanNoLongerFit(t *testing.T) {
 		{ID: "big", Class: Elastic, Size: 4 * pool.TiB, GrantedAt: t0, Term: time.Hour},
 		{ID: "small", Class: Elastic, Size: 1 * pool.TiB, GrantedAt: t0, Term: time.Hour},
 	}}
-	m := New(pool.Accounting{Capacity: 8 * pool.TiB, Compute: 5 * pool.TiB}, relaxed(), WithJournal(f))
+	m := New(pool.Accounting{Capacity: 8 * pool.TiB, Reserved: 5 * pool.TiB}, relaxed(), WithJournal(f))
 
 	res, err := m.Restore(t0)
 	if err != nil {
@@ -262,7 +262,7 @@ func TestReleasePathsArePersisted(t *testing.T) {
 func TestJournalSurvivesAManagerRestart(t *testing.T) {
 	// The whole point: what a node lent is still known after it comes back.
 	j := tempJournal(t)
-	acct := pool.Accounting{Capacity: 8 * pool.TiB, Compute: 1 * pool.TiB}
+	acct := pool.Accounting{Capacity: 8 * pool.TiB, Reserved: 3 * pool.TiB}
 
 	first := New(acct, relaxed(), WithJournal(j))
 	mustRestore(t, first)

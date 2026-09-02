@@ -27,7 +27,6 @@ func openAgent(t *testing.T) (*Agent, time.Time) {
 	root := t.TempDir()
 	cfg := Config{
 		BorrowedDir: filepath.Join(root, "borrowed"),
-		DonatedDir:  filepath.Join(root, "donated"),
 		JournalPath: filepath.Join(root, "state", "leases.json"),
 		Lease:       lease.DefaultConfig(),
 	}

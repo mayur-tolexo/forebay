@@ -12,13 +12,12 @@ import (
 
 var t0 = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 
-// node returns a manager for an 8 TiB device with 1 TiB compute and 2 TiB
-// donated, leaving 5 TiB lendable.
+// node returns a manager for an 8 TiB device holding 3 TiB for everything that
+// is not Forebay, leaving 5 TiB lendable.
 func node(cfg Config) *Manager {
 	return New(pool.Accounting{
 		Capacity: 8 * pool.TiB,
-		Compute:  1 * pool.TiB,
-		Donated:  2 * pool.TiB,
+		Reserved: 3 * pool.TiB,
 	}, cfg)
 }
 

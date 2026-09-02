@@ -2,6 +2,8 @@
 # check` locally means a green pipeline.
 
 GO      ?= go
+# CHROME renders the social card. Override if it lives elsewhere.
+CHROME  ?= /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 BIN     := bin
 PKGS    := ./...
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -73,3 +75,13 @@ clean: ## Remove build and coverage artefacts
 help: ## List targets
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+
+# social-card renders the link preview GitHub asks for, since its uploader
+# takes a raster and the source is an SVG.
+.PHONY: social-card
+social-card:
+	@printf '<!doctype html><style>html,body{margin:0;width:1280px;height:640px}img{width:1280px;height:640px;display:block}</style><img src="social-card.svg">' > docs/brand/_card.html
+	@"$(CHROME)" --headless --disable-gpu --hide-scrollbars --window-size=1280,640 \
+		--screenshot=docs/brand/social-card.png "file://$(CURDIR)/docs/brand/_card.html" 2>/dev/null
+	@rm -f docs/brand/_card.html
+	@echo "docs/brand/social-card.png regenerated"

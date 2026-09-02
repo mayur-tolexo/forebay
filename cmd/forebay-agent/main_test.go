@@ -44,11 +44,9 @@ func nodeArgs(t *testing.T, root string) []string {
 	t.Helper()
 	return []string{
 		"--borrowed-dir=" + filepath.Join(root, "borrowed"),
-		"--donated-dir=" + filepath.Join(root, "donated"),
 		"--journal=" + filepath.Join(root, "state", "leases.json"),
 		"--capacity-bytes=" + strconv.FormatInt(testCapacity, 10),
-		"--compute-bytes=" + strconv.FormatInt(testCapacity/8, 10),
-		"--donated-bytes=" + strconv.FormatInt(testCapacity/4, 10),
+		"--reserved-bytes=" + strconv.FormatInt(testCapacity/8, 10),
 	}
 }
 
@@ -84,16 +82,17 @@ func TestStartupCleansUpCapacityNothingAccountsFor(t *testing.T) {
 }
 
 func TestARefusedLayoutIsReportedRatherThanRun(t *testing.T) {
+	// A journal inside the pool startup reaps is removed at the first restart,
+	// and the next grant fails on a directory that is gone.
 	root := t.TempDir()
-	shared := filepath.Join(root, "pool")
+	pool := filepath.Join(root, "pool")
 	err := withArgs(t,
-		"--borrowed-dir="+shared,
-		"--donated-dir="+shared,
-		"--journal="+filepath.Join(root, "leases.json"),
+		"--borrowed-dir="+pool,
+		"--journal="+filepath.Join(pool, "state", "leases.json"),
 		"--capacity-bytes=1024",
 	)
-	if !errors.Is(err, agent.ErrSamePool) {
-		t.Fatalf("shared pool directories = %v, want ErrSamePool", err)
+	if !errors.Is(err, agent.ErrNestedPools) {
+		t.Fatalf("journal inside the pool = %v, want ErrNestedPools", err)
 	}
 }
 
@@ -110,13 +109,12 @@ func TestImpossibleAccountingIsRefused(t *testing.T) {
 	root := t.TempDir()
 	err := withArgs(t,
 		"--borrowed-dir="+filepath.Join(root, "borrowed"),
-		"--donated-dir="+filepath.Join(root, "donated"),
 		"--journal="+filepath.Join(root, "leases.json"),
 		"--capacity-bytes=1024",
-		"--compute-bytes=4096",
+		"--reserved-bytes=4096",
 	)
 	if !errors.Is(err, pool.ErrOvercommit) {
-		t.Fatalf("compute beyond capacity = %v, want ErrOvercommit", err)
+		t.Fatalf("reserved beyond capacity = %v, want ErrOvercommit", err)
 	}
 }
 
@@ -126,7 +124,6 @@ func TestAnOperatorCanSupplyWhatDiscoveryWillNotVouchFor(t *testing.T) {
 	root := t.TempDir()
 	args := []string{
 		"--borrowed-dir=" + filepath.Join(root, "borrowed"),
-		"--donated-dir=" + filepath.Join(root, "donated"),
 		"--journal=" + filepath.Join(root, "state", "leases.json"),
 		"--sysroot=" + filepath.Join("..", "..", "internal", "topology", "testdata", "gpu-node"),
 		"--capacity-bytes=" + strconv.FormatInt(testCapacity, 10),
@@ -144,7 +141,6 @@ func TestStartupRefusesStorageItCannotProveIsLocal(t *testing.T) {
 	root := t.TempDir()
 	err := withArgs(t,
 		"--borrowed-dir="+filepath.Join(root, "borrowed"),
-		"--donated-dir="+filepath.Join(root, "donated"),
 		"--journal="+filepath.Join(root, "state", "leases.json"),
 		"--sysroot="+filepath.Join(root, "empty-sysroot"),
 		"--mountinfo="+filepath.Join(root, "no-mount-table"),
@@ -244,7 +240,6 @@ func TestAnOverriddenCapacityIsStillCheckedAgainstTheDisk(t *testing.T) {
 
 	args := []string{
 		"--borrowed-dir=" + filepath.Join(root, "borrowed"),
-		"--donated-dir=" + filepath.Join(root, "donated"),
 		"--journal=" + filepath.Join(root, "state", "leases.json"),
 		// Far more than any filesystem could hand over, declared by hand.
 		"--capacity-bytes=" + strconv.FormatInt(available*16, 10),
@@ -260,46 +255,21 @@ func TestAnOverriddenCapacityIsStillCheckedAgainstTheDisk(t *testing.T) {
 	// A modest slice of the same filesystem is a perfectly good override and
 	// must still be allowed: the check is a ceiling, not a demand that
 	// capacity equal the disk.
-	args[3] = "--capacity-bytes=" + strconv.FormatInt(available/4, 10)
+	args[2] = "--capacity-bytes=" + strconv.FormatInt(available/4, 10)
 	if err := withArgs(t, args...); err != nil {
 		t.Errorf("a quarter of what is free was refused: %v", err)
 	}
 }
 
-func TestPoolsSplitAcrossFilesystemsAreRefused(t *testing.T) {
-	// One capacity figure describes one filesystem. With the pools on two, the
-	// donated bytes are deducted from a device that never held them and the
-	// device that did is never measured, so the accounting cannot be right.
-	on := func(device string) topology.PoolStorage {
-		return topology.PoolStorage{Device: device}
-	}
-	if err := requireOneFilesystem(on("nvme0n1p2"), on("sdb1")); err == nil {
-		t.Error("two devices were accepted, want a refusal")
-	} else if !strings.Contains(err.Error(), "cannot describe both") {
-		t.Errorf("error = %v, want it to say one capacity figure cannot describe both", err)
-	}
-	if err := requireOneFilesystem(on("nvme0n1p2"), on("nvme0n1p2")); err != nil {
-		t.Errorf("one device for both pools = %v, want nil", err)
-	}
-	// An unidentified device is not a mismatch. Discovery has already refused
-	// it for not being provably local, and an operator who overrode that has
-	// taken the numbers on.
-	for _, pair := range [][2]string{{"nvme0n1p2", ""}, {"", "sdb1"}, {"", ""}} {
-		if err := requireOneFilesystem(on(pair[0]), on(pair[1])); err != nil {
-			t.Errorf("requireOneFilesystem(%q, %q) = %v, want nil", pair[0], pair[1], err)
-		}
-	}
-}
-
 func TestNothingIsCreatedBeforeTheLayoutIsChecked(t *testing.T) {
-	// Measuring used to create the pool directories first, so a pair the agent
-	// was about to reject got written to disk anyway.
+	// Measuring used to create the pool directories first, so a layout the
+	// agent was about to reject got written to disk anyway.
 	root := t.TempDir()
 	borrowed := filepath.Join(root, "borrowed")
 	args := []string{
 		"--borrowed-dir=" + borrowed,
-		"--donated-dir=" + filepath.Join(borrowed, "nested"),
-		"--journal=" + filepath.Join(root, "state", "leases.json"),
+		// Inside the pool startup reaps, which is refused.
+		"--journal=" + filepath.Join(borrowed, "state", "leases.json"),
 		"--capacity-bytes=" + strconv.FormatInt(int64(8*pool.TiB), 10),
 	}
 	if err := withArgs(t, args...); !errors.Is(err, agent.ErrNestedPools) {
@@ -327,7 +297,6 @@ func TestTheReserveRefusesToGuess(t *testing.T) {
 	// it, since discovery cannot proceed without this number.
 	args := []string{
 		"--borrowed-dir=" + filepath.Join(root, "borrowed"),
-		"--donated-dir=" + filepath.Join(root, "donated"),
 		"--journal=" + filepath.Join(root, "state", "leases.json"),
 		"--sysroot=" + filepath.Join("..", "..", "internal", "topology", "testdata", "gpu-node"),
 		"--mountinfo=" + filepath.Join(root, "no-mount-table"),
@@ -338,7 +307,7 @@ func TestTheReserveRefusesToGuess(t *testing.T) {
 }
 
 func TestADeclaredReserveIsHonouredWhenNothingCanBeMeasured(t *testing.T) {
-	// The refusal here names --compute-bytes as the way through, and the check
+	// The refusal here names --reserved-bytes as the way through, and the check
 	// that raised it never looked at the flag, so an operator taking the advice
 	// got the same refusal back. A remedy the refusing code ignores is worse
 	// than no remedy: it sends people to a dead end with confidence.
@@ -364,7 +333,6 @@ func TestADeclaredReserveIsHonouredWhenNothingCanBeMeasured(t *testing.T) {
 	fixtures := filepath.Join("..", "..", "internal", "topology", "testdata")
 	args := []string{
 		"--borrowed-dir=" + borrowed,
-		"--donated-dir=" + filepath.Join(root, "donated"),
 		"--journal=" + filepath.Join(root, "state", "leases.json"),
 		// The fixture mount table puts / on a pcie NVMe, so the pools pass the
 		// locality check and startup reaches the reserve.
@@ -373,12 +341,12 @@ func TestADeclaredReserveIsHonouredWhenNothingCanBeMeasured(t *testing.T) {
 	}
 	if err := withArgs(t, args...); err == nil {
 		t.Error("startup succeeded with the reserve unmeasurable and none declared, want a refusal")
-	} else if !strings.Contains(err.Error(), "--compute-bytes") {
+	} else if !strings.Contains(err.Error(), "--reserved-bytes") {
 		t.Errorf("refusal = %v, want it to name the flag that resolves it", err)
 	}
 
 	// Now take that advice, which must actually work.
-	if err := withArgs(t, append(args, "--compute-bytes=1048576")...); err != nil {
+	if err := withArgs(t, append(args, "--reserved-bytes=1048576")...); err != nil {
 		t.Errorf("declaring the reserve the refusal asked for = %v, want nil", err)
 	}
 }

@@ -62,25 +62,43 @@ requirement rather than a hope.
 
 ### Pools
 
-Every node's NVMe divides into three pools. The division is bytes, not devices, and a pool is not a
-filesystem.
+A node's storage divides into what Forebay may lend and what it may not. The division is bytes, not
+devices, and neither part is a filesystem.
 
-| Pool | Sized by | Holds | Returned |
+| | Sized by | Holds | Returned |
 | --- | --- | --- | --- |
-| Compute | Whatever the node has not given away | Whatever the workload writes | Not applicable, Forebay never holds it |
-| Donated | Operator configuration | Durable data, through a backend driver | Never |
+| Reserved | Measured, as whatever the filesystem already holds | Everything that is not Forebay's | Not applicable, Forebay never holds it |
 | Borrowed | Outstanding leases | Regenerable data only | On reclamation, by deletion |
 
-Donated capacity is not leased. It is given once, and if an operator wants it back they drain the
-node like any other storage maintenance. Everything below concerns the borrowed pool.
+**This supersedes an earlier three-pool model** that separated compute from donated capacity. The
+distinction did not survive contact with a measured capacity.
+
+Forebay cannot tell those two apart and does not need to. Both are bytes on the device belonging to
+somebody else, and the agent treats them identically: subtract, never lend, never reclaim. Once the
+agent began measuring its own capacity rather than being told it, keeping donated as a separate term
+became actively wrong. Donated capacity is either on another device, in which case the measurement
+never included it and subtracting it removes capacity that was never counted, or it is on this
+filesystem, in which case it is already inside what the filesystem holds for others and subtracting
+it counts it twice.
+
+The reclaimability axis is the one that matters and it survives intact: borrowed capacity can be
+deleted at any moment and reserved capacity cannot. That is not a locality question and the tiers
+cannot express it, because a cached block and a donated byte can sit on the same device at the same
+distance from the same GPU while only one of them may be taken away.
+
+What is lost is the ability to say how much of the reserve is durable data given to another store.
+Forebay never knew that reliably: it was operator configuration, asserted rather than observed, and
+an assertion that disagreed with the device was believed. Donated capacity is still a real thing an
+operator does, it is simply a Ceph device rather than a Forebay pool, and the data on it is reached
+through a backend driver like any other. Everything below concerns the borrowed pool.
 
 ### The node agent is the authority
 
 The control plane grants leases. **The node agent decides whether a grant is real.**
 
 This inversion is the load-bearing decision in this RFC. The agent holds the only ground truth about
-its own device: total capacity, what the kubelet has committed, what is donated, and what is
-currently lent. A grant from the control plane is a proposal, which the agent accepts only if its own
+its own device: total capacity, what that capacity already holds for others, and what is currently
+lent. A grant from the control plane is a proposal, which the agent accepts only if its own
 accounting says the capacity exists.
 
 Everything awkward about distributed leases becomes tractable once authority sits at the node.
@@ -314,9 +332,9 @@ rule the whole design rests on.
 
 ### Accounting
 
-The agent publishes, and the control plane caches, one number per pool. Compute is derived from node
-allocatable minus what the kubelet has committed. Donated is configuration. Borrowed is the sum of
-accepted leases. The three plus free space must equal device capacity, and the agent reports a
+The agent publishes, and the control plane caches, two numbers. Reserved is measured, as what the
+filesystem holding the pool already holds for everything that is not Forebay. Borrowed is the sum of
+accepted leases. The two plus free space must equal device capacity, and the agent reports a
 discrepancy rather than papering over it, because in a system whose entire promise is about capacity,
 arithmetic that does not balance is a defect and not a rounding detail.
 
@@ -409,7 +427,7 @@ and RFC-0016 has to say so explicitly.
 - **Whether oldest-first remains the right tiebreak within a class** once per-lease hit rates exist
   to do better. Owned by [RFC-0007](0007-fast-tier-data-path.md), which owns eviction, using the
   measurements from [RFC-0017](0017-observability.md).
-- **Whether donated capacity should ever be reclaimable under extreme compute pressure.** The current
-  answer is no. No RFC owns this, deliberately: it trades a durability promise against a compute one,
-  and that is an operator's decision rather than an engineering one. Revisit when operators have
-  opinions.
+- **Whether an operator wants to see what part of the reserve is durable data they donated**, now
+  that Forebay does not track it separately. Nothing needs the number to work, and an operator may
+  reasonably want it reported. No RFC owns this: it is a question about what people want to see
+  rather than about what the node needs to know, and the answer arrives by asking them.

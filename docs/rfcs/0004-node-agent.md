@@ -55,9 +55,7 @@ from an unprivileged container. What it does and what it refuses both behave as 
 | --- | --- |
 | Reports the capacity split and what startup corrected | Yes, against 1.86 TiB of real device |
 | Unlinks an extent no lease accounts for | Yes, one planted orphan removed |
-| Leaves donated capacity untouched while doing it | Yes, a file planted in the donated pool survived intact |
-| Refuses a shared pool directory | Yes, `borrowed and donated pools must be different directories` |
-| Refuses nested pool directories | Yes, naming both paths |
+| Refuses a journal kept inside the pool it reaps | Yes, naming the directory startup would remove |
 | Refuses to start with no reclaim deadline | Yes, since every elastic grant would otherwise be refused |
 | Refuses accounting that does not add up | Yes, `pools exceed device capacity` |
 | Admits one agent per node | Twenty started at once, nine refused by the lock and none proceeding beside another |
