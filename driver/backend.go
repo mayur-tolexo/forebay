@@ -49,6 +49,14 @@ func (b *Backend) ReadRange(ctx context.Context, object string, offset, length i
 	return b.driver.ReadRange(ctx, object, offset, length)
 }
 
+// SizeOf reports how many bytes an object holds, if this backend can say.
+func (b *Backend) SizeOf(ctx context.Context, object string) (int64, error) {
+	if !b.Supports(ObjectSize) {
+		return 0, refuse(ObjectSize)
+	}
+	return b.driver.SizeOf(ctx, object)
+}
+
 // WriteObject creates an immutable object, if this backend writes at all.
 func (b *Backend) WriteObject(ctx context.Context, object string, data []byte) error {
 	if !b.Supports(WriteObject) {

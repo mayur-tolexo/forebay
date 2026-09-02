@@ -21,6 +21,15 @@ func (w *worm) Declare() driver.Declaration {
 	return driver.Declaration{Contract: 1, Capabilities: []driver.Capability{driver.ReadRange, driver.WriteObject}}
 }
 
+// SizeOf refuses unless declared, which this driver does not declare: a store
+// that writes once still need not be able to say how large a thing is.
+func (w *worm) SizeOf(_ context.Context, object string) (int64, error) {
+	if !w.dishonest {
+		return 0, fmt.Errorf("%w: %s", driver.ErrNotSupported, driver.ObjectSize)
+	}
+	return int64(len(w.objects[object])), nil
+}
+
 func (w *worm) ReadRange(_ context.Context, o string, off, n int64) ([]byte, error) {
 	b, ok := w.objects[o]
 	if !ok {

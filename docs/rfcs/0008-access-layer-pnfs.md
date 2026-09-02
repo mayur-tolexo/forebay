@@ -66,8 +66,40 @@ RFC-0018.
 
 ## What of this is built
 
-**None of it.** No metadata server exists, no data server speaks NFS, and nothing reads from the fast
-tier, which is the thing this layer exists to expose. `internal/fasttier` has a caller only in tests.
+**The read path, and nothing that speaks NFS.** No metadata server exists and no data server answers
+an NFS client.
+
+`internal/dataserver` answers a byte range of an object: from the fast tier where the blocks are
+resident, and from the durable backend through the driver contract where they are not. It is the
+first caller `internal/fasttier` has outside its own tests.
+
+It absorbs the miss, which is the part this document argued for. Capacity taken back mid-read becomes
+a fetch and a slower answer, never an error. What stays an error is a range past the end of the
+object, because a caller asking for bytes that do not exist has made a different mistake from one
+whose cached bytes went away, and answering it short reads as truncation.
+
+A read is bounded before it is answered. The answer is sized from the length asked for, and the
+object's real size is not known until the backend has been asked, so a large enough number reaches
+the allocator first and the process does not survive it. What the caller asks for is therefore
+checked against a configured maximum rather than against the object.
+
+The last block of an object whose size is not a multiple of the block size is the awkward case. A
+whole-block fetch of it runs past the end, which the driver contract calls an error rather than
+returning a short read.
+
+Where the backend declares `object-size`, the tail is fetched at its real length and admitted like
+any other block, because it is a whole block: there is nothing shorter behind it. A miss on it costs
+three requests, since the whole-block read is attempted and refused before the size is asked for, and
+then nothing at all once the block is resident. Where it does not,
+the read asks for what it needs, serves that and does not admit it, since a short answer cannot be
+told from the object being shorter than the caller believed and a partial block would be served whole
+to the next reader.
+
+That fallback is worse than it first reads, which is why the capability exists. An object smaller
+than one block is entirely tail, so the carve-out swallows the whole object: five reads of a
+hundred-byte object made ten backend requests and cached nothing, since each read pays a whole-block
+probe that fails and a narrowed fetch that cannot be kept. Datasets of many small files are exactly
+that shape and are a workload this tier is for.
 
 ## Assumptions
 
@@ -147,7 +179,9 @@ driver contract and serves it. The client experiences a slower read, which is th
 having been wrong about what to keep, and never an error.
 
 That is also why the mandatory core of RFC-0006 is a ranged read and nothing else. The miss path is
-the only thing the access layer needs a backend to do.
+the only thing the access layer requires a backend to do, and a backend offering only that serves
+every read correctly. What it will use where offered is `object-size`, which is what lets the tail of
+an object be cached rather than re-fetched.
 
 ### Fencing, and what a client sees
 

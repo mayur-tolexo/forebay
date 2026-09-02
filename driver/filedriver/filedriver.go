@@ -42,9 +42,24 @@ func New(root string) (*Driver, error) {
 // emulating would be the silent degradation the contract forbids.
 func (d *Driver) Declare() driver.Declaration {
 	return driver.Declaration{
-		Contract:     1,
-		Capabilities: []driver.Capability{driver.ReadRange, driver.WriteObject, driver.DeleteObject},
+		Contract: 1,
+		Capabilities: []driver.Capability{
+			driver.ReadRange, driver.ObjectSize, driver.WriteObject, driver.DeleteObject,
+		},
 	}
+}
+
+// SizeOf reports how many bytes an object holds.
+func (d *Driver) SizeOf(ctx context.Context, object string) (int64, error) {
+	p, err := d.path(object)
+	if err != nil {
+		return 0, err
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		return 0, fmt.Errorf("filedriver: %w", err)
+	}
+	return info.Size(), nil
 }
 
 // path resolves an object name inside the root, refusing anything that could
