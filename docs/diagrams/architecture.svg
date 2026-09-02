@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Forebay borrows the idle NVMe on GPU nodes, caches dataset blocks there so reads are served locally instead of crossing the network, and returns the capacity by deleting those blocks the moment the job needs its disk back.">
 <style>
   :root {
-    --ink: #0F172A; --muted: #475569; --faint: #94A3B8;
+    --ink: #0F172A; --muted: #475569; --faint: #64748B;
     --card: #FFFFFF; --edge: #CBD5E1; --stage: #F8FAFC;
     --ctl: #4F46E5; --ctl-soft: #E0E7FF;
     --own: #0D9488; --own-soft: #CCFBF1;

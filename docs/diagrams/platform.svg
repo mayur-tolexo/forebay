@@ -1,143 +1,162 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" width="1200" height="760" role="img" aria-label="The Forebay platform surface: consumers, file object and block access, data services, the control plane, the owned fast tier, and pluggable durable backends, with Kubernetes-native and compute-aware rails.">
 <defs>
-  <linearGradient id="qAcc" gradientUnits="userSpaceOnUse" x1="170" y1="136" x2="1030" y2="222"><stop offset="0" stop-color="#0A2A3F"/><stop offset="1" stop-color="#08192A"/></linearGradient>
-  <linearGradient id="qSvc" gradientUnits="userSpaceOnUse" x1="170" y1="256" x2="1030" y2="380"><stop offset="0" stop-color="#2A1250"/><stop offset="1" stop-color="#160B2E"/></linearGradient>
-  <linearGradient id="qCp"  gradientUnits="userSpaceOnUse" x1="170" y1="410" x2="1030" y2="534"><stop offset="0" stop-color="#241F6B"/><stop offset="1" stop-color="#14123C"/></linearGradient>
-  <linearGradient id="qFast" gradientUnits="userSpaceOnUse" x1="170" y1="564" x2="1030" y2="640"><stop offset="0" stop-color="#05372B"/><stop offset="1" stop-color="#04211E"/></linearGradient>
-  <linearGradient id="qSt"  gradientUnits="userSpaceOnUse" x1="170" y1="670" x2="1030" y2="732"><stop offset="0" stop-color="#151E2E"/><stop offset="1" stop-color="#0C1320"/></linearGradient>
-  <radialGradient id="qGI" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#6366F1" stop-opacity="0.16"/><stop offset="1" stop-color="#6366F1" stop-opacity="0"/></radialGradient>
-  <radialGradient id="qGT" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#10B981" stop-opacity="0.14"/><stop offset="1" stop-color="#10B981" stop-opacity="0"/></radialGradient>
-  <pattern id="qD" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="#18233A"/></pattern>
+  <linearGradient id="qAcc" gradientUnits="userSpaceOnUse" x1="170" y1="136" x2="1030" y2="222"><stop offset="0" stop-color="var(--dur-soft)"/><stop offset="1" stop-color="var(--card)"/></linearGradient>
+  <linearGradient id="qSvc" gradientUnits="userSpaceOnUse" x1="170" y1="256" x2="1030" y2="380"><stop offset="0" stop-color="var(--ctl-soft)"/><stop offset="1" stop-color="var(--ctl-soft)"/></linearGradient>
+  <linearGradient id="qCp"  gradientUnits="userSpaceOnUse" x1="170" y1="410" x2="1030" y2="534"><stop offset="0" stop-color="var(--ctl-soft)"/><stop offset="1" stop-color="var(--ctl-soft)"/></linearGradient>
+  <linearGradient id="qFast" gradientUnits="userSpaceOnUse" x1="170" y1="564" x2="1030" y2="640"><stop offset="0" stop-color="var(--own-soft)"/><stop offset="1" stop-color="var(--own-soft)"/></linearGradient>
+  <linearGradient id="qSt"  gradientUnits="userSpaceOnUse" x1="170" y1="670" x2="1030" y2="732"><stop offset="0" stop-color="var(--card)"/><stop offset="1" stop-color="var(--card)"/></linearGradient>
+  <radialGradient id="qGI" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="var(--ctl)" stop-opacity="0.16"/><stop offset="1" stop-color="var(--ctl)" stop-opacity="0"/></radialGradient>
+  <radialGradient id="qGT" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="var(--own)" stop-opacity="0.14"/><stop offset="1" stop-color="var(--own)" stop-opacity="0"/></radialGradient>
+  <pattern id="qD" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="var(--card)"/></pattern>
   <filter id="qS" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.45"/></filter>
   <filter id="qG" x="-30%" y="-60%" width="160%" height="220%"><feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  <marker id="qA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748B"/></marker>
+  <marker id="qA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
   <style>
+  :root {
+    --ink: #0F172A; --muted: #475569; --faint: #64748B;
+    --card: #FFFFFF; --edge: #CBD5E1; --stage: #F8FAFC;
+    --ctl: #4F46E5; --ctl-soft: #E0E7FF; --ctl-ink: #3730A3;
+    --own: #0D9488; --own-soft: #CCFBF1; --own-ink: #115E59;
+    --dur: #0284C7; --dur-soft: #E0F2FE; --dur-ink: #075985;
+    --hot: #B45309; --hot-soft: #FEF3C7; --hot-ink: #92400E;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #E2E8F0; --muted: #94A3B8; --faint: #64748B;
+      --card: #111A2B; --edge: #24344E; --stage: #0B1220;
+      --ctl: #818CF8; --ctl-soft: #1E1B4B; --ctl-ink: #C7D2FE;
+      --own: #2DD4BF; --own-soft: #042F2E; --own-ink: #99F6E4;
+      --dur: #38BDF8; --dur-soft: #0C2A3F; --dur-ink: #BAE6FD;
+      --hot: #FBBF24; --hot-soft: #451A03; --hot-ink: #FDE68A;
+    }
+  }
+
     .f{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
     .band{font-size:11px;font-weight:700;letter-spacing:2px}
     .pill{font-size:12.5px;font-weight:600}
     .big{font-size:15px;font-weight:700}
-    .sm{font-size:11.5px;fill:#6B7C96}
+    .sm{font-size:11.5px;fill:var(--faint)}
     .rail{font-size:11.5px;font-weight:700;letter-spacing:2px}
-    .foot{font-size:11.5px;fill:#54637C}
+    .foot{font-size:11.5px;fill:var(--faint)}
   </style>
 </defs>
 
-<rect width="1200" height="760" rx="18" fill="#060A13"/>
+<rect width="1200" height="760" rx="18" fill="var(--stage)"/>
 <rect width="1200" height="760" rx="18" fill="url(#qD)" opacity="0.6"/>
 <ellipse cx="600" cy="440" rx="640" ry="280" fill="url(#qGI)"/>
 <ellipse cx="600" cy="690" rx="600" ry="200" fill="url(#qGT)"/>
 
 <!-- rails -->
-<rect x="40" y="60" width="110" height="672" rx="14" fill="#0B1420" stroke="#3B4A63" stroke-width="1.3"/>
-<text class="f rail" fill="#B6C4D8" transform="rotate(-90 92 396)" x="92" y="396" text-anchor="middle">KUBERNETES NATIVE</text>
-<text class="f sm" transform="rotate(-90 116 396)" x="116" y="396" text-anchor="middle">CRDs · operator · CSI · scheduler signals</text>
+<rect x="40" y="60" width="110" height="672" rx="14" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.4"/>
+<text class="f rail" fill="var(--ctl-ink)" transform="rotate(-90 92 396)" x="92" y="396" text-anchor="middle">KUBERNETES NATIVE</text>
+<text class="f sm" fill="var(--ctl)" transform="rotate(-90 116 396)" x="116" y="396" text-anchor="middle">CRDs · operator · CSI · scheduler signals</text>
 
-<rect x="1050" y="60" width="110" height="672" rx="14" fill="#04211E" stroke="#10B981" stroke-width="1.4"/>
-<text class="f rail" fill="#6EE7B7" transform="rotate(-90 1103 396)" x="1103" y="396" text-anchor="middle">COMPUTE AWARE</text>
-<text class="f sm" fill="#34D399" transform="rotate(-90 1127 396)" x="1127" y="396" text-anchor="middle">GPU · NUMA · PCIe · NIC · scheduler · telemetry</text>
+<rect x="1050" y="60" width="110" height="672" rx="14" fill="var(--own-soft)" stroke="var(--own)" stroke-width="1.4"/>
+<text class="f rail" fill="var(--own-ink)" transform="rotate(-90 1103 396)" x="1103" y="396" text-anchor="middle">COMPUTE AWARE</text>
+<text class="f sm" fill="var(--own)" transform="rotate(-90 1127 396)" x="1127" y="396" text-anchor="middle">GPU · NUMA · PCIe · NIC · scheduler · telemetry</text>
 
 <!-- consumers -->
 <g class="f">
-  <text x="170" y="48" class="band" fill="#FBBF24">CONSUMERS</text>
-  <g class="pill" fill="#FDE68A">
-    <rect x="179" y="60" width="158" height="32" rx="16" fill="#432B0A" stroke="#D97706" stroke-width="1.2"/><text x="258" y="81" text-anchor="middle">training</text>
-    <rect x="350" y="60" width="158" height="32" rx="16" fill="#432B0A" stroke="#D97706" stroke-width="1.2"/><text x="429" y="81" text-anchor="middle">inference</text>
-    <rect x="521" y="60" width="158" height="32" rx="16" fill="#432B0A" stroke="#D97706" stroke-width="1.2"/><text x="600" y="81" text-anchor="middle">notebooks</text>
-    <rect x="692" y="60" width="158" height="32" rx="16" fill="#432B0A" stroke="#D97706" stroke-width="1.2"/><text x="771" y="81" text-anchor="middle">data pipelines</text>
-    <rect x="863" y="60" width="158" height="32" rx="16" fill="#432B0A" stroke="#D97706" stroke-width="1.2"/><text x="942" y="81" text-anchor="middle">CI and eval</text>
+  <text x="170" y="48" class="band" fill="var(--hot)">CONSUMERS</text>
+  <g class="pill" fill="var(--hot-ink)">
+    <rect x="179" y="60" width="158" height="32" rx="16" fill="var(--hot-soft)" stroke="var(--hot)" stroke-width="1.2"/><text x="258" y="81" text-anchor="middle">training</text>
+    <rect x="350" y="60" width="158" height="32" rx="16" fill="var(--hot-soft)" stroke="var(--hot)" stroke-width="1.2"/><text x="429" y="81" text-anchor="middle">inference</text>
+    <rect x="521" y="60" width="158" height="32" rx="16" fill="var(--hot-soft)" stroke="var(--hot)" stroke-width="1.2"/><text x="600" y="81" text-anchor="middle">notebooks</text>
+    <rect x="692" y="60" width="158" height="32" rx="16" fill="var(--hot-soft)" stroke="var(--hot)" stroke-width="1.2"/><text x="771" y="81" text-anchor="middle">data pipelines</text>
+    <rect x="863" y="60" width="158" height="32" rx="16" fill="var(--hot-soft)" stroke="var(--hot)" stroke-width="1.2"/><text x="942" y="81" text-anchor="middle">CI and eval</text>
   </g>
 </g>
-<path d="M600 96 V132" stroke="#64748B" stroke-width="1.6" stroke-dasharray="7 7" marker-end="url(#qA)"><animate attributeName="stroke-dashoffset" values="28;0" dur="1.4s" repeatCount="indefinite"/></path>
+<path d="M600 96 V132" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="7 7" marker-end="url(#qA)"><animate attributeName="stroke-dashoffset" values="28;0" dur="1.4s" repeatCount="indefinite"/></path>
 
 <!-- access -->
-<g class="f" filter="url(#qS)"><rect x="170" y="136" width="860" height="86" rx="14" fill="url(#qAcc)" stroke="#0EA5E9" stroke-width="1.4"/></g>
-<rect x="170" y="136" width="860" height="86" rx="14" fill="none" stroke="#38BDF8" stroke-width="2.6" opacity="0" filter="url(#qG)">
+<g class="f" filter="url(#qS)"><rect x="170" y="136" width="860" height="86" rx="14" fill="url(#qAcc)" stroke="var(--dur)" stroke-width="1.4"/></g>
+<rect x="170" y="136" width="860" height="86" rx="14" fill="none" stroke="var(--dur)" stroke-width="2.6" opacity="0" filter="url(#qG)">
   <animate attributeName="opacity" values="0;0;0.8;0;0" keyTimes="0;0.04;0.10;0.16;1" dur="7s" repeatCount="indefinite"/></rect>
 <g class="f">
-  <text x="190" y="160" class="band" fill="#7DD3FC">ACCESS &#183; one copy, several views</text>
+  <text x="190" y="160" class="band" fill="var(--dur-ink)">ACCESS &#183; one copy, several views</text>
   <g>
-    <rect x="190" y="172" width="270" height="36" rx="10" fill="#0C3B57" stroke="#38BDF8" stroke-width="1.2"/>
-    <text x="325" y="190" class="big" fill="#E0F2FE" text-anchor="middle">FILE</text><text x="325" y="203" class="sm" fill="#7DD3FC" text-anchor="middle">pNFS · NFSv4.2 · NFSv3</text>
-    <rect x="475" y="172" width="270" height="36" rx="10" fill="#0C3B57" stroke="#38BDF8" stroke-width="1.2"/>
-    <text x="610" y="190" class="big" fill="#E0F2FE" text-anchor="middle">OBJECT</text><text x="610" y="203" class="sm" fill="#7DD3FC" text-anchor="middle">S3</text>
-    <rect x="760" y="172" width="270" height="36" rx="10" fill="#132234" stroke="#5B6E88" stroke-width="1.2"/>
-    <text x="895" y="190" class="big" fill="#CBD5E1" text-anchor="middle">BLOCK</text><text x="895" y="203" class="sm" text-anchor="middle">CSI · same namespace and snapshots</text>
+    <rect x="190" y="172" width="270" height="36" rx="10" fill="var(--dur-soft)" stroke="var(--dur)" stroke-width="1.2"/>
+    <text x="325" y="190" class="big" fill="var(--dur-ink)" text-anchor="middle">FILE</text><text x="325" y="203" class="sm" fill="var(--dur-ink)" text-anchor="middle">pNFS · NFSv4.2 · NFSv3</text>
+    <rect x="475" y="172" width="270" height="36" rx="10" fill="var(--dur-soft)" stroke="var(--dur)" stroke-width="1.2"/>
+    <text x="610" y="190" class="big" fill="var(--dur-ink)" text-anchor="middle">OBJECT</text><text x="610" y="203" class="sm" fill="var(--dur-ink)" text-anchor="middle">S3</text>
+    <rect x="760" y="172" width="270" height="36" rx="10" fill="var(--card)" stroke="var(--edge)" stroke-width="1.2"/>
+    <text x="895" y="190" class="big" fill="var(--faint)" text-anchor="middle">BLOCK</text><text x="895" y="203" class="sm" text-anchor="middle">CSI · same namespace and snapshots</text>
   </g>
 </g>
-<path d="M600 226 V252" stroke="#64748B" stroke-width="1.6" stroke-dasharray="7 7" marker-end="url(#qA)"><animate attributeName="stroke-dashoffset" values="28;0" dur="1.4s" repeatCount="indefinite"/></path>
+<path d="M600 226 V252" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="7 7" marker-end="url(#qA)"><animate attributeName="stroke-dashoffset" values="28;0" dur="1.4s" repeatCount="indefinite"/></path>
 
 <!-- data services -->
-<g class="f" filter="url(#qS)"><rect x="170" y="256" width="860" height="124" rx="14" fill="url(#qSvc)" stroke="#8B5CF6" stroke-width="1.4"/></g>
-<rect x="170" y="256" width="860" height="124" rx="14" fill="none" stroke="#C084FC" stroke-width="2.6" opacity="0" filter="url(#qG)">
+<g class="f" filter="url(#qS)"><rect x="170" y="256" width="860" height="124" rx="14" fill="url(#qSvc)" stroke="var(--ctl)" stroke-width="1.4"/></g>
+<rect x="170" y="256" width="860" height="124" rx="14" fill="none" stroke="var(--ctl)" stroke-width="2.6" opacity="0" filter="url(#qG)">
   <animate attributeName="opacity" values="0;0;0.8;0;0" keyTimes="0;0.16;0.22;0.28;1" dur="7s" repeatCount="indefinite"/></rect>
 <g class="f">
-  <text x="190" y="280" class="band" fill="#D8B4FE">DATA SERVICES</text>
-  <g class="pill" fill="#EDE9FE">
-    <rect x="190" y="292" width="152" height="30" rx="15" fill="#3B0F73" stroke="#A855F7" stroke-width="1.1"/><text x="266" y="312" text-anchor="middle">snapshots</text>
-    <rect x="356" y="292" width="152" height="30" rx="15" fill="#3B0F73" stroke="#A855F7" stroke-width="1.1"/><text x="432" y="312" text-anchor="middle">instant clones</text>
-    <rect x="522" y="292" width="152" height="30" rx="15" fill="#3B0F73" stroke="#A855F7" stroke-width="1.1"/><text x="598" y="312" text-anchor="middle">version sharing</text>
-    <rect x="688" y="292" width="152" height="30" rx="15" fill="#3B0F73" stroke="#A855F7" stroke-width="1.1"/><text x="764" y="312" text-anchor="middle">replication, DR</text>
-    <rect x="854" y="292" width="152" height="30" rx="15" fill="#3B0F73" stroke="#A855F7" stroke-width="1.1"/><text x="930" y="312" text-anchor="middle">encryption</text>
+  <text x="190" y="280" class="band" fill="var(--ctl-ink)">DATA SERVICES</text>
+  <g class="pill" fill="var(--ctl-ink)">
+    <rect x="190" y="292" width="152" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="266" y="312" text-anchor="middle">snapshots</text>
+    <rect x="356" y="292" width="152" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="432" y="312" text-anchor="middle">instant clones</text>
+    <rect x="522" y="292" width="152" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="598" y="312" text-anchor="middle">version sharing</text>
+    <rect x="688" y="292" width="152" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="764" y="312" text-anchor="middle">replication, DR</text>
+    <rect x="854" y="292" width="152" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="930" y="312" text-anchor="middle">encryption</text>
 
-    <rect x="190" y="330" width="152" height="30" rx="15" fill="#3B0F73" stroke="#A855F7" stroke-width="1.1"/><text x="266" y="350" text-anchor="middle">compression</text>
-    <rect x="356" y="330" width="152" height="30" rx="15" fill="#3B0F73" stroke="#A855F7" stroke-width="1.1"/><text x="432" y="350" text-anchor="middle">thin provisioning</text>
-    <rect x="522" y="330" width="152" height="30" rx="15" fill="#3B0F73" stroke="#A855F7" stroke-width="1.1"/><text x="598" y="350" text-anchor="middle">QoS and quotas</text>
-    <rect x="688" y="330" width="152" height="30" rx="15" fill="#3B0F73" stroke="#A855F7" stroke-width="1.1"/><text x="764" y="350" text-anchor="middle">tiering</text>
-    <rect x="854" y="330" width="152" height="30" rx="15" fill="#3B0F73" stroke="#A855F7" stroke-width="1.1"/><text x="930" y="350" text-anchor="middle">lineage</text>
+    <rect x="190" y="330" width="152" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="266" y="350" text-anchor="middle">compression</text>
+    <rect x="356" y="330" width="152" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="432" y="350" text-anchor="middle">thin provisioning</text>
+    <rect x="522" y="330" width="152" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="598" y="350" text-anchor="middle">QoS and quotas</text>
+    <rect x="688" y="330" width="152" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="764" y="350" text-anchor="middle">tiering</text>
+    <rect x="854" y="330" width="152" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="930" y="350" text-anchor="middle">lineage</text>
   </g>
 </g>
-<path d="M600 384 V406" stroke="#64748B" stroke-width="1.6" stroke-dasharray="7 7" marker-end="url(#qA)"><animate attributeName="stroke-dashoffset" values="28;0" dur="1.4s" repeatCount="indefinite"/></path>
+<path d="M600 384 V406" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="7 7" marker-end="url(#qA)"><animate attributeName="stroke-dashoffset" values="28;0" dur="1.4s" repeatCount="indefinite"/></path>
 
 <!-- control plane, the hero band -->
-<g class="f" filter="url(#qS)"><rect x="170" y="410" width="860" height="124" rx="14" fill="url(#qCp)" stroke="#6366F1" stroke-width="2"/></g>
-<rect x="170" y="410" width="860" height="124" rx="14" fill="none" stroke="#A5B4FC" stroke-width="3" opacity="0" filter="url(#qG)">
+<g class="f" filter="url(#qS)"><rect x="170" y="410" width="860" height="124" rx="14" fill="url(#qCp)" stroke="var(--ctl)" stroke-width="2"/></g>
+<rect x="170" y="410" width="860" height="124" rx="14" fill="none" stroke="var(--ctl)" stroke-width="3" opacity="0" filter="url(#qG)">
   <animate attributeName="opacity" values="0;0;0.95;0;0" keyTimes="0;0.28;0.34;0.40;1" dur="7s" repeatCount="indefinite"/></rect>
 <g class="f">
-  <text x="190" y="434" class="band" fill="#C7D2FE">CONTROL PLANE &#183; declare the outcome, it decides the rest</text>
-  <g class="pill" fill="#E0E7FF">
-    <rect x="190" y="446" width="195" height="30" rx="15" fill="#312E81" stroke="#818CF8" stroke-width="1.1"/><text x="287" y="466" text-anchor="middle">intent and policy</text>
-    <rect x="399" y="446" width="195" height="30" rx="15" fill="#312E81" stroke="#818CF8" stroke-width="1.1"/><text x="496" y="466" text-anchor="middle">topology model</text>
-    <rect x="608" y="446" width="195" height="30" rx="15" fill="#312E81" stroke="#818CF8" stroke-width="1.1"/><text x="705" y="466" text-anchor="middle">elastic leases</text>
-    <rect x="817" y="446" width="195" height="30" rx="15" fill="#312E81" stroke="#818CF8" stroke-width="1.1"/><text x="914" y="466" text-anchor="middle">autonomy loops</text>
+  <text x="190" y="434" class="band" fill="var(--ctl-ink)">CONTROL PLANE &#183; declare the outcome, it decides the rest</text>
+  <g class="pill" fill="var(--ctl-ink)">
+    <rect x="190" y="446" width="195" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="287" y="466" text-anchor="middle">intent and policy</text>
+    <rect x="399" y="446" width="195" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="496" y="466" text-anchor="middle">topology model</text>
+    <rect x="608" y="446" width="195" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="705" y="466" text-anchor="middle">elastic leases</text>
+    <rect x="817" y="446" width="195" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="914" y="466" text-anchor="middle">autonomy loops</text>
 
-    <rect x="190" y="484" width="195" height="30" rx="15" fill="#312E81" stroke="#818CF8" stroke-width="1.1"/><text x="287" y="504" text-anchor="middle">multi-tenancy, RBAC</text>
-    <rect x="399" y="484" width="195" height="30" rx="15" fill="#312E81" stroke="#818CF8" stroke-width="1.1"/><text x="496" y="504" text-anchor="middle">audit</text>
-    <rect x="608" y="484" width="195" height="30" rx="15" fill="#312E81" stroke="#818CF8" stroke-width="1.1"/><text x="705" y="504" text-anchor="middle">observability</text>
-    <rect x="817" y="484" width="195" height="30" rx="15" fill="#312E81" stroke="#818CF8" stroke-width="1.1"/><text x="914" y="504" text-anchor="middle">capacity planning</text>
+    <rect x="190" y="484" width="195" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="287" y="504" text-anchor="middle">multi-tenancy, RBAC</text>
+    <rect x="399" y="484" width="195" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="496" y="504" text-anchor="middle">audit</text>
+    <rect x="608" y="484" width="195" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="705" y="504" text-anchor="middle">observability</text>
+    <rect x="817" y="484" width="195" height="30" rx="15" fill="var(--ctl-soft)" stroke="var(--ctl)" stroke-width="1.1"/><text x="914" y="504" text-anchor="middle">capacity planning</text>
   </g>
 </g>
-<path d="M600 538 V560" stroke="#64748B" stroke-width="1.6" stroke-dasharray="7 7" marker-end="url(#qA)"><animate attributeName="stroke-dashoffset" values="28;0" dur="1.4s" repeatCount="indefinite"/></path>
+<path d="M600 538 V560" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="7 7" marker-end="url(#qA)"><animate attributeName="stroke-dashoffset" values="28;0" dur="1.4s" repeatCount="indefinite"/></path>
 
 <!-- fast tier -->
-<g class="f" filter="url(#qS)"><rect x="170" y="564" width="860" height="76" rx="14" fill="url(#qFast)" stroke="#10B981" stroke-width="2"/></g>
-<rect x="170" y="564" width="860" height="76" rx="14" fill="none" stroke="#6EE7B7" stroke-width="3" opacity="0" filter="url(#qG)">
+<g class="f" filter="url(#qS)"><rect x="170" y="564" width="860" height="76" rx="14" fill="url(#qFast)" stroke="var(--own)" stroke-width="2"/></g>
+<rect x="170" y="564" width="860" height="76" rx="14" fill="none" stroke="var(--own-ink)" stroke-width="3" opacity="0" filter="url(#qG)">
   <animate attributeName="opacity" values="0;0;0.95;0;0" keyTimes="0;0.40;0.46;0.52;1" dur="7s" repeatCount="indefinite"/></rect>
 <g class="f">
-  <text x="190" y="588" class="band" fill="#6EE7B7">FAST TIER &#183; the one layer Forebay owns outright</text>
-  <g class="pill" fill="#D1FAE5">
-    <rect x="190" y="600" width="195" height="28" rx="14" fill="#065F46" stroke="#34D399" stroke-width="1.1"/><text x="287" y="619" text-anchor="middle">borrowed NVMe</text>
-    <rect x="399" y="600" width="195" height="28" rx="14" fill="#065F46" stroke="#34D399" stroke-width="1.1"/><text x="496" y="619" text-anchor="middle">rack-local fabric</text>
-    <rect x="608" y="600" width="195" height="28" rx="14" fill="#065F46" stroke="#34D399" stroke-width="1.1"/><text x="705" y="619" text-anchor="middle">prefetch</text>
-    <rect x="817" y="600" width="195" height="28" rx="14" fill="#065F46" stroke="#34D399" stroke-width="1.1"/><text x="914" y="619" text-anchor="middle">checkpoint staging</text>
+  <text x="190" y="588" class="band" fill="var(--own-ink)">FAST TIER &#183; the one layer Forebay owns outright</text>
+  <g class="pill" fill="var(--own-ink)">
+    <rect x="190" y="600" width="195" height="28" rx="14" fill="var(--own-soft)" stroke="var(--own)" stroke-width="1.1"/><text x="287" y="619" text-anchor="middle">borrowed NVMe</text>
+    <rect x="399" y="600" width="195" height="28" rx="14" fill="var(--own-soft)" stroke="var(--own)" stroke-width="1.1"/><text x="496" y="619" text-anchor="middle">rack-local fabric</text>
+    <rect x="608" y="600" width="195" height="28" rx="14" fill="var(--own-soft)" stroke="var(--own)" stroke-width="1.1"/><text x="705" y="619" text-anchor="middle">prefetch</text>
+    <rect x="817" y="600" width="195" height="28" rx="14" fill="var(--own-soft)" stroke="var(--own)" stroke-width="1.1"/><text x="914" y="619" text-anchor="middle">checkpoint staging</text>
   </g>
 </g>
-<path d="M600 644 V666" stroke="#64748B" stroke-width="1.6" stroke-dasharray="7 7" marker-end="url(#qA)"><animate attributeName="stroke-dashoffset" values="28;0" dur="1.4s" repeatCount="indefinite"/></path>
+<path d="M600 644 V666" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="7 7" marker-end="url(#qA)"><animate attributeName="stroke-dashoffset" values="28;0" dur="1.4s" repeatCount="indefinite"/></path>
 
 <!-- backends -->
-<g class="f" filter="url(#qS)"><rect x="170" y="670" width="860" height="62" rx="14" fill="url(#qSt)" stroke="#64748B" stroke-width="1.4"/></g>
-<rect x="170" y="670" width="860" height="62" rx="14" fill="none" stroke="#CBD5E1" stroke-width="2.6" opacity="0" filter="url(#qG)">
+<g class="f" filter="url(#qS)"><rect x="170" y="670" width="860" height="62" rx="14" fill="url(#qSt)" stroke="var(--muted)" stroke-width="1.4"/></g>
+<rect x="170" y="670" width="860" height="62" rx="14" fill="none" stroke="var(--edge)" stroke-width="2.6" opacity="0" filter="url(#qG)">
   <animate attributeName="opacity" values="0;0;0.65;0;0" keyTimes="0;0.52;0.58;0.64;1" dur="7s" repeatCount="indefinite"/></rect>
 <g class="f">
-  <text x="190" y="692" class="band" fill="#CBD5E1">DURABLE BACKENDS &#183; pluggable, capability negotiated</text>
-  <g class="pill" fill="#E2E8F0">
-    <rect x="190" y="700" width="140" height="26" rx="13" fill="#243040" stroke="#5B6E88" stroke-width="1.1"/><text x="260" y="718" text-anchor="middle">Ceph</text>
-    <rect x="344" y="700" width="140" height="26" rx="13" fill="#243040" stroke="#5B6E88" stroke-width="1.1"/><text x="414" y="718" text-anchor="middle">OpenEBS</text>
-    <rect x="498" y="700" width="140" height="26" rx="13" fill="#243040" stroke="#5B6E88" stroke-width="1.1"/><text x="568" y="718" text-anchor="middle">S3</text>
-    <rect x="652" y="700" width="180" height="26" rx="13" fill="#243040" stroke="#5B6E88" stroke-width="1.1"/><text x="742" y="718" text-anchor="middle">your existing array</text>
-    <rect x="846" y="700" width="166" height="26" rx="13" fill="#243040" stroke="#5B6E88" stroke-width="1.1"/><text x="929" y="718" text-anchor="middle">donated node NVMe</text>
+  <text x="190" y="692" class="band" fill="var(--muted)">DURABLE BACKENDS &#183; pluggable, capability negotiated</text>
+  <g class="pill" fill="var(--ink)">
+    <rect x="190" y="700" width="140" height="26" rx="13" fill="var(--card)" stroke="var(--edge)" stroke-width="1.1"/><text x="260" y="718" text-anchor="middle">Ceph</text>
+    <rect x="344" y="700" width="140" height="26" rx="13" fill="var(--card)" stroke="var(--edge)" stroke-width="1.1"/><text x="414" y="718" text-anchor="middle">OpenEBS</text>
+    <rect x="498" y="700" width="140" height="26" rx="13" fill="var(--card)" stroke="var(--edge)" stroke-width="1.1"/><text x="568" y="718" text-anchor="middle">S3</text>
+    <rect x="652" y="700" width="180" height="26" rx="13" fill="var(--card)" stroke="var(--edge)" stroke-width="1.1"/><text x="742" y="718" text-anchor="middle">your existing array</text>
+    <rect x="846" y="700" width="166" height="26" rx="13" fill="var(--card)" stroke="var(--edge)" stroke-width="1.1"/><text x="929" y="718" text-anchor="middle">donated node NVMe</text>
   </g>
 </g>
 
-<text x="40" y="752" class="f foot">Design phase. Every layer above is planned or specified. None of it is shipped yet.</text>
+<text x="40" y="752" class="f foot">The node agent runs and lends real capacity. Nothing above it serves data yet.</text>
 <text x="1160" y="752" class="f foot" text-anchor="end">github.com/mayur-tolexo/forebay</text>
 </svg>
