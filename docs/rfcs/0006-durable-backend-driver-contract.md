@@ -30,7 +30,8 @@ is not built.
 | A driver may not emulate what it lacks | Built as a mechanism rather than a rule. An undeclared capability is refused before the driver is reached, so an implementation that exists cannot be called |
 | Refusals distinguishable from failures | Built, `ErrNotSupported` |
 | The conformance suite | Built, `driver/conformance`, and importable so a third party can demonstrate a driver without us reviewing it. It returns findings rather than only failing a test, so it can be run against a real backend outside `go test`, repeatedly, and it removes what it created wherever the backend allows |
-| Ceph and S3 drivers | **Not built.** Both need a real backend to develop against, which is [RFC-0018](0018-benchmark-and-falsification-suite.md)'s open question about what the suite runs against |
+| S3 driver | Built, `driver/s3driver`, signing its own requests so the contract gains no dependency. It declares read-range, object-size, write-object and delete-object, and declines snapshot and clone rather than emulating them with a copy. It passes the conformance suite against a real S3-compatible store |
+| Ceph driver | **Not built.** It needs a Ceph cluster to develop against, which is [RFC-0018](0018-benchmark-and-falsification-suite.md)'s open question about what the suite runs against |
 | Anything calling a driver | **Not built.** The fast tier is the caller, and it is [RFC-0007](0007-fast-tier-data-path.md) |
 
 `driver/filedriver` serves objects from a directory. It exists so the contract has something real to
@@ -270,7 +271,8 @@ acceptable, and RFC-0016 owns whether it is.
   credentials to a durable store. Owned by [RFC-0016](0016-multi-tenancy-qos-and-security.md).
 - **How a capability disappearing under a dataset that relies on it is noticed.** Owned by
   [RFC-0017](0017-observability.md).
-- **What the conformance suite runs against**, since testing a driver needs a real backend and a
-  contributor may not have one. Owned by
+- **What the conformance suite runs against.** Answered for this project: the suite runs unchanged
+  against an S3-compatible store, which is how the driver above was proved. Unanswered for a
+  contributor writing a driver for a store they cannot reach. Owned by
   [RFC-0018](0018-benchmark-and-falsification-suite.md), which owns what the project can test and
   where.

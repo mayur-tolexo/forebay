@@ -27,11 +27,11 @@ the whole picture as description.
 | The node agent's authority over its own capacity | Built, a grant it cannot honour is refused |
 | Lease classes, the reclaim ladder and the journal | Built, `internal/lease` |
 | The agent's startup: lock, replay, reconcile, then accept | Built, `internal/agent` |
-| The fast tier, and anything that serves data | **Not built.** Owned by [RFC-0007](0007-fast-tier-data-path.md) |
-| The access layer | **Not built.** Owned by [RFC-0008](0008-access-layer-pnfs.md) |
-| Backend drivers and capability negotiation | **Not built.** Owned by [RFC-0006](0006-durable-backend-driver-contract.md) |
+| The fast tier, and anything that serves data | Built, `internal/fasttier` and `internal/dataserver`, and joined to the agent in one process so a read reaches the tier and misses to the backend. Owned by [RFC-0007](0007-fast-tier-data-path.md) |
+| The access layer | **A spike, not the layer.** An FSAL over NFS-Ganesha lets a stock NFS client read bytes that came through Forebay, and advertises the flexible file layout, but nothing serves a layout or revokes one. Owned by [RFC-0008](0008-access-layer-pnfs.md) |
+| Backend drivers and capability negotiation | Built, `driver`, with a file and an S3 driver and a conformance suite. An undeclared capability is refused before the driver is reached. Owned by [RFC-0006](0006-durable-backend-driver-contract.md) |
 | Both autonomy loops | **Not built.** Owned by [RFC-0010](0010-autonomy-engine.md) |
-| Kubernetes integration, and any control plane at all | **Not built.** Owned by [RFC-0014](0014-kubernetes-integration.md) |
+| Kubernetes integration, and any control plane at all | **Not built**, beyond the agent reading pods from its node's own kubelet to see pressure before it lands. Nothing reconciles a CRD and there is no control plane. Owned by [RFC-0014](0014-kubernetes-integration.md) |
 | The copy doctrine and single-copy multi-protocol access | **Not built.** Owned by [RFC-0020](0020-no-copy-policy.md) and [RFC-0021](0021-single-copy-multi-protocol.md) |
 
 ## Assumptions

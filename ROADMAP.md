@@ -145,7 +145,10 @@ assumptions carry an honest basis and its open questions are answered or deferre
 | Topology model | [0003](docs/rfcs/0003-topology-model.md) | **Accepted** |
 | Node agent | [0004](docs/rfcs/0004-node-agent.md) | **Accepted** |
 | Capacity pools and elastic leases | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) | **Accepted** |
-| Drivers, fast tier, access layer | 0006, 0007, 0008 | Not started |
+| Durable backend driver contract | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) | **Accepted** |
+| Fast tier data path | [0007](docs/rfcs/0007-fast-tier-data-path.md) | **Accepted** |
+| Access layer, pNFS | [0008](docs/rfcs/0008-access-layer-pnfs.md) | **Accepted** |
+| Benchmark and falsification suite | [0018](docs/rfcs/0018-benchmark-and-falsification-suite.md) | **Accepted** |
 
 **Done when** the MVP RFCs are accepted and someone who has never spoken to us can read them and say
 where they are wrong.
