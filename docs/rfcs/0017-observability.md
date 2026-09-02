@@ -25,6 +25,8 @@ This RFC also gates RFC-0010, because autonomy without measurement is guessing w
 - How a request is traced across control plane, node agent and backend
 - How a backend capability disappearing under a dataset that relies on it is noticed, since a
   declaration is a snapshot of a backend that can be reconfigured
+- How an operator sees that a watch has stopped delivering, since a watch that has silently died and
+  a cluster where nothing is happening produce the same absence of events
 - Whether the topology model is re-read periodically or only on events, and how a node reports that
   its own discovered facts got poorer after a kernel or driver change, since placement would
   otherwise degrade silently

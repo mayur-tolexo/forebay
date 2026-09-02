@@ -29,6 +29,9 @@ bug.
 - Where QoS is enforced, and whether a guarantee can be made without a global admission decision
 - Encryption at rest on borrowed and donated capacity, and in flight between agents
 - Identity for nodes, agents and tenants, and what a compromised node agent can reach
+- Whether a node-restricted credential is enough for the Kubernetes adapter, which needs only the
+  pods bound to its own node, or whether the CSI driver's own permissions widen it back to a
+  cluster-wide view a compromised node should not have
 - What authenticates a tenant on the access path, and whether AUTH_SYS with separate export
   namespaces and network policy is acceptable in a multi-tenant deployment or `RPCSEC_GSS` is
   required, given AUTH_SYS asserts a uid the client chooses
