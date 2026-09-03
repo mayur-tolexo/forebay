@@ -39,7 +39,7 @@ behaviour nobody wrote.
 | Surviving an unreadable journal by starting empty | Built |
 | Device and topology discovery | Built, `internal/topology`, and the agent discovers its own capacity |
 | The pressure watch, and the headroom target it maintains | Built with one of the three inputs. Free space is polled and the shortfall reclaimed; the two that would give warning before a workload writes need Kubernetes and are owned by [RFC-0014](0014-kubernetes-integration.md), so the watch is reactive rather than anticipatory |
-| The headroom target's value | **Not built, deliberately.** It has no defensible default, so a watch without one is refused rather than guessed. Owned by [RFC-0018](0018-benchmark-and-falsification-suite.md) |
+| The headroom target's value | **Not built.** It is measured now, and the measurement says the value is not a number: a duration times an observed rate. The watch still takes a byte count and still refuses to run without one, so what is left is the conversion described above. Measured by [RFC-0018](0018-benchmark-and-falsification-suite.md) |
 | Timing reclamation against the deadline | Built for the part that exists. A reclaim is timed and one that overruns is an error, but the span covers choosing leases and unlinking extents, not invalidating readers, which is where RFC-0005 expects the time to go |
 | The liveness that breaks a wedged lock | Built. The agent publishes a heartbeat and `--liveness` judges it from outside, since a wedged process cannot answer for itself. The pressure watch keeps it fresh, so `--watch` is what makes the probe mean anything; without it the binary still starts, reports and exits |
 | Readiness computed from latency | **Not built.** It needs a serving path to have a latency |
@@ -233,7 +233,42 @@ node did not need to lose.
 
 The headroom target is the floor the agent keeps free on top of what is already committed. Sizing it
 is a trade: too small and a burst of writes beats the reclaim, too large and the node lends less than
-it could. It has no defensible default yet.
+it could.
+
+**It is configured as a duration, not a size.** What the floor has to cover is whatever the workload
+can write while the watch is not looking, and [RFC-0018](0018-benchmark-and-falsification-suite.md)
+measured that: the deficit a workload opens before the watch closes it tracks the write rate times
+the poll interval, within a factor of one in nine runs of ten. A size cannot express that, because
+the rate is a property of the moment rather than of the node. One drive measured between 92 and
+5792 MiB/s depending only on whether its write cache was spent, both figures being what four writers
+achieved together, so a floor set while it was fast is sixty times too small once it is not, on the
+same hardware, in the same hour.
+
+So an operator says how long the node may be behind, and the agent turns that into bytes:
+
+| | |
+| --- | --- |
+| Configured | `--headroom-for`, a duration |
+| Kept free | the observed write rate times that duration |
+| Rate from | what the workload took between two polls, which is the fall in free space plus whatever the agent gave back in between |
+| Floor | a configured minimum, since a node that is currently writing nothing would otherwise keep nothing free |
+
+The rate needs no new input. The watch polls free space every interval already, and a target that
+adapts to it is arithmetic on a series the agent has rather than a loop that has to be built.
+
+**The fall in free space is not the rate.** Free space also rises when the agent reclaims, so between
+two polls it moves by what the workload took less what the agent gave back. Reading the fall as the
+rate would understate it by exactly the amount reclaimed, which is largest during the pressure the
+floor exists for: the estimate would be lowest when it needs to be highest, and each reclaim would
+argue for a smaller floor than the one that had just proved necessary. The agent knows what it
+returned, because it returned it, so the rate is the fall corrected by its own effect on the
+filesystem. The same correction covers a grant, which takes free space without a workload writing a
+byte.
+
+Two floors, for different reasons. The target must not fall to nothing when the node goes quiet,
+because the next burst arrives before the next poll does, which is what the configured minimum is
+for. And the first poll of a run has no previous sample to difference, so it has no rate: the
+minimum stands until a second poll gives one.
 
 ### What survives the control plane going away
 
@@ -353,10 +388,15 @@ against the workload it hosts and RFC-0016 should say so plainly.
   affinity, NUMA topology and block devices successfully, because a container is given `/sys` from
   the host already. If that holds on the target kernels, the privilege surface in this document is
   larger than it needs to be. Owned by [RFC-0003](0003-topology-model.md), which owns discovery.
-- **The headroom target**, which is the central tuning value of the pressure design and currently has
-  no defensible default, and whether it should adapt to observed write rates rather than be
-  configured. The value is owned by [RFC-0018](0018-benchmark-and-falsification-suite.md) and whether
-  it adapts is owned by [RFC-0010](0010-autonomy-engine.md).
+- **The headroom target** is answered on both halves it had. Its value was measured by
+  [RFC-0018](0018-benchmark-and-falsification-suite.md), and the measurement decided the second
+  question rather than leaving it open: it adapts, because a constant is wrong by the ratio of a
+  drive's fastest state to its slowest. It does not belong to
+  [RFC-0010](0010-autonomy-engine.md), as this document previously said. Differencing a series the
+  watch already polls is not an autonomy loop, and putting it there would make a floor the node needs
+  every second depend on a component that does not exist. What remains open is the margin: nine runs
+  in ten sat at or under the rate times the interval and the tenth reached six times it, so the
+  multiplier over that product is a judgement this document has not yet made.
 - **Whether `hostNetwork` is worth its cost**, which is a measurement rather than an opinion. Owned
   by [RFC-0018](0018-benchmark-and-falsification-suite.md).
 - **Whether the pressure watch can be driven from the kubelet directly** rather than from the API

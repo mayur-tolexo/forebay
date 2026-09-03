@@ -26,8 +26,10 @@ where a mistake costs real traffic and needs a guard.
 - The safety envelope on the slow loop, including rate limits, quorum and human approval
 - How oscillation is prevented when two loops or two control planes react to the same signal
 - Whether the node agent's tuned values should adapt rather than be configured, specifically its
-  headroom target, its post-reclaim cooldown and its churn budget, all of which currently ship as
-  conservative guesses
+  post-reclaim cooldown and its churn budget, both of which currently ship as conservative guesses.
+  Its headroom target has left this list: measurement showed a constant to be the wrong shape rather
+  than the wrong number, and the rate it adapts to is a difference between two polls the agent
+  already takes, so it belongs to [RFC-0004](0004-node-agent.md) and needs nothing from here
 - How a decision is explained after the fact, since an operator who cannot see why will turn it off
 - What the kill switch is, and what the system does with it engaged
 
