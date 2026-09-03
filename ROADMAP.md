@@ -278,9 +278,32 @@ matched the object. Deleting the object from the store and reading it again retu
 checksum, which is the fast tier answering rather than the backend, while a read of a range it had
 never held went to the store and failed as it should.
 
-What is left is most of it. One of the watch's three inputs is still missing, the CSI one. No Ceph driver exists, there is
-no peer fetch, no control plane interface, and the headroom target the watch needs has no measured
-value.
+The suite that is meant to kill this exists, and has not. `internal/bench` and `cmd/forebay-bench`
+run the crossover experiment from [0018](docs/rfcs/0018-benchmark-and-falsification-suite.md): one
+plan against every arm, checksummed so arms that disagree about the bytes cannot be compared on
+speed, and the conditions printed before the number. Reading a 256 MiB object with the tier's extent
+evicted from the page cache, so the bytes come off the device, the tier serves 341 MiB/s at one
+reader against the backend's 72, and 2003 against 110 at sixteen. There is no crossover inside the
+sweep. Left in the page cache the same tier reads 465 and 4419, so caching was worth up to two and a
+half times and is not where the result comes from.
+
+Reclamation does not harm the job that owns the node, which is the other criterion that could have
+ended it. Taking back 16 GiB across 32 leases leaves a writer's rate and its worst single write where
+they were, in every state the device has, read against a control arm that lends the same capacity and
+never takes it back. What that did change is a number this document used to rest on: a reclaim is
+3.7 ms on an idle device and 142 to 773 ms on one held at its sustained write rate, which is two
+orders of magnitude nearer the deadline than the earlier figure implied.
+
+The headroom target has been measured, and it is not a number. What a node has to keep free is what
+its workload writes while the watch is not looking, which is a rate times a poll interval, and the
+same drive gives rates sixty times apart depending on whether its cache is spent. So it is configured
+as a duration and converted each pass against the rate the agent observes, corrected for what the
+agent itself gave back: without that correction a reclaim would read as the workload slowing down and
+the floor would shrink in the pass that had just proved it too small.
+
+What is left is most of it. One of the watch's three inputs is still missing, the CSI one. No Ceph
+driver exists, there is no peer fetch and no control plane interface, and nothing an unmodified job
+can mount: the access layer is a spike that proves a client can read Forebay's bytes, not the layer.
 
 **Done when** a GPU job runs on a node whose spare NVMe is serving the fabric, capacity is reclaimed
 mid-job without the job noticing, and the benchmark reports a number either way.
@@ -288,6 +311,11 @@ mid-job without the job noticing, and the benchmark reports a number either way.
 **We stop here if** reclaiming borrowed capacity measurably harms the owning job and no design fixes
 it, or the fast tier cannot beat the durable backend's own parallel fan-out on target hardware. The
 second is the serious one, and it is the counterexample described in the README.
+
+Both have now been put to one node, and neither fired. That is one node, one backend and one day: it
+is enough to have stopped the project and not enough to declare it right, which is the asymmetry a
+kill criterion has. The store's own first-touch reads varied between 34 and 110 MiB/s across runs, so
+what the tier beat is a number with a spread on it.
 
 ### Phase 2, intent and autonomy
 
