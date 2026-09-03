@@ -1,6 +1,12 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/mayur-tolexo/forebay/internal/workload"
+)
 
 // TestCheckFlags covers the configurations that would measure something other
 // than what the experiment claims: an unloaded device, a block direct IO
@@ -24,6 +30,28 @@ func TestCheckFlags(t *testing.T) {
 	} {
 		if c.err == nil {
 			t.Errorf("%s was accepted", c.name)
+		}
+	}
+}
+
+// TestPhasesSumAcrossWriters covers the table the experiment is read from. One
+// writer's median says nothing about whether the device was busy, and the
+// window has to appear beside the rate: a during column drawn from two
+// intervals is a different kind of number from a before column drawn from four
+// hundred.
+func TestPhasesSumAcrossWriters(t *testing.T) {
+	s := []workload.Sample{
+		{Bytes: 100 << 20, Elapsed: time.Second, Slowest: 3 * time.Millisecond},
+		{Bytes: 100 << 20, Elapsed: time.Second, Slowest: 9 * time.Millisecond},
+	}
+	var out strings.Builder
+	phases(&out, 4, []phase{{"before", s, 2 * time.Second}, {"during", nil, 4 * time.Millisecond}})
+	got := out.String()
+
+	// 100 MiB/s each across four writers is 400.
+	for _, want := range []string{"before", "400.0", "9ms", "2s", "during", "4ms"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the table does not carry %q:\n%s", want, got)
 		}
 	}
 }

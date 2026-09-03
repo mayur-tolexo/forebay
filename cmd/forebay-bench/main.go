@@ -229,10 +229,19 @@ func runRepeats(ctx context.Context, arm string, plan bench.Plan, repeat int, op
 
 // report prints one row.
 func report(r bench.Result, err error) error {
+	return reportTo(os.Stdout, r, err)
+}
+
+// reportTo prints one arm's result, checksum included.
+//
+// The checksum is on every row rather than checked once and dropped, because
+// two arms are compared on speed and a difference in what they read would
+// otherwise be invisible in a table of rates.
+func reportTo(w io.Writer, r bench.Result, err error) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%-34s %8d %10.1f %12s %18x\n",
+	fmt.Fprintf(w, "%-34s %8d %10.1f %12s %18x\n",
 		r.Arm, r.Workers, r.Rate(), r.Elapsed.Round(time.Millisecond), r.Checksum)
 	return nil
 }
