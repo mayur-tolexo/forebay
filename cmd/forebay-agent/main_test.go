@@ -1005,3 +1005,32 @@ func TestNotServingReportsNothingAboutTheCache(t *testing.T) {
 		t.Errorf("an agent that is not serving said %q", got)
 	}
 }
+
+// TestDescribeHeadroomSaysWhichFloor covers the startup line, since a duration
+// and a size are the same field to an operator reading one line and the two
+// behave differently under load.
+func TestDescribeHeadroomSaysWhichFloor(t *testing.T) {
+	got := describeHeadroom(agent.WatchConfig{Headroom: 4 << 20})
+	if !strings.Contains(got, "4.00MiB") {
+		t.Errorf("a fixed floor reads %q", got)
+	}
+	got = describeHeadroom(agent.WatchConfig{HeadroomFor: 5 * time.Second, MinHeadroom: 1 << 20})
+	if !strings.Contains(got, "5s") || !strings.Contains(got, "1.00MiB") {
+		t.Errorf("a duration floor reads %q, want the duration and the minimum", got)
+	}
+}
+
+// TestMovingTargetOnlyExplainsAMovingFloor keeps the reclaim line quiet when
+// the floor is a size the operator configured and already knows.
+func TestMovingTargetOnlyExplainsAMovingFloor(t *testing.T) {
+	tick := agent.Tick{Target: 8 << 20, Rate: 4 << 20}
+	if got := movingTarget(agent.WatchConfig{Headroom: 8 << 20}, tick); got != "" {
+		t.Errorf("a fixed floor explained itself: %q", got)
+	}
+	got := movingTarget(agent.WatchConfig{HeadroomFor: 2 * time.Second, MinHeadroom: 1}, tick)
+	for _, want := range []string{"8.00MiB", "2s", "4.00MiB/s"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the reclaim line does not say %q: %q", want, got)
+		}
+	}
+}

@@ -51,7 +51,9 @@ func run() error {
 		liveness    = flag.Bool("liveness", false, "check whether the agent owning the pool is still making progress, and exit non-zero if not")
 		staleAfter  = flag.Duration("stale-after", 60*time.Second, "how long without progress means the agent is wedged")
 		watch       = flag.Bool("watch", false, "stay running, keeping free space above the headroom target")
-		headroom    = flag.Int64("headroom-bytes", 0, "free space the agent keeps on top of what is committed, required by --watch")
+		headroom    = flag.Int64("headroom-bytes", 0, "free space the agent keeps on top of what is committed, as a fixed size")
+		headroomFor = flag.Duration("headroom-for", 0, "how long the node may be behind, which the agent turns into bytes against the rate the workload is writing at. The measured form: a size set while a drive is fast is wrong once its cache is spent")
+		minHeadroom = flag.Int64("headroom-min-bytes", 0, "the floor under the floor, required with --headroom-for, since a node writing nothing would otherwise keep nothing free")
 		interval    = flag.Duration("watch-interval", 10*time.Second, "how often free space is polled")
 		kubeletHost = flag.String("kubelet-host", "", "this node's address, to read pods bound to it. Without one the watch is reactive")
 		kubeletPort = flag.Int("kubelet-port", 10250, "the kubelet's port")
@@ -251,7 +253,13 @@ func run() error {
 		BorrowedDir: cfg.BorrowedDir,
 		Pools:       borrowedFS,
 	})
-	return watchPressure(a, cfg, borrowedFS, *sysroot, *mountinfo, pool.Bytes(*headroom), *interval, reads, sources...)
+	watchCfg := agent.WatchConfig{
+		Headroom:    pool.Bytes(*headroom),
+		HeadroomFor: *headroomFor,
+		MinHeadroom: pool.Bytes(*minHeadroom),
+		Interval:    *interval,
+	}
+	return watchPressure(a, cfg, borrowedFS, *sysroot, *mountinfo, watchCfg, reads, sources...)
 }
 
 // kubeletOptions is what the pod input needs to reach the kubelet and to prove
@@ -442,7 +450,7 @@ func podSource(ctx context.Context, opts kubeletOptions) (agent.Source, error) {
 //
 // Free space is re-measured each pass rather than derived from the accounting,
 // because the point is to catch writes by workloads that told nobody.
-func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sysroot, mountinfo string, headroom pool.Bytes, interval time.Duration, sv *serving, sources ...agent.Source) error {
+func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sysroot, mountinfo string, watchCfg agent.WatchConfig, sv *serving, sources ...agent.Source) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -459,7 +467,7 @@ func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sy
 	if device == "" {
 		device = "an unidentified device"
 	}
-	fmt.Printf("watching %s, keeping %s free, polling every %s\n", device, headroom, interval)
+	fmt.Printf("watching %s, keeping %s free, polling every %s\n", device, describeHeadroom(watchCfg), watchCfg.Interval)
 	if len(sources) == 0 {
 		fmt.Fprintln(os.Stderr, "only free space is polled, so pressure is noticed once the space has gone: pass --kubelet-host to watch pods too")
 	} else {
@@ -492,11 +500,15 @@ func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sy
 			fmt.Printf("%s wanted %s back, reclaimed %s%s, still %s short: the node is now where it would be with no lending at all\n",
 				t.Observed.Source, t.Observed.Need, t.Reclaimed, cacheGivenUp(sv, &lastDropped), t.Shortfall)
 		case t.Reclaimed > 0:
-			fmt.Printf("%s wanted %s back, reclaimed %s%s\n",
-				t.Observed.Source, t.Observed.Need, t.Reclaimed, cacheGivenUp(sv, &lastDropped))
+			// The target is printed with it when it moves, since the same free
+			// space is enough one pass and short the next, and a reclaim
+			// nobody can account for is one an operator turns off.
+			fmt.Printf("%s wanted %s back, reclaimed %s%s%s\n",
+				t.Observed.Source, t.Observed.Need, t.Reclaimed, cacheGivenUp(sv, &lastDropped),
+				movingTarget(watchCfg, t))
 		}
 	}
-	if err := a.Watch(ctx, agent.WatchConfig{Headroom: headroom, Interval: interval}, free, report, sources...); err != nil {
+	if err := a.Watch(ctx, watchCfg, free, report, sources...); err != nil {
 		return err
 	}
 	fmt.Println("forebay-agent: stopped, lock released")
@@ -573,4 +585,23 @@ func reportTopology(n topology.Node) {
 		}
 		fmt.Printf("  disk %-12s %10s%s\n", d.Name, pool.Bytes(d.SizeBytes.Or(0)), note)
 	}
+}
+
+// describeHeadroom says which floor is being kept, since a duration and a size
+// are the same field to an operator reading one line of output.
+func describeHeadroom(cfg agent.WatchConfig) string {
+	if cfg.HeadroomFor > 0 {
+		return fmt.Sprintf("%s of writing, at least %s", cfg.HeadroomFor, cfg.MinHeadroom)
+	}
+	return cfg.Headroom.String()
+}
+
+// movingTarget names the floor and the rate behind it, and says nothing when
+// the floor is a fixed size that the operator already knows.
+func movingTarget(cfg agent.WatchConfig, t agent.Tick) string {
+	if cfg.HeadroomFor <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(", keeping %s for %s of writing at %s/s",
+		t.Target, cfg.HeadroomFor, pool.Bytes(t.Rate))
 }

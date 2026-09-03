@@ -58,6 +58,10 @@ type Agent struct {
 	leases *lease.Manager
 	// releasingFn is told which leases are about to lose their extents.
 	releasingFn func(leaseIDs []string)
+	// rate remembers the previous pass, so a floor configured as a duration
+	// can be turned into bytes. Only the watch touches it, and a watch is one
+	// loop.
+	rate rateEstimator
 }
 
 // Reconciliation reports what startup had to correct.
