@@ -213,13 +213,18 @@ Reclaiming through the agent, rather than by unlinking from a shell, was timed o
 | --- | --- | --- |
 | 7 GiB across three elastic leases, idle device | 2.759 ms | 0.0092% |
 | The same, under four concurrent `O_DIRECT` writers | 7.415 ms | 0.0247% |
+| 16 GiB across thirty two leases, device at its sustained write rate | 142 to 773 ms | 0.47% to 2.6% |
 
-Load does make a difference at this level, about two and a half times, which the earlier shell
-measurement was too coarse to see. It does not change the conclusion and it does correct the
-wording: the effect is measurable and negligible, rather than absent.
+The first two were taken while the device still had headroom, and they are not the case that
+matters. A drive that accepts 6.5 GiB/s falls to 535 MiB/s once its cache is spent, which is the
+state a node checkpointing for real is in, and reclaiming in that state costs two orders of
+magnitude more. It is still comfortably inside a thirty second deadline, and it is no longer four
+orders of magnitude inside it.
 
-Four orders of magnitude inside a thirty second deadline. The reclaim deadline is therefore not set by the filesystem, which means it is
-set by the access layer, and that is where the remaining risk lives.
+What the number tracks is the device's state rather than the number of writers. Idle it is
+milliseconds whether one writer or four are running; the collapse arrives with the drive's write
+cliff. So the deadline is not set by the filesystem while the filesystem is fresh, and a default
+chosen from an idle measurement would be chosen from the wrong regime.
 
 One caveat on that number: it measures how long the `unlink` call takes to return, not how quickly
 the freed capacity becomes observably available to a competing writer. Filesystems may free extents
