@@ -223,19 +223,28 @@ That bet has since been put to a GPU node, controlling for what the founding num
 a 256 MiB object in 1 MiB blocks, with the tier's extent evicted from the page cache so the bytes
 come off the device, and with the eviction counted rather than assumed:
 
-| readers | backend | tier, from the device |
-| --- | --- | --- |
-| 1 | 71.6 MiB/s | 340.5 |
-| 4 | 110.8 | 1277.7 |
-| 16 | 110.2 | 2002.8 |
+| readers | GPU node, backend | GPU node, tier | plain node, backend | plain node, tier |
+| --- | --- | --- | --- | --- |
+| 1 | 74 MiB/s | 377 | 190 | 386 |
+| 4 | 111 | 1715 | 663 | 431 |
+| 16 | 111 | 2767 | 1043 | 394 |
 
-No crossover inside the sweep. Left in the page cache the tier reads two and a half times higher
-again, which is why that column is not the one quoted.
+**The crossover is real and it runs between two nodes of the same cluster.** On the GPU node, whose
+local NVMe is fast and which reaches the store at nine per cent of its 10 GbE line rate, the tier
+wins by twenty five times. On a plain worker, whose local volume reads at 314 MB/s and which reaches
+the same store at eighty seven per cent of the same line rate, the backend wins from four readers up
+and the tier is worse than not being there. Both read the same object on the same day, and each
+node's second run reproduced its first within five per cent.
 
-**One node, one backend, one day.** That is enough to have killed the project and not enough to
-declare it right, and the store's own first-touch reads varied between 34 and 110 MiB/s across runs,
-so what the tier beat is a number with a spread on it. The fleet surveys that would say whether the
-idle capacity exists at all are unrun, and they need clusters this project does not own.
+So locality is not a property of the idea. It is a ratio between what a node's device gives and what
+that node can pull from the store, and both ends of it varied by an order of magnitude inside one
+cluster. Forebay is for the first kind of node and has to know it has one.
+
+The margin on the winning node is also inflated by that node's own weakness: part of what the tier
+beat there is a poor path to the store rather than a fast disk. What it would beat on a node with the
+plain worker's network and the GPU node's device is unmeasured, and is somewhere between two and a
+half times and twenty five. The fleet surveys that would say whether idle NVMe exists on such nodes
+at all are unrun, and they need clusters this project does not own.
 [RFC-0018](docs/rfcs/0018-benchmark-and-falsification-suite.md) holds the register, including the
 rows still open and the two answers it had to withdraw.
 

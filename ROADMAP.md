@@ -282,10 +282,15 @@ The suite that is meant to kill this exists, and has not. `internal/bench` and `
 run the crossover experiment from [0018](docs/rfcs/0018-benchmark-and-falsification-suite.md): one
 plan against every arm, checksummed so arms that disagree about the bytes cannot be compared on
 speed, and the conditions printed before the number. Reading a 256 MiB object with the tier's extent
-evicted from the page cache, so the bytes come off the device, the tier serves 341 MiB/s at one
-reader against the backend's 72, and 2003 against 110 at sixteen. There is no crossover inside the
-sweep. Left in the page cache the same tier reads 465 and 4419, so caching was worth up to two and a
-half times and is not where the result comes from.
+evicted from the page cache, so the bytes come off the device, the tier serves 377 MiB/s at one
+reader against the backend's 74, and 2767 against 111 at sixteen.
+
+Run again on a plain worker in the same cluster it says the opposite. That node's local volume reads
+at 314 MB/s and it reaches the same store at 1043 MiB/s, so the backend wins from four readers up and
+the tier is worse than not being there. The crossover exists and it runs between two nodes rather
+than inside one sweep: what decides it is the ratio between a node's device and what that node can
+pull from the store, and both varied by an order of magnitude inside one cluster. Forebay is for the
+first kind of node and has to know it has one.
 
 Reclamation does not harm the job that owns the node, which is the other criterion that could have
 ended it. Taking back 16 GiB across 32 leases leaves a writer's rate and its worst single write where
@@ -312,10 +317,16 @@ mid-job without the job noticing, and the benchmark reports a number either way.
 it, or the fast tier cannot beat the durable backend's own parallel fan-out on target hardware. The
 second is the serious one, and it is the counterexample described in the README.
 
-Both have now been put to one node, and neither fired. That is one node, one backend and one day: it
-is enough to have stopped the project and not enough to declare it right, which is the asymmetry a
-kill criterion has. The store's own first-touch reads varied between 34 and 110 MiB/s across runs, so
-what the tier beat is a number with a spread on it.
+Both have been put to two nodes. Reclamation harmed neither. The locality criterion did not fire on
+the GPU node and **did** fire on the plain worker, where a fanned-out backend beat local storage by
+two and a half times, which is the counterexample this document said would stop the work. It stops it
+for that node rather than for the project, since Forebay targets the other kind, and the distinction
+is only defensible while a node's kind can be established rather than assumed.
+
+The margin on the node where it won is inflated by that node reaching nine per cent of its line rate
+to the store where the other reached eighty seven. Part of what the tier beat there is a network
+path. What it beats on a node with a good path and a fast device is unmeasured and is the number this
+turns on.
 
 ### Phase 2, intent and autonomy
 
