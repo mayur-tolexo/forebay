@@ -37,14 +37,101 @@ func Shortfall(observed ...Pressure) Pressure {
 
 // WatchConfig tunes the pressure loop.
 type WatchConfig struct {
-	// Headroom is the floor kept free on top of what is already committed.
-	// Sizing it trades a burst of writes beating the reclaim against lending
-	// less than the node could, and it has no defensible default, so there is
-	// none: a watch without one is refused rather than guessed.
+	// Headroom is a fixed floor kept free on top of what is already committed.
+	// It has no defensible default, so there is none: a watch with neither
+	// this nor HeadroomFor is refused rather than guessed.
 	Headroom pool.Bytes
+	// HeadroomFor is how long the node may be behind, and is the floor
+	// expressed the way it was measured. What has to be covered is what a
+	// workload writes between two polls, which is a rate rather than a size:
+	// the same drive was measured sixty times apart depending on whether its
+	// write cache was spent, so a byte count set in one state is wrong in the
+	// other.
+	HeadroomFor time.Duration
+	// MinHeadroom is the floor under the floor, required with HeadroomFor. A
+	// node writing nothing would otherwise keep nothing free, and the next
+	// burst arrives before the next poll does.
+	MinHeadroom pool.Bytes
 	// Interval is how often free space is polled. It trades reclaim latency
 	// against idle cost.
 	Interval time.Duration
+}
+
+// Validate rejects a watch that could not keep a floor.
+func (c WatchConfig) Validate() error {
+	switch {
+	case c.Headroom <= 0 && c.HeadroomFor <= 0:
+		return ErrNoHeadroom
+	case c.Headroom > 0 && c.HeadroomFor > 0:
+		return errors.New("agent: a fixed headroom and a duration are two floors, configure one")
+	case c.HeadroomFor > 0 && c.MinHeadroom <= 0:
+		return fmt.Errorf("agent: a headroom of %s needs a minimum, since a node writing nothing would keep nothing free", c.HeadroomFor)
+	case c.Interval <= 0:
+		return fmt.Errorf("agent: watch interval must be positive, got %s", c.Interval)
+	}
+	return nil
+}
+
+// rateEstimator turns successive observations into what a workload is
+// consuming, which is not the same as what free space did.
+//
+// Free space also rises when the agent reclaims and falls when it grants, so
+// between two polls it moves by what the workload took less what the agent
+// gave back. The agent's own effect is the change in what it has lent, so
+// subtracting that leaves the workload's.
+//
+// This assumes the filesystem shows a reclaim by the next poll. Where it does
+// not, the space the accounting has already given up has not arrived yet, and
+// the difference is attributed to the workload: the rate reads high and the
+// floor comes out too large, which is the safe direction of being wrong. When
+// freed capacity becomes observable, as against when unlink returns, is an
+// open row in RFC-0018 and is what would settle it.
+type rateEstimator struct {
+	free     pool.Bytes
+	borrowed pool.Bytes
+	at       time.Time
+	have     bool
+}
+
+// observe records a sample, returning bytes a second since the previous one
+// and whether there was one to compare against.
+//
+// Never negative: a workload that deleted more than it wrote is not consuming,
+// and a floor sized from a negative rate would be the minimum anyway.
+func (r *rateEstimator) observe(free, borrowed pool.Bytes, now time.Time) (float64, bool) {
+	prev, prevBorrowed, at, had := r.free, r.borrowed, r.at, r.have
+	r.free, r.borrowed, r.at, r.have = free, borrowed, now, true
+	if !had {
+		return 0, false
+	}
+	elapsed := now.Sub(at).Seconds()
+	if elapsed <= 0 {
+		return 0, false
+	}
+	took := float64(prev-free) + float64(prevBorrowed-borrowed)
+	if took < 0 {
+		took = 0
+	}
+	return took / elapsed, true
+}
+
+// target is the floor this pass has to keep, in bytes.
+//
+// A configured size is used as it stands. A duration is multiplied by what the
+// workload is consuming, and never falls below the minimum, which also covers
+// the first pass of a run: it has nothing to difference against and so has no
+// rate.
+func (c WatchConfig) target(rate float64, known bool) pool.Bytes {
+	if c.Headroom > 0 {
+		return c.Headroom
+	}
+	if !known {
+		return c.MinHeadroom
+	}
+	if want := pool.Bytes(rate * c.HeadroomFor.Seconds()); want > c.MinHeadroom {
+		return want
+	}
+	return c.MinHeadroom
 }
 
 // FreeSpace reports what is currently free on the pools' filesystem.
@@ -111,6 +198,13 @@ type Tick struct {
 	// Non-zero means the node is in the state it would have been in with no
 	// lending at all, and the operator has to be able to see that.
 	Shortfall pool.Bytes
+	// Target is the floor this pass kept, which moves when it is configured as
+	// a duration. Reported because a reclaim is otherwise unexplainable: the
+	// same free space is fine at one moment and short at the next.
+	Target pool.Bytes
+	// Rate is what the workload was observed to consume, in bytes a second,
+	// and is zero on the first pass, which has nothing to difference.
+	Rate float64
 }
 
 // Watch keeps free space above the headroom target until ctx is done, calling
@@ -124,11 +218,8 @@ type Tick struct {
 // unwatched exactly when it may be under pressure, and a failure that persists
 // stops the heartbeat, which is what liveness is for.
 func (a *Agent) Watch(ctx context.Context, cfg WatchConfig, free FreeSpace, report func(Tick, error), sources ...Source) error {
-	if cfg.Headroom <= 0 {
-		return ErrNoHeadroom
-	}
-	if cfg.Interval <= 0 {
-		return fmt.Errorf("agent: watch interval must be positive, got %s", cfg.Interval)
+	if err := cfg.Validate(); err != nil {
+		return err
 	}
 	if report == nil {
 		return errors.New("agent: watch needs somewhere to report, or a reclaim happens in silence")
@@ -149,15 +240,30 @@ func (a *Agent) Watch(ctx context.Context, cfg WatchConfig, free FreeSpace, repo
 //
 // The heartbeat is written last, so a pass that failed partway does not claim
 // the agent is making progress.
+//
+// It remembers the previous pass, since a floor configured as a duration is
+// sized from what changed between two of them, so it belongs to one loop and
+// two goroutines calling it would difference each other's samples.
 func (a *Agent) Step(ctx context.Context, cfg WatchConfig, free FreeSpace, now time.Time, sources ...Source) (Tick, error) {
 	var t Tick
 	available, err := free()
 	if err != nil {
 		return t, fmt.Errorf("agent: measuring free space: %w", err)
 	}
-	observed := []Pressure{{Source: "free space", Need: cfg.Headroom - available}}
+	// The workload's rate, not what free space did: a reclaim raises free
+	// space, and reading that as consumption would shrink the floor in the
+	// pass that had just proved it too small.
+	rate, known := a.rate.observe(available, a.Accounting().Borrowed, now)
+	t.Target = cfg.target(rate, known)
+	t.Rate = rate
+	// Sources are given the floor this pass settled on rather than the
+	// configuration, since one of them reads it to work out its own shortfall
+	// and two floors in one pass would reclaim to whichever it consulted.
+	effective := cfg
+	effective.Headroom = t.Target
+	observed := []Pressure{{Source: "free space", Need: t.Target - available}}
 	for _, s := range sources {
-		need, err := observe(ctx, s, cfg, available)
+		need, err := observe(ctx, s, effective, available)
 		if err != nil {
 			t.Degraded = append(t.Degraded, fmt.Sprintf("%s: %v", s.Name(), err))
 			// A partial read still carries a need worth acting on. Anything
