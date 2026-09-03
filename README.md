@@ -172,7 +172,8 @@ back when compute needs the space.
 ```sh
 forebay-agent --borrowed-dir=/var/lib/forebay/borrowed \
               --journal=/var/lib/forebay/state/leases.json \
-              --watch --headroom-bytes=$((64 * 1024 * 1024 * 1024))
+              --watch --headroom-for=2s \
+              --headroom-min-bytes=$((8 * 1024 * 1024 * 1024))
 ```
 
 | Works | Detail |
@@ -185,6 +186,8 @@ forebay-agent --borrowed-dir=/var/lib/forebay/borrowed \
 | Answers reads over a socket | The agent opens it, holds a fast tier over capacity it lent itself, and misses to the durable backend, so something that speaks a protocol can ask it for bytes. The status carries the difference between a read past the end of an object, a request that will never be valid, and a backend that could not answer this time, because the three need different answers to a client |
 | Answers an NFS client | Through a C client for that socket and a read hook in an NFS server's own file layer, so a stock Linux client mounting it reads bytes that came from the tier or the backend. A spike: the namespace is the NFS server's and only the bytes are Forebay's |
 | Gives the capacity back | Reclaiming a lease tells the tier before the extent is unlinked, so the blocks go with it. Told afterwards, the space stays allocated behind an open descriptor while every count says it was returned |
+| Reads from an object store | Signs its own SigV4 over `net/http`, declares read-range, object-size, write-object and delete-object, and declines snapshot and clone rather than emulating them with a copy |
+| Keeps the floor as a duration | What a node must keep free is what its workload writes between two polls, so it is configured as a time and converted against the rate observed, corrected for what the agent itself gave back |
 | Sees pressure before it lands | Reads pods from this node's own kubelet rather than the API server, so a partition cannot block reclamation, and counts what they have asked for but not yet written. Free space cannot see that until it is gone |
 | Survives being killed | Replays its journal, reconciles it against the disk in both directions, and finishes an interrupted reclaim |
 | Refuses to run twice | One agent per node, and a wedged one is killed by its own liveness probe so a replacement can take the lock |
@@ -194,9 +197,14 @@ rows that need a lease were driven by a stand-in for the control plane rather th
 binary.
 
 **A client has read through it once, which is a demonstration rather than a system.** The namespace
-belonged to the NFS server and only the bytes were Forebay's, the agent granted itself the lease its
-tier sits on because nothing else can, and the backend was a directory on the same disk as the tier,
-so the numbers say the path is correct and not that the tier is worth having.
+belonged to the NFS server and only the bytes were Forebay's, and the agent granted itself the lease
+its tier sits on because nothing else can. What that run showed is that the path is correct.
+
+Whether the tier is worth having is a separate question and a separate measurement, made against an
+object store rather than a directory on the same disk, and it is the table above under the honest
+part. The two should not be read as one result: the client demonstration says a client can read
+Forebay's bytes, and the crossover says those bytes arrive faster than the backend would have sent
+them.
 
 What is missing is most of it: no metadata server to hand a client a layout, so nothing is mountable
 without a patched one; no CSI driver; no control plane, so a running agent guards capacity nothing
@@ -208,11 +216,28 @@ question the whole thesis rests on.
 Forebay bets that node-local NVMe beats fetching from a fanned-out backend. In one measured
 environment it **did not** — a Ceph RGW read across eleven OSDs took 0.23 s against 1.71 s from the
 node's own disk. That is about seven times faster on wall clock, and two and a half times on raw
-bandwidth, since the object crossing the network was compressed and the local read was not. Different
-hardware to what we target, but it means locality is a hypothesis rather than a premise. Finding the
-crossover on real GPU hardware is
-[RFC-0018](docs/rfcs/0018-benchmark-and-falsification-suite.md), and it is the first serious
-engineering task.
+bandwidth, since the object crossing the network was compressed and the local read was not, which
+makes it a confounded measurement as well as an unwelcome one.
+
+That bet has since been put to a GPU node, controlling for what the founding number did not. Reading
+a 256 MiB object in 1 MiB blocks, with the tier's extent evicted from the page cache so the bytes
+come off the device, and with the eviction counted rather than assumed:
+
+| readers | backend | tier, from the device |
+| --- | --- | --- |
+| 1 | 71.6 MiB/s | 340.5 |
+| 4 | 110.8 | 1277.7 |
+| 16 | 110.2 | 2002.8 |
+
+No crossover inside the sweep. Left in the page cache the tier reads two and a half times higher
+again, which is why that column is not the one quoted.
+
+**One node, one backend, one day.** That is enough to have killed the project and not enough to
+declare it right, and the store's own first-touch reads varied between 34 and 110 MiB/s across runs,
+so what the tier beat is a number with a spread on it. The fleet surveys that would say whether the
+idle capacity exists at all are unrun, and they need clusters this project does not own.
+[RFC-0018](docs/rfcs/0018-benchmark-and-falsification-suite.md) holds the register, including the
+rows still open and the two answers it had to withdraw.
 
 ## Roadmap
 
