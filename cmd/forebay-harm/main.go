@@ -20,6 +20,25 @@ import (
 	"github.com/mayur-tolexo/forebay/internal/workload"
 )
 
+// checkFlags rejects a configuration that cannot measure what it claims to.
+func checkFlags(borrowed, journal string, capacity, lend int64, leases, writers int, block int64) error {
+	switch {
+	case borrowed == "" || journal == "":
+		return fmt.Errorf("--borrowed-dir and --journal are required")
+	case capacity <= 0:
+		return fmt.Errorf("--capacity-bytes is required")
+	case lend <= 0 || leases <= 0:
+		return fmt.Errorf("--lend-bytes and --leases must be positive")
+	case lend > capacity:
+		return fmt.Errorf("lending %s of %s is more than the node has", pool.Bytes(lend), pool.Bytes(capacity))
+	case writers <= 0:
+		return fmt.Errorf("--writers must be positive, since a device nothing holds cannot show contention")
+	case block%4096 != 0:
+		return fmt.Errorf("a block of %d is not a multiple of 4096, which direct IO requires", block)
+	}
+	return nil
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "forebay-harm:", err)
@@ -45,13 +64,8 @@ func run() error {
 	)
 	flag.Parse()
 
-	switch {
-	case *borrowed == "" || *journal == "":
-		return fmt.Errorf("--borrowed-dir and --journal are required")
-	case *capacity <= 0:
-		return fmt.Errorf("--capacity-bytes is required")
-	case *lend <= 0 || *leases <= 0:
-		return fmt.Errorf("--lend-bytes and --leases must be positive")
+	if err := checkFlags(*borrowed, *journal, *capacity, *lend, *leases, *writers, *block); err != nil {
+		return err
 	}
 	if *writeDir == "" {
 		*writeDir = *borrowed
