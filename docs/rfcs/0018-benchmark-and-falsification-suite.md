@@ -117,6 +117,15 @@ a cold backend, nor a tier with prefetch against a backend without it.
 Every pre-registration therefore states which side of the comparison carries compression, caching,
 prefetch and concurrency, and a result that cannot say is not reported as a locality result.
 
+**Request size is one of those sides, and the crossover harness gets it wrong on a slow store.** Its
+backend arm asks for the same blocks the tier serves, one request each, which is like for like
+against a cache and is not the best a client could do. On a store answering in about thirteen
+milliseconds that costs nothing; on one answering in seventy eight it is most of the number. The same
+object read as one streaming request went at 60 MiB/s where two hundred and fifty six ranged requests
+went at 12.7, and sixteen parallel streaming chunks reached 65 against the arm's 40. The baseline is
+supposed to be the best simple alternative, so where the store's latency dominates the arm has to
+stream and currently does not.
+
 ### The baselines are measured arms, not assumptions
 
 Forebay is not compared against nothing. It is compared against the best simple alternative, and
@@ -139,7 +148,14 @@ nothing.
 
 | Experiment | Kill criterion | Needs |
 | --- | --- | --- |
-| ~~Where the locality crossover sits between node-local bandwidth and a node's achievable share of backend fan-out~~ | 2 | **Found, and it sits between two nodes of the same cluster.** On a node whose local device reads at 314 MB/s and which reaches the store at 1043 MiB/s, the backend wins from four readers up: 190, 663 and 1043 MiB/s against a tier flat at 386, 431 and 394. On a node whose local device is NVMe and which reaches the same store at 110 MiB/s, the tier wins: 377, 1715 and 2767 against 74, 111 and 111. Both read the same object and the second run on each reproduced the first within five per cent. So the answer is a ratio rather than a number, between what a node's device gives and what that node can pull from the store, and both ends of it varied by an order of magnitude inside one cluster. **Kill criterion 2 fires on the first node and not on the second**, which is the shape of the risk rather than its resolution: Forebay targets the second kind and cannot assume it has one.<br><br>The margin on the winning node is the node's network card. Its 110 MiB/s is 923 Mbit/s against a 1 Gbit interface, which is ninety two per cent of what that link can carry, so the backend arm there was not slow but saturated. The other node reached 935 MiB/s from the same store on the same day. Neither machine is what this is for: the one with the accelerators is a consumer desktop board with a gigabit port and a wireless card, and the other is a virtual machine. A production accelerator node has twenty five gigabit or more, where the backend arm would be several times what was measured here and the crossover is where this experiment has not looked.<br><br>Earlier caveats stand: the tier figure has the page cache evicted and the eviction counted, and the store's first-touch reads vary between 34 and 110 MiB/s across runs on the slower path. |
+| ~~Where the locality crossover sits between node-local bandwidth and a node's achievable share of backend fan-out~~ | 2 | **Found, and it sits between two nodes of the same cluster.** On a node whose local device reads at 314 MB/s and which reaches the store at 1043 MiB/s, the backend wins from four readers up: 190, 663 and 1043 MiB/s against a tier flat at 386, 431 and 394. On a node whose local device is NVMe and which reaches the same store at 110 MiB/s, the tier wins: 377, 1715 and 2767 against 74, 111 and 111. Both read the same object and the second run on each reproduced the first within five per cent.
+
+A third node, a rack server with two ten gigabit ports bonded and a Tesla T4, has the tier winning
+again but for a third reason: its local SATA SSD reads at 493 MB/s and the tier reaches 504 MiB/s,
+while the store delivers 65 MiB/s to it, which is one and seven tenths of a per cent of the bond. So
+across three machines the backend arm was limited by a network card, then by nothing, then by the
+store, and the tier won wherever the backend was slow for whatever reason. No machine measured so far
+has both a fast store and a fast local device, which is the pairing that would settle this. So the answer is a ratio rather than a number, between what a node's device gives and what that node can pull from the store, and both ends of it varied by an order of magnitude inside one cluster. **Kill criterion 2 fires on the first node and not on the second**, which is the shape of the risk rather than its resolution: Forebay targets the second kind and cannot assume it has one.<br><br>The margin on the winning node is the node's network card. Its 110 MiB/s is 923 Mbit/s against a 1 Gbit interface, which is ninety two per cent of what that link can carry, so the backend arm there was not slow but saturated. The other node reached 935 MiB/s from the same store on the same day. Neither machine is what this is for: the one with the accelerators is a consumer desktop board with a gigabit port and a wireless card, and the other is a virtual machine. A production accelerator node has twenty five gigabit or more, where the backend arm would be several times what was measured here and the crossover is where this experiment has not looked.<br><br>Earlier caveats stand: the tier figure has the page cache evicted and the eviction counted, and the store's first-touch reads vary between 34 and 110 MiB/s across runs on the slower path. |
 | How much idle compute-local NVMe exists across real fleets, over what window, and whether the idle periods are long enough to be worth borrowing | 3 | A fleet survey, no code |
 | Whether inference-serving nodes have idle NVMe at all, which the training-shaped survey above does not cover | 3 | A fleet survey, no code |
 | How much of the available value static provisioning captures on the same workload | 4 | One node, both arms |
@@ -317,11 +333,21 @@ fleets rather than per fleet.
   backend, runs the crossover experiment and both reclamation experiments. Unanswered above one
   node, since the rack and multi-rack rows in Tier 3 need hardware the project does not have. No RFC
   owns the remainder, because it is a question about access and funding rather than design.
+- **A node whose store and whose device are both fast, which no cluster reachable here has.** Three
+  machines have now run the crossover and each had a different bottleneck on the backend side: a
+  gigabit port, then nothing, then a store delivering one and seven tenths of a per cent of a twenty
+  gigabit bond. The tier won on two of them and lost on the one whose store was fast, which is the
+  whole question and is answered by a single data point. What it takes is one node with current
+  accelerators, current NVMe and a store that can saturate its network, and everything else needed to
+  run it is in this repository, so only the machine and the store are missing. Until then the Tier 1
+  crossover row says the tier beats a slow backend, which nobody doubted. No RFC owns this, because
+  it is a question about access and funding rather than design, and it is the largest single thing
+  between the project and knowing whether it should exist.
 - **What the driver conformance suite runs against.** Answered in the narrow sense: the suite is
   importable and runs unchanged against an S3-compatible store, so a driver for one can be proved
   without this project reviewing it. Unanswered for a contributor writing a driver for a store they
   cannot reach, which is the access problem arriving at a contributor rather than at the project.
-  Owned here, since no other document can carry it.
+  Owned by this document, since no other RFC can carry it.
 - **How traces are reduced before they leave the cluster that produced them**, which decides whether
   the workload experiments can use real data at all. Owned by
   [RFC-0016](0016-multi-tenancy-qos-and-security.md), which owns disclosure.
