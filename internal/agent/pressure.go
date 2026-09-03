@@ -80,12 +80,13 @@ func (c WatchConfig) Validate() error {
 // gave back. The agent's own effect is the change in what it has lent, so
 // subtracting that leaves the workload's.
 //
-// This assumes the filesystem shows a reclaim by the next poll. Where it does
-// not, the space the accounting has already given up has not arrived yet, and
-// the difference is attributed to the workload: the rate reads high and the
-// floor comes out too large, which is the safe direction of being wrong. When
-// freed capacity becomes observable, as against when unlink returns, is an
-// open row in RFC-0018 and is what would settle it.
+// This assumes the filesystem shows a reclaim by the next poll. Measured on an
+// idle filesystem it does, arriving before the first reading taken after the
+// unlink returns; under concurrent writing the measurement cannot attribute
+// what it sees, so the assumption holds where the node is quiet and is untested
+// where it is not. Where it fails the space given up in the accounting has not
+// arrived, the difference is attributed to the workload, and the floor comes
+// out too large, which is the safe direction of being wrong.
 type rateEstimator struct {
 	free     pool.Bytes
 	borrowed pool.Bytes

@@ -1,8 +1,12 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/mayur-tolexo/forebay/internal/bench"
 )
 
 // TestParseWorkersSortsTheSweep matters because the widest point sets the
@@ -75,5 +79,33 @@ func TestConditionsWarnWhenTheColdArmsWillRunOut(t *testing.T) {
 	conditions(&out, "shard", 1<<26, 1<<20, 3, 16, 4, 3, "")
 	if !strings.Contains(out.String(), "fewer than") {
 		t.Errorf("no warning that 4 cold objects cannot feed 3 runs at 3 points:\n%s", out.String())
+	}
+}
+
+// TestReportCarriesTheChecksum covers the row every arm is compared on. Two
+// arms are judged on speed, so a difference in the bytes they read has to be
+// on the row rather than checked once and dropped.
+func TestReportCarriesTheChecksum(t *testing.T) {
+	var out strings.Builder
+	err := reportTo(&out, bench.Result{
+		Arm: "tier, through the agent", Workers: 16,
+		Bytes: 64 << 20, Elapsed: 15 * time.Millisecond, Checksum: 0x50c09ece3a460231,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{"tier, through the agent", "16", "50c09ece3a460231", "15ms"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the row does not carry %q: %q", want, got)
+		}
+	}
+
+	out.Reset()
+	if err := reportTo(&out, bench.Result{}, errors.New("the store refused")); err == nil {
+		t.Error("a failed arm was reported as a row")
+	}
+	if out.Len() != 0 {
+		t.Errorf("a failed arm printed %q", out.String())
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -157,16 +158,33 @@ func run() error {
 		fmt.Printf("reclaimed %s in %s, with a shortfall of %s\n\n",
 			rec.Result.Reclaimed, rec.Elapsed.Round(time.Microsecond), rec.Result.Shortfall)
 	}
-	fmt.Printf("%-12s %10s %12s %14s %10s\n", "phase", "intervals", "MiB/s", "worst write", "window")
-	row := func(name string, s []workload.Sample, window time.Duration) {
-		// Summed across writers, since one writer's median says nothing about
-		// whether the device was busy.
-		fmt.Printf("%-12s %10d %12.1f %14s %10s\n", name, len(s),
-			workload.MedianRate(s)*float64(*writers),
-			workload.WorstStall(s).Round(time.Microsecond), window.Round(time.Millisecond))
-	}
-	row("before", before, from)
-	row("during", during, to-from)
-	row("after", afterward, time.Since(start)-to)
+	phases(os.Stdout, *writers, []phase{
+		{"before", before, from},
+		{"during", during, to - from},
+		{"after", afterward, time.Since(start) - to},
+	})
 	return nil
+}
+
+// phase is one stretch of the run and the window it covered.
+type phase struct {
+	name    string
+	samples []workload.Sample
+	window  time.Duration
+}
+
+// phases prints what the workload achieved in each stretch.
+//
+// Rates are summed across writers, since one writer's median says nothing
+// about whether the device was busy, and the window is printed with them: a
+// during column drawn from one or two intervals is a different kind of number
+// from a before column drawn from four hundred.
+func phases(w io.Writer, writers int, rows []phase) {
+	fmt.Fprintf(w, "%-12s %10s %12s %14s %10s\n", "phase", "intervals", "MiB/s", "worst write", "window")
+	for _, r := range rows {
+		fmt.Fprintf(w, "%-12s %10d %12.1f %14s %10s\n", r.name, len(r.samples),
+			workload.MedianRate(r.samples)*float64(writers),
+			workload.WorstStall(r.samples).Round(time.Microsecond),
+			r.window.Round(time.Millisecond))
+	}
 }
