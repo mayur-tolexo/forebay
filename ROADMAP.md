@@ -323,10 +323,12 @@ two and a half times, which is the counterexample this document said would stop 
 for that node rather than for the project, since Forebay targets the other kind, and the distinction
 is only defensible while a node's kind can be established rather than assumed.
 
-The margin on the node where it won is inflated by that node reaching nine per cent of its line rate
-to the store where the other reached eighty seven. Part of what the tier beat there is a network
-path. What it beats on a node with a good path and a fast device is unmeasured and is the number this
-turns on.
+The margin on the node where it won is that node's network card. Its 110 MiB/s from the store is
+ninety two per cent of a gigabit link, so the backend arm was saturated rather than slow, and neither
+machine is the kind this is for: the one with the accelerators is a consumer desktop board with a
+gigabit port and a wireless card, and the other is a virtual machine. On a production accelerator
+node, with twenty five gigabit or more, the backend arm would be several times what was measured
+here. That is the number this turns on and it is still missing.
 
 ### Phase 2, intent and autonomy
 
