@@ -10,6 +10,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"sort"
@@ -90,7 +91,7 @@ func run() error {
 		return err
 	}
 
-	conditions(*object, *size, *block, *repeat, widest, len(coldObjects), len(points), *extent)
+	conditions(os.Stdout, *object, *size, *block, *repeat, widest, len(coldObjects), len(points), *extent)
 	fmt.Printf("%-34s %8s %10s %12s %18s\n", "arm", "workers", "MiB/s", "elapsed", "checksum")
 
 	ctx := context.Background()
@@ -158,30 +159,30 @@ func run() error {
 
 // conditions prints what each arm carried, which RFC-0018 requires of any
 // result claiming to be about locality.
-func conditions(object string, size, block int64, repeat, widest, cold, points int, extent string) {
-	fmt.Printf("object %s, %d bytes, %d byte blocks, %d runs per point, median reported\n",
+func conditions(w io.Writer, object string, size, block int64, repeat, widest, cold, points int, extent string) {
+	fmt.Fprintf(w, "object %s, %d bytes, %d byte blocks, %d runs per point, median reported\n",
 		object, size, block, repeat)
-	fmt.Println("both arms read every byte once, on the same block grid, interleaved across workers")
-	fmt.Printf("no compression on either side: the object is stored and served as written\n")
-	fmt.Printf("the backend arm may open %d connections, so the transport does not cap it below the sweep\n", widest)
-	fmt.Println("the tier arm is warm, having read the object twice before it is measured")
+	fmt.Fprintln(w, "both arms read every byte once, on the same block grid, interleaved across workers")
+	fmt.Fprintf(w, "no compression on either side: the object is stored and served as written\n")
+	fmt.Fprintf(w, "the backend arm may open %d connections, so the transport does not cap it below the sweep\n", widest)
+	fmt.Fprintln(w, "the tier arm is warm, having read the object twice before it is measured")
 	if extent == "" {
-		fmt.Printf("the tier arm reads an extent through the page cache, so a working set of %d bytes\n"+
+		fmt.Fprintf(w, "the tier arm reads an extent through the page cache, so a working set of %d bytes\n"+
 			"  that fits in memory measures cache and NVMe together and is an upper bound on NVMe alone\n", size)
 	} else {
-		fmt.Printf("the tier arm's extent is evicted from the page cache before each measured run, and the\n" +
+		fmt.Fprintf(w, "the tier arm's extent is evicted from the page cache before each measured run, and the\n"+
 			"  run is refused unless the eviction took, so the tier is read from the device\n")
 	}
 	if cold == 0 {
-		fmt.Println("no cold arms: pass --cold-objects to separate the socket's cost from the tier's benefit")
+		fmt.Fprintln(w, "no cold arms: pass --cold-objects to separate the socket's cost from the tier's benefit")
 	} else {
-		fmt.Printf("the two cold arms read %d objects nothing has read before, one per run, so the socket's\n"+
+		fmt.Fprintf(w, "the two cold arms read %d objects nothing has read before, one per run, so the socket's\n"+
 			"  price is taken between two cold arms rather than off a warm one\n", cold)
 		if need := repeat * points * 2; cold < need {
-			fmt.Printf("that is fewer than the %d this sweep needs, so the arm stops when they run out\n", need)
+			fmt.Fprintf(w, "that is fewer than the %d this sweep needs, so the arm stops when they run out\n", need)
 		}
 	}
-	fmt.Println()
+	fmt.Fprintln(w)
 }
 
 // runRepeats measures one arm at one point, warming it first so the tier arm

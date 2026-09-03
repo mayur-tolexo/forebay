@@ -159,7 +159,7 @@ nothing.
 | How long to wait on a peer before abandoning it for the backend | Whether peer fetch helps or hurts | RFC-0007 |
 | Whether a rack-local hop beats going straight to a fanned-out backend | Whether the rack tier exists | RFC-0002, RFC-0007 |
 | What a read costs crossing from the NFS server into the node agent, against reading the same bytes in one process | **Attempted and not answered.** The first pass took the price off a store-warm arm against a store-cold one and was measuring the store's cache. Corrected to two cold arms, the store's own first-touch variance swamps the difference: the same read in process gave 34, 35, 54 and 72 MiB/s on equivalent objects, and the socket arm ranged either side of it. An answer needs a store whose cache state is controlled, or a working set large enough that its variance averages out | RFC-0008 |
-| The headroom a node keeps free for reclamation to stay ahead of a workload's writes | The agent's pressure design | RFC-0004 |
+| ~~The headroom a node keeps free for reclamation to stay ahead of a workload's writes~~ | **Answered, and the answer is not a number.** The deficit a workload opens before the watch closes it tracks the write rate times the poll interval. Over ten runs at half a second, one second and two, against writers achieving between 92 and 2126 MiB/s, the deficit ran from 29 MiB to 2.18 GiB, and nine of the ten fell between 0.3 and 1.05 times that product. The tenth reached 6.5 times it, so the product is the shape and not the margin: a target set at it alone would have been short in one run of ten. A constant is worse than a formula, since the same drive gives rates sixty times apart depending on whether its cache is spent, so the headroom belongs in the configuration as a duration the node may be behind, converted to bytes against the rate it is achieving | RFC-0004 |
 | The reclaim deadline default, derived from pod admission behaviour and measured end-to-end reclaim | RFC-0005's central promise. Half measured: the reclaim itself ranges from 3.7 ms on an idle device to 773 ms on one held at its sustained write rate, so a default has to be set against the loaded figure and the loaded figure is the one nobody had | RFC-0005 |
 | The churn budget and the post-reclaim cooldown, whose shipped values are conservative guesses | Whether churn protection is real | RFC-0005 |
 | Whether compressing the fast tier pays for CPU taken from the dataloader | Whether the tier compresses | RFC-0020 |
@@ -220,10 +220,20 @@ So this document's declared dependencies are two unbuilt RFCs and most of its ex
 neither. The dependency row is honest about what the *suite* needs to be complete, and it is not a
 reason to wait.
 
-One Tier 2 value has stopped being abstract. The headroom target has no defensible default, so the
-pressure watch refuses to run without one, which means an operator deploying the agent today has to
-supply a number this document owns and nobody has measured. That is the first case of an unwritten
-experiment blocking shipped behaviour rather than a future decision.
+One Tier 2 value has stopped being abstract, and has now been measured. The headroom target had no
+defensible default, so the pressure watch refuses to run without one, which meant an operator
+deploying the agent supplied a number this document owned and nobody had measured. It is measured
+above, and the reason there was no defensible constant turns out to be that no constant is the right
+shape: what a node has to keep free is what its workload can write while the watch is not looking,
+which is a rate multiplied by a poll interval. A node whose drive is fresh and one whose cache is
+spent differ by sixty times on the same hardware, so a byte count set for one is wrong for the other.
+Expressing the target as a duration the node may be behind is the change that follows, and it belongs
+to RFC-0004 rather than here.
+
+The margin is the part still open. Nine runs in ten sat at or under the product, and the tenth was
+six times it, which is enough to say a target set at the product alone will sometimes be short and
+not enough to say what covers it. What that run had in common with the others, and what it did not,
+is unmeasured.
 
 ### Publishing
 
