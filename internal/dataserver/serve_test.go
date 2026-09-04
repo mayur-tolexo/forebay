@@ -170,7 +170,7 @@ func TestAFrameFromSomethingElseIsNotAnswered(t *testing.T) {
 func framed(conn net.Conn, status byte, declared uint64, body []byte) {
 	head := make([]byte, 14)
 	binary.BigEndian.PutUint32(head[0:], 0x46425259)
-	head[4], head[5] = 1, status
+	head[4], head[5] = dataserver.Version, status
 	binary.BigEndian.PutUint64(head[6:], declared)
 	conn.Write(head)
 	conn.Write(body)
@@ -405,7 +405,7 @@ func TestAConversationThatLostItsPlaceIsOver(t *testing.T) {
 		// than waiting for bytes that will not come.
 		head := make([]byte, 14)
 		binary.BigEndian.PutUint32(head[0:], 0x46425259)
-		head[4], head[5] = 1, 0
+		head[4], head[5] = dataserver.Version, 0
 		binary.BigEndian.PutUint64(head[6:], 8)
 		conn.Write(head)
 		conn.Write(bytes.Repeat([]byte("B"), 64))
@@ -569,7 +569,7 @@ func TestAMalformedRequestClosesTheConnectionWithoutAnswering(t *testing.T) {
 
 	// A well-formed header, then the fields varied one at a time.
 	header := func(version, op byte, tenantLen, objectLen uint16) []byte {
-		h := make([]byte, 26)
+		h := make([]byte, dataserver.RequestHeader)
 		binary.BigEndian.PutUint32(h[0:], 0x46425259)
 		h[4], h[5] = version, op
 		binary.BigEndian.PutUint16(h[6:], tenantLen)
@@ -586,11 +586,11 @@ func TestAMalformedRequestClosesTheConnectionWithoutAnswering(t *testing.T) {
 		closed bool
 	}{
 		{"a version this does not know", header(99, 1, 2, 3), true},
-		{"an operation this does not speak", header(1, 42, 2, 3), true},
-		{"a tenant longer than the protocol carries", header(1, 1, 2000, 3), true},
-		{"an object longer than the protocol carries", header(1, 1, 2, 2000), true},
-		{"a header that stops half way", header(1, 1, 2, 3)[:10], false},
-		{"names that never arrive", append(header(1, 1, 2, 3), 'x'), false},
+		{"an operation this does not speak", header(dataserver.Version, 42, 2, 3), true},
+		{"a tenant longer than the protocol carries", header(dataserver.Version, 1, 2000, 3), true},
+		{"an object longer than the protocol carries", header(dataserver.Version, 1, 2, 2000), true},
+		{"a header that stops half way", header(dataserver.Version, 1, 2, 3)[:10], false},
+		{"names that never arrive", append(header(dataserver.Version, 1, 2, 3), 'x'), false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			conn, err := net.Dial("unix", addr)
@@ -908,5 +908,190 @@ func TestOneConnectionAnswersBothQuestions(t *testing.T) {
 		if !bytes.Equal(got, want) {
 			t.Fatalf("read %d returned the wrong bytes after a size", i)
 		}
+	}
+}
+
+// TestAClientCanListALevel is what an NFS server needs for readdir, and what
+// the FSAL served an empty directory without.
+func TestAClientCanListALevel(t *testing.T) {
+	store := t.TempDir()
+	for _, p := range []string{
+		"imagenet/v17/shard-0", "imagenet/v17/shard-1",
+		"imagenet/v18/shard-0", "captions/v3/shard-0", "loose",
+	} {
+		full := filepath.Join(store, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("xy"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := serveStore(t, store)
+	c := connect(t, srv)
+
+	root, err := c.List("t1", "", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(root) != 3 {
+		t.Fatalf("the root lists %+v, want three names", root)
+	}
+	if root[0].Name != "captions" || !root[0].Dir {
+		t.Errorf("root[0] = %+v, want captions as a directory", root[0])
+	}
+	if root[2].Name != "loose" || root[2].Dir || root[2].Bytes != 2 {
+		t.Errorf("root[2] = %+v, want the loose object with its size", root[2])
+	}
+
+	// One level down, and nothing from beneath it.
+	versions, err := c.List("t1", "imagenet", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 2 {
+		t.Errorf("imagenet lists %+v, want its two versions", versions)
+	}
+}
+
+// TestAListingIsRefusedWithoutATenant keeps one tenant from being shown
+// another's names.
+func TestAListingIsRefusedWithoutATenant(t *testing.T) {
+	srv, _ := serve(t, "shard", pattern(blockSize))
+	c := connect(t, srv)
+
+	if _, err := c.List("", "", "", 10); err == nil {
+		t.Error("a listing with no tenant was answered")
+	}
+}
+
+// TestAListingNeedsASensibleLimit covers both ends: nothing is not a listing,
+// and the reply is built in memory so the caller cannot choose any number.
+func TestAListingNeedsASensibleLimit(t *testing.T) {
+	srv, _ := serve(t, "shard", pattern(blockSize))
+	c := connect(t, srv)
+
+	for _, limit := range []int{0, -1, 1 << 20} {
+		if _, err := c.List("t1", "", "", limit); err == nil {
+			t.Errorf("a listing of %d names was answered", limit)
+		}
+	}
+}
+
+// TestAListingPagesAcrossTheWire matters because a directory larger than one
+// answer is read in several, and a page that repeated would loop.
+func TestAListingPagesAcrossTheWire(t *testing.T) {
+	store := t.TempDir()
+	for _, n := range []string{"a", "b", "c", "d"} {
+		if err := os.WriteFile(filepath.Join(store, n), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := connect(t, serveStore(t, store))
+
+	var seen []string
+	after := ""
+	for i := 0; i < 10; i++ {
+		page, err := c.List("t1", "", after, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, e := range page {
+			seen = append(seen, e.Name)
+		}
+		after = page[len(page)-1].Name
+	}
+	if got := strings.Join(seen, ""); got != "abcd" {
+		t.Errorf("paging saw %q, want each name once in order", got)
+	}
+}
+
+// serveStore builds a data server over a directory that already holds a tree,
+// which is what a listing needs and a single object does not.
+func serveStore(t *testing.T, store string) *dataserver.Server {
+	t.Helper()
+	fd, err := filedriver.New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := driver.Open(fd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tier, err := fasttier.New(fasttier.Config{BlockSize: blockSize, FirstReadLimit: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { tier.Close() })
+	extent := filepath.Join(t.TempDir(), "extent")
+	if err := os.WriteFile(extent, make([]byte, 16*blockSize), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := tier.AddCapacity("lease", extent); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := dataserver.New(tier, back, dataserver.Config{Backend: "store"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
+
+// TestAListingThatEndsInsideARecordIsRefused matters because the alternative
+// is showing a client a directory with the wrong things in it. A truncated
+// body is a far side that does not speak this, and an empty answer would look
+// like a dataset with nothing in it.
+func TestAListingThatEndsInsideARecordIsRefused(t *testing.T) {
+	whole, err := dataserver.EncodeEntries([]dataserver.Entry{
+		{Name: "imagenet", Dir: true},
+		{Name: "shard-0", Bytes: 4096},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := dataserver.DecodeEntries(whole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || !got[0].Dir || got[1].Bytes != 4096 {
+		t.Fatalf("a whole listing decoded to %+v", got)
+	}
+
+	// Cut at every byte. A cut that lands on a record boundary is a
+	// well-formed shorter listing rather than a broken one, so the property
+	// is not that every cut fails: it is that a cut never invents an entry.
+	// Either it is refused, or what comes back is a prefix of the whole.
+	for cut := 0; cut <= len(whole); cut++ {
+		part, err := dataserver.DecodeEntries(whole[:cut])
+		if err != nil {
+			continue
+		}
+		if len(part) > len(got) {
+			t.Errorf("a listing cut to %d bytes decoded to %d entries", cut, len(part))
+			continue
+		}
+		for i := range part {
+			if part[i] != got[i] {
+				t.Errorf("a listing cut to %d bytes changed entry %d: %+v against %+v",
+					cut, i, part[i], got[i])
+			}
+		}
+	}
+
+	// And nothing at all is an empty level rather than a broken one.
+	if got, err := dataserver.DecodeEntries(nil); err != nil || len(got) != 0 {
+		t.Errorf("an empty listing gave %+v, %v", got, err)
+	}
+}
+
+// TestANameTooLongForTheProtocolIsRefused keeps a listing from being built
+// that no reader could take apart.
+func TestANameTooLongForTheProtocolIsRefused(t *testing.T) {
+	long := dataserver.Entry{Name: strings.Repeat("x", 2000)}
+	if _, err := dataserver.EncodeEntries([]dataserver.Entry{long}); err == nil {
+		t.Error("a name longer than the protocol carries was encoded")
 	}
 }

@@ -46,6 +46,12 @@ enum forebay_status forebay_source_size(struct forebay_source *s,
 					const char *tenant, const char *object,
 					int64_t *size);
 
+/* forebay_source_list asks what names are under a prefix. */
+enum forebay_status forebay_source_list(struct forebay_source *s,
+					const char *tenant, const char *prefix,
+					const char *after, int limit,
+					void *buf, int64_t cap, int64_t *got);
+
 /* forebay_source_dials reports how many times this has tried to connect, which
  * is how a test sees that a window stopped a storm rather than inferring it
  * from a clock.

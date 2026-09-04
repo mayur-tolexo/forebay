@@ -135,6 +135,13 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 // the header. The header is read by every frame and this is read by one, so
 // putting it there would make every implementation carry a field it ignores.
 func (s *Server) answer(ctx context.Context, req request) ([]byte, error) {
+	if req.Op == opList {
+		entries, err := s.List(ctx, req.Tenant, req.Object, req.After, int(req.Length))
+		if err != nil {
+			return nil, err
+		}
+		return encodeEntries(entries)
+	}
 	if req.Op == opStat {
 		size, err := s.SizeOf(ctx, req.Tenant, req.Object)
 		if err != nil {

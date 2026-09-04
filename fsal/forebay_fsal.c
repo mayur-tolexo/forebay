@@ -13,13 +13,6 @@
  *
  * WHAT IS NOT HERE, and deliberately:
  *
- *   Directory listing. Forebay cannot enumerate a backend: the driver contract
- *   in RFC-0006 has read-range, object-size, write, delete, snapshot and
- *   clone, and no list. So readdir returns nothing and lookup decides. A
- *   dataloader opening shards it already names works; `ls` shows an empty
- *   directory. Adding it means adding a capability to the driver contract,
- *   which is RFC-0006's to change, not this file's to assume.
- *
  *   pNFS. RFC-0008 found that Ganesha's flexfiles helpers are absent from its
  *   export list, so an FSAL calling them does not link. Until a build exports
  *   them this is a plain NFS server reading through the agent, which is the
@@ -48,6 +41,13 @@
 #include <string.h>
 
 #define FOREBAY_NAME "FOREBAY"
+
+/* How much of a directory one answer carries. Names rather than bytes is what
+ * the far side is told, and the buffer is sized for the worst case of that
+ * many at full length.
+ */
+#define FOREBAY_LIST_NAMES 512
+#define FOREBAY_LIST_BYTES (FOREBAY_LIST_NAMES * (FOREBAY_ENTRY_HEADER + FOREBAY_ENTRY_NAME_MAX + 1))
 
 /* One connection per export rather than per process.
  *
@@ -273,22 +273,95 @@ static fsal_status_t forebay_getattrs(struct fsal_obj_handle *obj_hdl,
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }
 
-/* forebay_readdir returns nothing, and says so honestly.
+/* forebay_readdir walks one level, asking the agent for it.
  *
- * Forebay cannot enumerate a backend: the driver contract has no list. An
- * empty directory is the truthful answer to a question this cannot answer, and
- * inventing entries would be worse.
+ * A directory here is a prefix that has objects beneath it, since the store
+ * has none of its own. Paged, because a dataset may hold more shards than one
+ * answer carries, and the cursor is the last name seen rather than an index: a
+ * store pages by name and an index would drift if anything were added.
  */
 static fsal_status_t forebay_readdir(struct fsal_obj_handle *dir_hdl,
 				     fsal_cookie_t *whence, void *dir_state,
 				     fsal_readdir_cb cb, attrmask_t attrmask,
 				     bool *eof)
 {
-	(void)dir_hdl;
+	struct forebay_handle *dir =
+		container_of(dir_hdl, struct forebay_handle, obj_handle);
+	struct forebay_export *exp = dir->export;
+	char after[FOREBAY_ENTRY_NAME_MAX + 1] = "";
+	void *buf;
+
 	(void)whence;
-	(void)dir_state;
-	(void)cb;
-	(void)attrmask;
+	*eof = false;
+
+	buf = gsh_malloc(FOREBAY_LIST_BYTES);
+	for (;;) {
+		struct forebay_entry e;
+		int64_t got = 0, at = 0;
+		enum forebay_status st;
+		int names = 0, rc;
+
+		st = forebay_source_list(exp->source, exp->tenant,
+					 dir->key != NULL ? dir->key : "",
+					 after, FOREBAY_LIST_NAMES, buf,
+					 FOREBAY_LIST_BYTES, &got);
+		if (st == FOREBAY_REFUSED) {
+			/* This backend cannot enumerate. An empty directory is
+			 * the truthful answer to a question it cannot answer,
+			 * and inventing entries would be worse.
+			 */
+			break;
+		}
+		if (st != FOREBAY_OK) {
+			gsh_free(buf);
+			return status_to_fsal(st);
+		}
+
+		while ((rc = forebay_entry_next(buf, got, &at, &e)) == 1) {
+			struct fsal_obj_handle *child = NULL;
+			struct fsal_attrlist attrs;
+			enum fsal_dir_result res;
+			char path[FOREBAY_KEY_MAX + 1];
+			char key[FOREBAY_KEY_MAX + 1];
+			int n;
+
+			names++;
+			if (strlen(e.name) >= sizeof(after)) {
+				gsh_free(buf);
+				return fsalstat(ERR_FSAL_NAMETOOLONG, 0);
+			}
+			strcpy(after, e.name);
+
+			n = snprintf(path, sizeof(path), "%s/%s",
+				     dir->key != NULL ? dir->key : "", e.name);
+			if (n < 0 || (size_t)n >= sizeof(path))
+				continue;
+			if (forebay_path_key(path, key, sizeof(key)) != FOREBAY_PATH_OK)
+				continue;
+
+			child = &handle_new(exp, e.name, key, e.dir,
+					    (uint64_t)e.bytes)->obj_handle;
+			fsal_prepare_attrs(&attrs, attrmask);
+			child->obj_ops->getattrs(child, &attrs);
+			res = cb(e.name, child, &attrs, dir_state,
+				 (fsal_cookie_t)(uintptr_t)child);
+			fsal_release_attrs(&attrs);
+			if (res >= DIR_TERMINATE) {
+				gsh_free(buf);
+				return fsalstat(ERR_FSAL_NO_ERROR, 0);
+			}
+		}
+		if (rc < 0) {
+			/* A reply that ended inside a record is a far side that
+			 * does not speak this, not an empty directory.
+			 */
+			gsh_free(buf);
+			return fsalstat(ERR_FSAL_SERVERFAULT, 0);
+		}
+		if (names < FOREBAY_LIST_NAMES)
+			break;
+	}
+	gsh_free(buf);
 	*eof = true;
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }

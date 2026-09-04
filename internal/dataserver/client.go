@@ -104,6 +104,19 @@ func (c *Client) SizeOf(tenant, object string) (int64, error) {
 	return int64(binary.BigEndian.Uint64(body)), nil
 }
 
+// List asks what names are under a prefix, which is what an NFS server in
+// front of this needs to answer readdir.
+func (c *Client) List(tenant, prefix, after string, limit int) ([]Entry, error) {
+	body, err := c.exchangeOne(request{
+		Op: opList, Tenant: tenant, Object: prefix, After: after,
+		Length: int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return decodeEntries(body)
+}
+
 // exchangeOne sends one request and reads its reply.
 func (c *Client) exchangeOne(req request) ([]byte, error) {
 	c.mu.Lock()

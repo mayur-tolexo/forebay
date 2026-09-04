@@ -125,6 +125,27 @@ enum forebay_status forebay_source_size(struct forebay_source *s,
 	return st;
 }
 
+enum forebay_status forebay_source_list(struct forebay_source *s,
+					const char *tenant, const char *prefix,
+					const char *after, int limit,
+					void *buf, int64_t cap, int64_t *got)
+{
+	struct forebay_conn *c;
+	enum forebay_status st;
+
+	if (s == NULL)
+		return FOREBAY_FAILED;
+	pthread_mutex_lock(&s->lock);
+	c = connect_locked(s);
+	if (c == NULL) {
+		pthread_mutex_unlock(&s->lock);
+		return FOREBAY_FAILED;
+	}
+	st = forebay_list(c, tenant, prefix, after, limit, buf, cap, got);
+	pthread_mutex_unlock(&s->lock);
+	return st;
+}
+
 int forebay_source_dials(const struct forebay_source *s)
 {
 	return s == NULL ? 0 : s->dials;

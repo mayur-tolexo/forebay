@@ -290,6 +290,41 @@ func (s *Server) SizeOf(ctx context.Context, tenant, object string) (int64, erro
 	return size, nil
 }
 
+// Entry is one name under a prefix, as the far side reports it.
+type Entry struct {
+	Name  string
+	Dir   bool
+	Bytes int64
+}
+
+// List returns one level of names under a prefix.
+//
+// Straight from the backend, never from the tier. The tier holds blocks of
+// objects somebody read, so a listing built from it would show a client the
+// shards that happen to be cached and hide the ones that are not, which is a
+// directory that changes as other people read.
+func (s *Server) List(ctx context.Context, tenant, prefix, after string, limit int) ([]Entry, error) {
+	if tenant == "" {
+		return nil, fmt.Errorf("%w: no tenant, and names are not shared between them", ErrRefused)
+	}
+	if limit <= 0 || limit > maxListing {
+		return nil, fmt.Errorf("%w: a listing of %d names is not one this answers", ErrRefused, limit)
+	}
+	found, err := s.backend.List(ctx, prefix, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Entry, 0, len(found))
+	for _, e := range found {
+		out = append(out, Entry{Name: e.Name, Dir: e.Dir, Bytes: e.Bytes})
+	}
+	return out, nil
+}
+
+// maxListing bounds one answer, because the reply is built in memory and the
+// caller chose the number.
+const maxListing = 4096
+
 // blockAt returns one block, from the tier if it is there and from the backend
 // if it is not.
 //

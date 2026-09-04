@@ -12,14 +12,21 @@
 #include <unistd.h>
 
 #define FOREBAY_MAGIC 0x46425259u /* "FBRY" */
-#define FOREBAY_VERSION 1
+#define FOREBAY_VERSION 2
 #define FOREBAY_OP_READ 1
 /* Asking how large an object is. An NFS server answers getattrs before a
  * client reads anything, and it cannot invent a size: a wrong one is a
  * truncated file or a read past the end.
  */
 #define FOREBAY_OP_STAT 2
-#define REQUEST_HEADER 26
+/* Asking what names are under a prefix, which is what a directory is when the
+ * store has none. An NFS server cannot answer readdir without it.
+ */
+#define FOREBAY_OP_LIST 3
+/* magic, version, op, three name lengths, offset, length. Written out rather
+ * than as a number, so adding a field moves this with it.
+ */
+#define REQUEST_HEADER (4 + 1 + 1 + 2 + 2 + 2 + 8 + 8)
 #define REPLY_HEADER 14
 #define MAX_NAME 1024
 
@@ -44,6 +51,11 @@ static void put_u64(uint8_t *p, uint64_t v)
 {
 	for (int i = 0; i < 8; i++)
 		p[i] = (uint8_t)(v >> (56 - 8 * i));
+}
+
+static uint16_t get_u16(const uint8_t *p)
+{
+	return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
 }
 
 static uint32_t get_u32(const uint8_t *p)
@@ -215,11 +227,19 @@ static enum forebay_status fail(struct forebay_conn *c)
  * and what the reply carries. Two would be two places to get the framing
  * wrong, and this is already the protocol's second implementation.
  */
+/* The length on the wire and the room in the buffer are two numbers, and for a
+ * listing they are different ones: the far side is told how many names it may
+ * send, and this side knows how many bytes it can take. Sharing one field
+ * meant the limit went out as the buffer size, which the far side refused as
+ * more names than it answers.
+ */
 static enum forebay_status exchange(struct forebay_conn *c, uint8_t op,
 				    const char *tenant, const char *object,
-				    int64_t offset, int64_t length,
-				    void *buf, int64_t *got)
+				    const char *after, int64_t offset,
+				    int64_t length, void *buf, int64_t cap,
+				    int64_t *got)
 {
+	size_t alen;
 	uint8_t head[REQUEST_HEADER];
 	uint8_t reply[REPLY_HEADER];
 	size_t tlen, olen;
@@ -231,8 +251,9 @@ static enum forebay_status exchange(struct forebay_conn *c, uint8_t op,
 		return FOREBAY_FAILED;
 	tlen = strlen(tenant);
 	olen = strlen(object);
-	if (tlen > MAX_NAME || olen > MAX_NAME || length <= 0 ||
-	    length > c->max_reply)
+	alen = after != NULL ? strlen(after) : 0;
+	if (tlen > MAX_NAME || olen > MAX_NAME || alen > MAX_NAME ||
+	    length <= 0 || cap <= 0 || cap > c->max_reply)
 		return FOREBAY_REFUSED;
 
 	deadline = now_ms() + c->timeout_ms;
@@ -242,17 +263,20 @@ static enum forebay_status exchange(struct forebay_conn *c, uint8_t op,
 	head[5] = op;
 	put_u16(head + 6, (uint16_t)tlen);
 	put_u16(head + 8, (uint16_t)olen);
-	put_u64(head + 10, (uint64_t)offset);
-	put_u64(head + 18, (uint64_t)length);
+	put_u16(head + 10, (uint16_t)alen);
+	put_u64(head + 12, (uint64_t)offset);
+	put_u64(head + 20, (uint64_t)length);
 
 	/* One write, so a request cannot be left half sent by a short one. */
-	frame = malloc(sizeof(head) + tlen + olen);
+	frame = malloc(sizeof(head) + tlen + olen + alen);
 	if (frame == NULL)
 		return FOREBAY_FAILED;
 	memcpy(frame, head, sizeof(head));
 	memcpy(frame + sizeof(head), tenant, tlen);
 	memcpy(frame + sizeof(head) + tlen, object, olen);
-	if (write_all(c, frame, sizeof(head) + tlen + olen, deadline) < 0) {
+	if (alen > 0)
+		memcpy(frame + sizeof(head) + tlen + olen, after, alen);
+	if (write_all(c, frame, sizeof(head) + tlen + olen + alen, deadline) < 0) {
 		free(frame);
 		return fail(c);
 	}
@@ -267,7 +291,7 @@ static enum forebay_status exchange(struct forebay_conn *c, uint8_t op,
 	/* The length is a number the far side chose, so it is checked before
 	 * anything is read into a buffer sized by the caller.
 	 */
-	if (declared > (uint64_t)length)
+	if (declared > (uint64_t)cap)
 		return fail(c);
 	if (declared > 0 && read_all(c, buf, (size_t)declared, deadline) < 0)
 		return fail(c);
@@ -289,8 +313,54 @@ enum forebay_status forebay_read(struct forebay_conn *c, const char *tenant,
 				 const char *object, int64_t offset,
 				 int64_t length, void *buf, int64_t *got)
 {
-	return exchange(c, FOREBAY_OP_READ, tenant, object, offset, length,
-			buf, got);
+	return exchange(c, FOREBAY_OP_READ, tenant, object, NULL, offset,
+			length, buf, length, got);
+}
+
+enum forebay_status forebay_list(struct forebay_conn *c, const char *tenant,
+				 const char *prefix, const char *after,
+				 int limit, void *buf, int64_t cap,
+				 int64_t *got)
+{
+	if (buf == NULL || got == NULL || limit <= 0)
+		return FOREBAY_REFUSED;
+	/* The limit is names and the capacity is bytes: the far side is told how
+	 * many names it may send, and this side how much it can take.
+	 */
+	return exchange(c, FOREBAY_OP_LIST, tenant, prefix, after, 0,
+			(int64_t)limit, buf, cap, got);
+}
+
+/* forebay_entry_next reads one record out of a listing.
+ *
+ * A cursor rather than an array, so a caller walks the reply where it lies:
+ * an FSAL hands each name to Ganesha as it reads it, and building a second
+ * copy first would be a second thing to free on every error path.
+ */
+int forebay_entry_next(const void *body, int64_t len, int64_t *at,
+		       struct forebay_entry *out)
+{
+	const uint8_t *p = (const uint8_t *)body;
+	uint16_t nlen;
+
+	if (out == NULL || at == NULL || *at < 0)
+		return -1;
+	if (*at >= len)
+		return 0;
+	if (len - *at < FOREBAY_ENTRY_HEADER)
+		return -1;
+	nlen = (uint16_t)get_u16(p + *at);
+	if (nlen >= sizeof(out->name))
+		return -1;
+	if (len - *at - FOREBAY_ENTRY_HEADER < (int64_t)nlen)
+		return -1;
+
+	out->dir = p[*at + 2] != 0;
+	out->bytes = (int64_t)get_u64(p + *at + 3);
+	memcpy(out->name, p + *at + FOREBAY_ENTRY_HEADER, nlen);
+	out->name[nlen] = '\0';
+	*at += FOREBAY_ENTRY_HEADER + nlen;
+	return 1;
 }
 
 enum forebay_status forebay_size(struct forebay_conn *c, const char *tenant,
@@ -306,8 +376,8 @@ enum forebay_status forebay_size(struct forebay_conn *c, const char *tenant,
 	 * field, so the frame every implementation reads carries nothing this
 	 * one question needs.
 	 */
-	st = exchange(c, FOREBAY_OP_STAT, tenant, object, 0, (int64_t)sizeof(body),
-		      body, &got);
+	st = exchange(c, FOREBAY_OP_STAT, tenant, object, NULL, 0,
+		      (int64_t)sizeof(body), body, (int64_t)sizeof(body), &got);
 	if (st != FOREBAY_OK)
 		return st;
 	if (got != (int64_t)sizeof(body))

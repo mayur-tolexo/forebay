@@ -128,6 +128,33 @@ int main(int argc, char **argv)
 		       st == FOREBAY_FAILED);
 	}
 
+	/* A listing is what an NFS server answers readdir from, and this side
+	 * has to read the records the Go side wrote.
+	 */
+	{
+		struct forebay_entry e;
+		int64_t at = 0, n = 0;
+		int names = 0, rc;
+
+		st = forebay_list(c, "t1", "", "", 100, buf, 1 << 20, &n);
+		expect("a listing comes back", st == FOREBAY_OK);
+		while ((rc = forebay_entry_next(buf, n, &at, &e)) == 1) {
+			names++;
+			if (e.name[0] == 0) {
+				expect("a listing carried an empty name", 0);
+				break;
+			}
+		}
+		expect("and every record read whole", rc == 0);
+		expect("with at least the object in it", names >= 1);
+
+		st = forebay_list(c, "", "", "", 100, buf, 1 << 20, &n);
+		expect("a listing with no tenant is refused", st == FOREBAY_REFUSED);
+
+		st = forebay_list(c, "t1", "", "", 0, buf, 1 << 20, &n);
+		expect("a listing of no names is refused", st == FOREBAY_REFUSED);
+	}
+
 	st = forebay_read(c, "t1", object, size + (1 << 20), 4096, buf, &got);
 	expect("a read past the end is a range error", st == FOREBAY_RANGE);
 

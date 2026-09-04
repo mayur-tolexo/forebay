@@ -20,7 +20,12 @@ const (
 	magic = 0x46425259 // "FBRY"
 	// version is bumped when a frame's meaning changes. A reader that does
 	// not know a version refuses it rather than guessing at the layout.
-	version = 1
+	//
+	// Two because a request carries a third name: a listing pages on the
+	// last name it saw, and a prefix and a name are two strings. Adding an
+	// operation did not need this and adding a field does, which is the
+	// difference the rule is about.
+	version = 2
 
 	opReadRange = 1
 	// opStat asks how large an object is. An NFS server has to answer
@@ -31,6 +36,10 @@ const (
 	// frame's meaning and a reader that does not know an operation refuses it
 	// by name rather than misreading it as one it does know.
 	opStat = 2
+	// opList asks what names are under a prefix, which is what a directory
+	// is when the store has none. An NFS server cannot answer readdir
+	// without it, and inventing entries would be worse than showing none.
+	opList = 3
 )
 
 // Status is what the far side made of a request.
@@ -77,26 +86,33 @@ const maxName = 1024
 
 // request is one question about an object: a read, or how large it is.
 type request struct {
-	// Op is which question. Offset and Length are read by opReadRange and
-	// ignored by opStat, which is why they are not a separate frame: one
-	// shape is one thing to get right in each implementation.
+	// Op is which question. Offset and Length are read by opReadRange, and
+	// opList reads Length as how many names it may have; opStat reads
+	// neither. One frame shape rather than three, because each is one thing
+	// to get right in every implementation of this.
 	Op     byte
 	Tenant string
+	// Object is the object for a read or a stat, and the prefix for a list.
 	Object string
+	// After is where a listing resumes, and is empty for everything else.
+	// Carried in the frame rather than folded into Object, since a prefix
+	// and a name are two strings and joining them would make a caller
+	// unpick them.
+	After  string
 	Offset int64
 	Length int64
 }
 
 // requestHeader is the fixed part: magic, version, op, two name lengths, the
 // offset and the length.
-const requestHeader = 4 + 1 + 1 + 2 + 2 + 8 + 8
+const requestHeader = 4 + 1 + 1 + 2 + 2 + 2 + 8 + 8
 
 // encode writes a request frame.
 func (r request) encode(w io.Writer) error {
-	if len(r.Tenant) > maxName || len(r.Object) > maxName {
+	if len(r.Tenant) > maxName || len(r.Object) > maxName || len(r.After) > maxName {
 		return fmt.Errorf("dataserver: a name longer than %d bytes is not one", maxName)
 	}
-	buf := make([]byte, requestHeader, requestHeader+len(r.Tenant)+len(r.Object))
+	buf := make([]byte, requestHeader, requestHeader+len(r.Tenant)+len(r.Object)+len(r.After))
 	binary.BigEndian.PutUint32(buf[0:], magic)
 	buf[4] = version
 	op := r.Op
@@ -108,10 +124,12 @@ func (r request) encode(w io.Writer) error {
 	buf[5] = op
 	binary.BigEndian.PutUint16(buf[6:], uint16(len(r.Tenant)))
 	binary.BigEndian.PutUint16(buf[8:], uint16(len(r.Object)))
-	binary.BigEndian.PutUint64(buf[10:], uint64(r.Offset))
-	binary.BigEndian.PutUint64(buf[18:], uint64(r.Length))
+	binary.BigEndian.PutUint16(buf[10:], uint16(len(r.After)))
+	binary.BigEndian.PutUint64(buf[12:], uint64(r.Offset))
+	binary.BigEndian.PutUint64(buf[20:], uint64(r.Length))
 	buf = append(buf, r.Tenant...)
 	buf = append(buf, r.Object...)
+	buf = append(buf, r.After...)
 	_, err := w.Write(buf)
 	return err
 }
@@ -129,25 +147,71 @@ func decodeRequest(r io.Reader) (request, error) {
 		return request{}, fmt.Errorf("dataserver: protocol version %d is not %d", got, version)
 	}
 	op := head[5]
-	if op != opReadRange && op != opStat {
+	if op != opReadRange && op != opStat && op != opList {
 		return request{}, fmt.Errorf("dataserver: operation %d is not one this speaks", op)
 	}
 	tenantLen := int(binary.BigEndian.Uint16(head[6:]))
 	objectLen := int(binary.BigEndian.Uint16(head[8:]))
-	if tenantLen > maxName || objectLen > maxName {
+	afterLen := int(binary.BigEndian.Uint16(head[10:]))
+	if tenantLen > maxName || objectLen > maxName || afterLen > maxName {
 		return request{}, fmt.Errorf("dataserver: a name longer than %d bytes is not one", maxName)
 	}
-	names := make([]byte, tenantLen+objectLen)
+	names := make([]byte, tenantLen+objectLen+afterLen)
 	if _, err := io.ReadFull(r, names); err != nil {
 		return request{}, err
 	}
 	return request{
 		Op:     op,
 		Tenant: string(names[:tenantLen]),
-		Object: string(names[tenantLen:]),
-		Offset: int64(binary.BigEndian.Uint64(head[10:])),
-		Length: int64(binary.BigEndian.Uint64(head[18:])),
+		Object: string(names[tenantLen : tenantLen+objectLen]),
+		After:  string(names[tenantLen+objectLen:]),
+		Offset: int64(binary.BigEndian.Uint64(head[12:])),
+		Length: int64(binary.BigEndian.Uint64(head[20:])),
 	}, nil
+}
+
+// encodeEntries renders a listing as the reply's bytes.
+//
+// One length-prefixed record per name, so the C side reads it with the same
+// loop it reads anything else: a two-byte name length, a flag, and a size.
+// Not a header field, for the same reason a size is not: the frame every
+// implementation reads carries nothing that one question needs.
+func encodeEntries(entries []Entry) ([]byte, error) {
+	out := make([]byte, 0, len(entries)*32)
+	for _, e := range entries {
+		if len(e.Name) > maxName {
+			return nil, fmt.Errorf("dataserver: a name longer than %d bytes is not one", maxName)
+		}
+		var head [11]byte
+		binary.BigEndian.PutUint16(head[0:], uint16(len(e.Name)))
+		if e.Dir {
+			head[2] = 1
+		}
+		binary.BigEndian.PutUint64(head[3:], uint64(e.Bytes))
+		out = append(out, head[:]...)
+		out = append(out, e.Name...)
+	}
+	return out, nil
+}
+
+// decodeEntries reads what encodeEntries wrote.
+func decodeEntries(body []byte) ([]Entry, error) {
+	var out []Entry
+	for len(body) > 0 {
+		if len(body) < 11 {
+			return nil, fmt.Errorf("dataserver: a listing ended inside a record")
+		}
+		n := int(binary.BigEndian.Uint16(body[0:]))
+		dir := body[2] == 1
+		size := int64(binary.BigEndian.Uint64(body[3:]))
+		body = body[11:]
+		if len(body) < n {
+			return nil, fmt.Errorf("dataserver: a listing ended inside a name")
+		}
+		out = append(out, Entry{Name: string(body[:n]), Dir: dir, Bytes: size})
+		body = body[n:]
+	}
+	return out, nil
 }
 
 // replyHeader is the fixed part of a reply: magic, version, status, length.

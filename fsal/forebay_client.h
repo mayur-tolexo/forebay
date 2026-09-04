@@ -56,6 +56,46 @@ enum forebay_status forebay_read(struct forebay_conn *c, const char *tenant,
 enum forebay_status forebay_size(struct forebay_conn *c, const char *tenant,
 				 const char *object, int64_t *size);
 
+/* The fixed part of one entry in a listing: a name length, a directory flag
+ * and a size.
+ */
+#define FOREBAY_ENTRY_HEADER (2 + 1 + 8)
+
+/* The longest name a listing carries, which is what the protocol bounds a name
+ * at. A caller reads into this rather than allocating per entry.
+ */
+#define FOREBAY_ENTRY_NAME_MAX 1024
+
+/* One name under a prefix. A directory here is a prefix that has objects
+ * beneath it, since a store has no directories of its own.
+ */
+struct forebay_entry {
+	char name[FOREBAY_ENTRY_NAME_MAX + 1];
+	int dir;
+	int64_t bytes;
+};
+
+/* forebay_list asks what names are under a prefix, writing the reply into buf
+ * and setting *got to how many bytes it holds.
+ *
+ * The reply is walked with forebay_entry_next rather than returned as an
+ * array: a caller hands each name onward as it reads it, and a second copy
+ * would be a second thing to free on every error path.
+ */
+enum forebay_status forebay_list(struct forebay_conn *c, const char *tenant,
+				 const char *prefix, const char *after,
+				 int limit, void *buf, int64_t cap,
+				 int64_t *got);
+
+/* forebay_entry_next reads the record at *at and advances it.
+ *
+ * Returns 1 for an entry, 0 at the end, and -1 for a reply that ends inside
+ * one, which is a far side that does not speak this rather than an empty
+ * directory.
+ */
+int forebay_entry_next(const void *body, int64_t len, int64_t *at,
+		       struct forebay_entry *out);
+
 /* forebay_broken reports whether the conversation is over. */
 int forebay_broken(const struct forebay_conn *c);
 
