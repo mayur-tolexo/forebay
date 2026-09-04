@@ -20,9 +20,10 @@ saying more than it knows.
 
 ## What of this is built
 
-**The scoreboard, and not the accelerator half of it.** `internal/efficiency` takes the reads a node
-served, estimates what the ones served from the tier would have cost from the backend, and reports
-the difference with the spread of the estimate it came from. It refuses to convert that into GPU
+**The scoreboard, wired to the read path, and not the accelerator half of it.** `internal/efficiency`
+takes the reads a node served, estimates what the ones served from the tier would have cost from the
+backend, and reports the difference with the spread of the estimate it came from. `internal/dataserver`
+records every block it answers, because it is the only place that knows which side served one. It refuses to convert that into GPU
 hours or money without the operator supplying the two numbers only they have, and it reports a
 negative result in the same place and the same way as a positive one.
 

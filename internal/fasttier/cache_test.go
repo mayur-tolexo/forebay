@@ -405,3 +405,65 @@ func TestAHitNeverAnswersWithAnotherBlocksBytes(t *testing.T) {
 		t.Errorf("block 1 = %q/%v, want its own bytes", got, hit)
 	}
 }
+
+// TestAPredictionMayNotEvict is RFC-0011's rule, and it binds hardest exactly
+// where a prefetch is most tempting: a full tier means a busy node, which is
+// where predictions are least reliable. A prediction that could choose a
+// victim would make a wrong one cost a block that was about to be read rather
+// than costing bandwidth.
+func TestAPredictionMayNotEvict(t *testing.T) {
+	c := newCache(t, 2, 8)
+	seed(t, c, key(0), body(0))
+	seed(t, c, key(1), body(1))
+
+	admitted, err := c.Admit(key(2), body(2), true)
+	if admitted {
+		t.Fatal("a prediction was admitted into a full tier, so it evicted something")
+	}
+	if !errors.Is(err, ErrWouldEvict) {
+		t.Errorf("a refused prediction gave %v, want it to say it would have evicted", err)
+	}
+	// It also reads as the tier being full, since a caller that only wanted to
+	// know that should not have to know about predictions.
+	if !errors.Is(err, ErrNoCapacity) {
+		t.Errorf("a refused prediction did not report the tier as full: %v", err)
+	}
+
+	// And nothing was taken: both blocks that were read are still there.
+	for _, n := range []int{0, 1} {
+		if _, ok := c.Read(key(n)); !ok {
+			t.Errorf("block %d went missing after a prediction was refused", n)
+		}
+	}
+}
+
+// TestAPredictionTakesSpaceNothingIsUsing covers the other half of the rule,
+// which is the half that makes prefetch worth having: free capacity is fair
+// game, and a prediction skips the second-read requirement because a manifest
+// arrives before the first read.
+func TestAPredictionTakesSpaceNothingIsUsing(t *testing.T) {
+	c := newCache(t, 2, 8)
+	seed(t, c, key(0), body(0))
+
+	admitted, err := c.Admit(key(1), body(1), true)
+	if err != nil || !admitted {
+		t.Fatalf("a prediction into a tier with a free slot: admitted=%v err=%v", admitted, err)
+	}
+	if got, ok := c.Read(key(1)); !ok || string(got) != string(body(1)) {
+		t.Errorf("the predicted block reads back as %q/%v", got, ok)
+	}
+}
+
+// TestAnOrdinaryAdmissionStillEvicts keeps the rule from having been applied
+// to everything, which would stop the tier turning over at all.
+func TestAnOrdinaryAdmissionStillEvicts(t *testing.T) {
+	c := newCache(t, 2, 8)
+	seed(t, c, key(0), body(0))
+	seed(t, c, key(1), body(1))
+
+	// Read on its own merits, twice, so it is admitted the ordinary way.
+	seed(t, c, key(2), body(2))
+	if _, ok := c.Read(key(2)); !ok {
+		t.Error("a block read twice was not admitted into a full tier")
+	}
+}

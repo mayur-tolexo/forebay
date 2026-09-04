@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mayur-tolexo/forebay/driver"
 	"github.com/mayur-tolexo/forebay/driver/filedriver"
@@ -754,5 +755,133 @@ func TestABackendFailureIsReportedRatherThanAbsorbed(t *testing.T) {
 				t.Errorf("a backend failure was reported as a bad range: %v", err)
 			}
 		})
+	}
+}
+
+// slow wraps a driver so a backend read takes a knowable amount of time,
+// because the scoreboard's whole question is which side is faster and an
+// in-memory fake answers it by accident.
+type slow struct {
+	driver.Driver
+	delay time.Duration
+}
+
+func (s slow) ReadRange(ctx context.Context, object string, offset, length int64) ([]byte, error) {
+	time.Sleep(s.delay)
+	return s.Driver.ReadRange(ctx, object, offset, length)
+}
+
+// serveSlow is serve with a backend that takes its time.
+func serveSlow(t *testing.T, object string, content []byte, delay time.Duration) *dataserver.Server {
+	t.Helper()
+	store := t.TempDir()
+	if err := os.WriteFile(filepath.Join(store, object), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fd, err := filedriver.New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := driver.Open(slow{Driver: fd, delay: delay})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tier, err := fasttier.New(fasttier.Config{BlockSize: blockSize, FirstReadLimit: 128})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { tier.Close() })
+	extent := filepath.Join(t.TempDir(), "extent")
+	if err := os.WriteFile(extent, make([]byte, 64*blockSize), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := tier.AddCapacity("lease", extent); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := dataserver.New(tier, back, dataserver.Config{Backend: "store"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
+
+// TestTheReadPathScoresItself is what turns RFC-0024's scoreboard from a
+// package into an answer: the reads it needs are the ones this path already
+// makes, and it is the only place that knows which side served them.
+func TestTheReadPathScoresItself(t *testing.T) {
+	const object = "shard"
+	srv := serveSlow(t, object, pattern(8*blockSize), 5*time.Millisecond)
+	ctx := context.Background()
+
+	// Two backend reads of one block, which is what admission on second read
+	// costs, and then a hit.
+	for i := 0; i < 3; i++ {
+		if _, err := srv.ReadRange(ctx, "t1", object, 0, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := srv.Efficiency()
+	if got.Covered != 1 {
+		t.Errorf("covered %d hits, want the one the tier served", got.Covered)
+	}
+	if got.Uncovered != 0 {
+		t.Errorf("uncovered %d hits, though a miss of that size was recorded", got.Uncovered)
+	}
+	if got.Saved <= 0 {
+		t.Errorf("saved %s against a backend delayed by 5ms", got.Saved)
+	}
+	if got.Spread < 0 {
+		t.Errorf("spread %s is not a duration", got.Spread)
+	}
+}
+
+// TestAnUnservedSizeIsUncovered covers the honesty the scoreboard is for: a
+// hit the node has no comparable miss for is counted and not estimated.
+func TestAnUnservedSizeIsUncovered(t *testing.T) {
+	const object = "shard"
+	srv := serveSlow(t, object, pattern(8*blockSize), time.Millisecond)
+	ctx := context.Background()
+
+	// Two whole-block reads to get one block resident, then read a short slice
+	// of it. The slice is a tier hit of a size nothing missed at.
+	for i := 0; i < 2; i++ {
+		if _, err := srv.ReadRange(ctx, "t1", object, 0, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := srv.ReadRange(ctx, "t1", object, 0, 16); err != nil {
+		t.Fatal(err)
+	}
+
+	got := srv.Efficiency()
+	if got.Covered+got.Uncovered == 0 {
+		t.Fatal("no tier hits were scored at all")
+	}
+	// Whatever the split, the fraction is reported rather than assumed whole.
+	if f := got.CoveredFraction(); f < 0 || f > 1 {
+		t.Errorf("covered fraction %v is not a share", f)
+	}
+}
+
+// TestAReadServedEntirelyFromTheBackendSavesNothing keeps a node whose tier
+// never answered from reporting a saving it did not make.
+func TestAReadServedEntirelyFromTheBackendSavesNothing(t *testing.T) {
+	const object = "shard"
+	srv := serveSlow(t, object, pattern(4*blockSize), time.Millisecond)
+
+	// One read per block, so nothing is ever read twice and nothing is
+	// admitted.
+	for i := int64(0); i < 4; i++ {
+		if _, err := srv.ReadRange(context.Background(), "t1", object, i*blockSize, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := srv.Efficiency()
+	if got.Saved != 0 {
+		t.Errorf("saved %s with no tier hit at all", got.Saved)
+	}
+	if got.Covered != 0 || got.Uncovered != 0 {
+		t.Errorf("scored %d covered and %d uncovered hits with no hits", got.Covered, got.Uncovered)
 	}
 }

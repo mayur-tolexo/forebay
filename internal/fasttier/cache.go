@@ -9,6 +9,12 @@ import (
 // ErrNoCapacity reports a cache with nowhere to put a block.
 var ErrNoCapacity = errors.New("fasttier: no slot free")
 
+// ErrWouldEvict reports a prefetched block refused because taking it would
+// have evicted one somebody read. It wraps ErrNoCapacity rather than replacing
+// it, so a caller that only wants to know the tier was full still sees that,
+// and a caller deciding whether to keep predicting can tell the two apart.
+var ErrWouldEvict = errors.New("fasttier: a prediction may not evict")
+
 // Config sizes the tier.
 type Config struct {
 	// BlockSize is the unit. Fixed, so accounting and eviction have one
@@ -220,7 +226,7 @@ func (c *Cache) Admit(k Key, data []byte, prefetched bool) (bool, error) {
 	if !prefetched && !c.first.sawBefore(k) {
 		return false, nil
 	}
-	slab, slot, err := c.placeLocked()
+	slab, slot, err := c.placeLocked(prefetched)
 	if err != nil {
 		return false, err
 	}
@@ -238,13 +244,21 @@ func (c *Cache) Admit(k Key, data []byte, prefetched bool) (bool, error) {
 }
 
 // placeLocked finds a slot, evicting if it has to.
-func (c *Cache) placeLocked() (*slab, int, error) {
+func (c *Cache) placeLocked(prefetched bool) (*slab, int, error) {
 	for _, lease := range c.order {
 		if s, ok := c.slabs[lease]; ok {
 			if slot, took := s.take(); took {
 				return s, slot, nil
 			}
 		}
+	}
+	// A prediction may take space nothing is using and may never take space
+	// from a block somebody read. RFC-0011 makes that the rule which keeps a
+	// wrong prediction costing bandwidth instead of costing a block that was
+	// about to be read, and it binds hardest here: a full tier means a busy
+	// node, which is exactly where predictions are least reliable.
+	if prefetched {
+		return nil, 0, fmt.Errorf("%w: %w", ErrNoCapacity, ErrWouldEvict)
 	}
 	if !c.evictOneLocked() {
 		return nil, 0, ErrNoCapacity

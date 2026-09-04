@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mayur-tolexo/forebay/driver"
+	"github.com/mayur-tolexo/forebay/internal/efficiency"
 	"github.com/mayur-tolexo/forebay/internal/fasttier"
 )
 
@@ -42,6 +43,11 @@ type Server struct {
 
 	mu    sync.Mutex
 	stats Stats
+	// score answers whether the tier is earning its capacity, from the same
+	// reads the counters above come from. Guarded by mu with them, because a
+	// scoreboard is not safe for concurrent use and this is the one place that
+	// writes it.
+	score *efficiency.Scoreboard
 }
 
 // Stats is what the read path did, for an operator deciding whether the tier
@@ -123,6 +129,7 @@ func New(tier *fasttier.Cache, backend *driver.Backend, cfg Config) (*Server, er
 		tier: tier, backend: backend,
 		name: cfg.Backend, maxRead: cfg.MaxRead,
 		idle: cfg.Idle, exchange: cfg.Exchange, block: tier.BlockSize(),
+		score: efficiency.New(),
 	}, nil
 }
 
@@ -210,16 +217,23 @@ func (s *Server) blockAt(ctx context.Context, tenant, object string, index, want
 		Tenant: tenant,
 		Block:  fasttier.BlockRef{Backend: s.name, Object: object, Index: index},
 	}
+	began := time.Now()
 	if data, ok := s.tier.Read(k); ok {
 		s.record(func(st *Stats) { st.Blocks++; st.Hits++ })
+		s.measure(efficiency.Tier, int64(len(data)), time.Since(began))
 		return data, nil
 	}
 
 	start := index * s.block
+	began = time.Now()
 	data, err := s.backend.ReadRange(ctx, object, start, s.block)
 	switch {
 	case err == nil:
 		s.record(func(st *Stats) { st.Blocks++; st.Fetched++ })
+		// Timed before admission, which is this node's own bookkeeping rather
+		// than part of what the backend cost, and counted whatever the size:
+		// a miss is the evidence a hit of the same size is estimated against.
+		s.measure(efficiency.Backend, int64(len(data)), time.Since(began))
 		s.admit(k, data)
 		return data, nil
 	case !errors.Is(err, driver.ErrRange):
@@ -245,11 +259,16 @@ func (s *Server) blockAt(ctx context.Context, tenant, object string, index, want
 	if narrow <= 0 || narrow >= s.block {
 		return nil, err
 	}
+	began = time.Now()
 	data, err = s.backend.ReadRange(ctx, object, start, narrow)
 	if err != nil {
 		return nil, err
 	}
 	s.record(func(st *Stats) { st.Blocks++; st.Narrowed++ })
+	// Recorded like any other backend read. The tier can never serve this one,
+	// so it will never be a hit of that size, but it is still evidence of what
+	// this backend costs at that size.
+	s.measure(efficiency.Backend, int64(len(data)), time.Since(began))
 	return data, nil
 }
 
@@ -282,11 +301,13 @@ func (s *Server) tailBySize(ctx context.Context, k fasttier.Key, object string, 
 		// to work out from a length mismatch that the fault was not its own.
 		return nil, fmt.Errorf("dataserver: %s refused a whole block at %d and then reported %d bytes, which would make that block whole", object, start, size)
 	}
+	began := time.Now()
 	data, err := s.backend.ReadRange(ctx, object, start, length)
 	if err != nil {
 		return nil, err
 	}
 	s.record(func(st *Stats) { st.Blocks++; st.Fetched++ })
+	s.measure(efficiency.Backend, int64(len(data)), time.Since(began))
 	s.admit(k, data)
 	return data, nil
 }
@@ -304,6 +325,26 @@ func (s *Server) admit(k fasttier.Key, data []byte) {
 	case admitted:
 		s.record(func(st *Stats) { st.Admitted++ })
 	}
+}
+
+// measure records one read for the scoreboard.
+//
+// Every read that reaches here returned bytes, since a zero-length read is
+// answered before any block is fetched. A read of nothing would need no guard
+// even so: the scoreboard buckets by size, so it would be evidence only about
+// other reads of nothing.
+func (s *Server) measure(src efficiency.Source, bytes int64, took time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.score.Record(efficiency.Read{Source: src, Bytes: bytes, Took: took})
+}
+
+// Efficiency reports what the tier saved, with the account of itself that
+// RFC-0024 requires travelling with it.
+func (s *Server) Efficiency() efficiency.Estimate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.score.Estimate()
 }
 
 // record updates the counters under the lock.

@@ -17,10 +17,14 @@ been shown to fall short, which nobody has done.
 
 ## What of this is built
 
-**The detector, and the honesty that goes with it.** `internal/prefetch` recognises a sequential or
-strided read stream, predicts what comes next, and stops predicting for a stream whose recent
-predictions were not read. What it produces is a list of blocks worth fetching; nothing fetches them
-yet, because the read path that would is RFC-0008's and is not written.
+**The detector, the honesty that goes with it, and the rule that bounds it.** `internal/prefetch`
+recognises a sequential or strided read stream, predicts what comes next, and stops predicting for a
+stream whose recent predictions were not read. `internal/fasttier` now refuses a prefetched block
+when placing it would evict one, which is the rule below and was previously written here and not in
+the code.
+
+What the detector produces is a list of blocks worth fetching; nothing fetches them yet, because the
+read path that would is RFC-0008's and is not written.
 
 The manifest is designed here and not built. The tier's admission path already takes the flag a
 manifest would set: `Admit` bypasses the second-read rule for a prefetched block, because a manifest
@@ -75,7 +79,9 @@ run further ahead on a fast device, which is exactly the device where prefetchin
 This is the rule that makes a wrong prediction cheap.
 
 Prefetched blocks are admitted into capacity nothing is using. When the tier is full, prefetch stops
-rather than choosing a victim. A prediction that was wrong then costs bandwidth and a slab slot that
+rather than choosing a victim, and the refusal says which of the two it was: a caller that only
+wanted to know the tier was full sees that, and one deciding whether to keep predicting can tell a
+full tier from a prediction it declined to make room for. A prediction that was wrong then costs bandwidth and a slab slot that
 would otherwise have been idle, and it can never cost a block that was about to be read.
 
 The alternative — letting prefetch evict on the grounds that its prediction is better evidence than a
