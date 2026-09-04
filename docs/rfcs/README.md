@@ -53,7 +53,7 @@ edited away, which is the point of keeping these.
 | [0024](0024-efficiency-accounting.md) | Efficiency accounting, GPU hours lost to storage | Accepted    | 2 | 0017 |
 | [0025](0025-cross-cluster-datasets.md) | Cross-cluster and cross-region datasets | Accepted    | 4 | 0006, 0021 |
 | [0026](0026-transport-and-throughput.md) | Transport and the high-throughput path | Accepted    | 2 | 0007, 0008 |
-| [0027](0027-kv-cache-spill.md) | KV cache spill and the inference path | Not started | 4 | 0005, 0007, 0026 |
+| [0027](0027-kv-cache-spill.md) | KV cache spill and the inference path | Accepted    | 4 | 0005, 0007, 0026 |
 
 `Not started` means the file holds a problem statement and the questions the RFC has to answer, but
 nobody has written it. Those are the ones to claim.
