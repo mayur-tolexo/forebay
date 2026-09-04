@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/mayur-tolexo/forebay/driver"
 )
@@ -69,10 +70,12 @@ func (d *Driver) List(ctx context.Context, prefix, after string, limit int) ([]d
 	}
 	names, err := os.ReadDir(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR) {
 			// A prefix nothing is under is an empty level rather than
 			// an error: in an object store there is nothing there to
-			// be missing, and the two have to answer alike.
+			// be missing, and the two have to answer alike. A prefix
+			// that names an object is the same case, because an
+			// object store has nothing under one either.
 			return nil, nil
 		}
 		return nil, fmt.Errorf("filedriver: listing %s: %w", prefix, err)
@@ -111,17 +114,36 @@ func (d *Driver) SizeOf(ctx context.Context, object string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("filedriver: %w", err)
 	}
+	if info.IsDir() {
+		// A directory is a level in the namespace, not an object. Its
+		// size is the filesystem's own bookkeeping, and returning it
+		// tells a caller that separates the two by asking how large
+		// something is that every level is a file.
+		return 0, fmt.Errorf("%w: %q is a directory", ErrBadObject, object)
+	}
 	return info.Size(), nil
 }
 
-// path resolves an object name inside the root, refusing anything that could
+// path resolves an object key inside the root, refusing anything that could
 // escape it.
+//
+// A key is slash-separated and may name more than one level, because an object
+// store's keys do: a namespace built over one store has to walk the same way
+// over the other, and a driver that took only single names could not serve it.
 func (d *Driver) path(object string) (string, error) {
-	if object == "" || object == "." || object == ".." ||
-		strings.ContainsRune(object, os.PathSeparator) || strings.ContainsRune(object, '/') {
+	if object == "" {
 		return "", fmt.Errorf("%w: %q", ErrBadObject, object)
 	}
-	return filepath.Join(d.root, object), nil
+	segments := strings.Split(object, "/")
+	for _, s := range segments {
+		// An empty segment is a leading, trailing or doubled slash, and
+		// each of those names the same level by two spellings.
+		if s == "" || s == "." || s == ".." ||
+			strings.ContainsRune(s, os.PathSeparator) {
+			return "", fmt.Errorf("%w: %q", ErrBadObject, object)
+		}
+	}
+	return filepath.Join(append([]string{d.root}, segments...)...), nil
 }
 
 // ReadRange reads length bytes from offset.
@@ -143,6 +165,9 @@ func (d *Driver) ReadRange(ctx context.Context, object string, offset, length in
 	if err != nil {
 		return nil, fmt.Errorf("filedriver: %w", err)
 	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("%w: %q is a directory", ErrBadObject, object)
+	}
 	if offset+length > info.Size() {
 		return nil, fmt.Errorf("%w: %d bytes from %d, object is %d", driver.ErrRange, length, offset, info.Size())
 	}
@@ -158,6 +183,11 @@ func (d *Driver) WriteObject(ctx context.Context, object string, data []byte) er
 	p, err := d.path(object)
 	if err != nil {
 		return err
+	}
+	// A key naming levels that do not exist yet is an ordinary key in an
+	// object store, where the levels are not real. Here they are.
+	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+		return fmt.Errorf("filedriver: %w", err)
 	}
 	f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
 	if err != nil {

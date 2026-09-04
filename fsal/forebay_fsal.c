@@ -46,6 +46,9 @@
  * the far side is told, and the buffer is sized for the worst case of that
  * many at full length.
  */
+/* What one read may ask for, which an NFS client uses to size its own. */
+#define FOREBAY_MAX_READ (1 << 20)
+
 #define FOREBAY_LIST_NAMES 512
 #define FOREBAY_LIST_BYTES (FOREBAY_LIST_NAMES * (FOREBAY_ENTRY_HEADER + FOREBAY_ENTRY_NAME_MAX + 1))
 
@@ -76,6 +79,11 @@ struct forebay_handle {
 	struct forebay_export *export;
 	char *name;
 	char *key;
+	/* wire is the key as a path, so it is never empty: the root's key is
+	 * the empty string, and a zero-length handle is one the cache above
+	 * cannot tell from any other.
+	 */
+	char *wire;
 	/* size is what the agent last said. Held because getattrs is asked far
 	 * more often than a file changes, and a published version does not
 	 * change at all.
@@ -156,6 +164,10 @@ static struct forebay_handle *handle_new(struct forebay_export *exp,
 	h->export = exp;
 	h->name = gsh_strdup(name);
 	h->key = key != NULL ? gsh_strdup(key) : NULL;
+	h->wire = gsh_calloc(1, (key != NULL ? strlen(key) : 0) + 2);
+	h->wire[0] = '/';
+	if (key != NULL)
+		memcpy(h->wire + 1, key, strlen(key));
 	h->is_dir = is_dir;
 	h->size = size;
 
@@ -168,6 +180,48 @@ static struct forebay_handle *handle_new(struct forebay_export *exp,
 	return h;
 }
 
+/* forebay_handle_to_wire gives a client something it can hand back.
+ *
+ * The key itself, because it is what a lookup produces and what a read needs:
+ * anything else would be a second naming scheme, and turning it back into a
+ * key is then a table this would have to keep.
+ */
+static fsal_status_t forebay_handle_to_wire(const struct fsal_obj_handle *obj_hdl,
+					    fsal_digesttype_t output_type,
+					    struct gsh_buffdesc *fh_desc)
+{
+	const struct forebay_handle *h =
+		container_of(obj_hdl, struct forebay_handle, obj_handle);
+	const char *key = h->wire;
+	size_t len = strlen(key);
+
+	(void)output_type;
+	if (fh_desc->len < len) {
+		/* Refused rather than truncated: a truncated handle names a
+		 * different object, and answering for one is worse than
+		 * answering for none.
+		 */
+		LogMajor(COMPONENT_FSAL,
+			 "forebay: a handle needs %zu bytes and was given %zu",
+			 len, fh_desc->len);
+		return fsalstat(ERR_FSAL_TOOSMALL, 0);
+	}
+	memcpy(fh_desc->addr, key, len);
+	fh_desc->len = len;
+	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+}
+
+/* forebay_handle_to_key is what the cache indexes on, which is the same key. */
+static void forebay_handle_to_key(struct fsal_obj_handle *obj_hdl,
+				  struct gsh_buffdesc *fh_desc)
+{
+	struct forebay_handle *h =
+		container_of(obj_hdl, struct forebay_handle, obj_handle);
+
+	fh_desc->addr = h->wire;
+	fh_desc->len = strlen(h->wire);
+}
+
 static void forebay_release(struct fsal_obj_handle *obj_hdl)
 {
 	struct forebay_handle *h =
@@ -178,6 +232,7 @@ static void forebay_release(struct fsal_obj_handle *obj_hdl)
 	fsal_obj_handle_fini(&h->obj_handle);
 	gsh_free(h->name);
 	gsh_free(h->key);
+	gsh_free(h->wire);
 	gsh_free(h);
 }
 
@@ -250,6 +305,13 @@ static fsal_status_t forebay_getattrs(struct fsal_obj_handle *obj_hdl,
 	struct forebay_handle *h =
 		container_of(obj_hdl, struct forebay_handle, obj_handle);
 
+	/* supported is what the server advertises as FATTR4_SUPPORTED_ATTRS,
+	 * and it is read from here rather than from the export: left unset, the
+	 * advertised set drops every attribute this FSAL supplies, a client
+	 * masks its own GETATTR down to what is left, and the mount fails for
+	 * want of a type and a fileid.
+	 */
+	attrs->supported = ATTRS_POSIX;
 	attrs->valid_mask = ATTRS_POSIX;
 	attrs->type = h->is_dir ? DIRECTORY : REGULAR_FILE;
 	attrs->filesize = h->size;
@@ -386,12 +448,25 @@ static void forebay_read2(struct fsal_obj_handle *obj_hdl, bool bypass,
 	for (size_t i = 0; i < arg->iov_count; i++) {
 		enum forebay_status fst;
 		int64_t got = 0;
+		size_t want = arg->iov[i].iov_len;
 
-		if (arg->iov[i].iov_len == 0)
+		if (want == 0)
 			continue;
+		/* Clamped to what the object holds. A client reads a whole
+		 * rsize whatever the file's length, and the far side refuses a
+		 * range reaching past the end rather than shortening it, so
+		 * asking for the whole buffer near the end asks for bytes that
+		 * are not there and comes back with none of the ones that are.
+		 */
+		if (offset >= h->size) {
+			arg->end_of_file = true;
+			break;
+		}
+		if ((uint64_t)want > h->size - offset)
+			want = (size_t)(h->size - offset);
 		fst = forebay_source_read(h->export->source, h->export->tenant,
 					  h->key, (int64_t)offset,
-					  (int64_t)arg->iov[i].iov_len,
+					  (int64_t)want,
 					  arg->iov[i].iov_base, &got);
 		if (fst == FOREBAY_RANGE) {
 			/* The read reached the end of the object. What has
@@ -406,7 +481,7 @@ static void forebay_read2(struct fsal_obj_handle *obj_hdl, bool bypass,
 		}
 		arg->io_amount += (size_t)got;
 		offset += (uint64_t)got;
-		if ((size_t)got < arg->iov[i].iov_len) {
+		if ((size_t)got < want) {
 			arg->end_of_file = true;
 			break;
 		}
@@ -422,6 +497,48 @@ static void forebay_read2(struct fsal_obj_handle *obj_hdl, bool bypass,
  * the agent, so open is bookkeeping Ganesha needs and this does not. A write
  * is refused rather than silently ignored.
  */
+/* forebay_state is what an NFSv4 OPEN holds while a file is open.
+ *
+ * The state comes first because the free path recovers this struct from the
+ * state pointer, and the descriptor is here because the server tracks open
+ * descriptors through it even where, as here, there is no descriptor to
+ * track: the read goes out over a socket each time.
+ */
+struct forebay_state {
+	struct state_t state;
+	struct fsal_fd fsal_fd;
+};
+
+/* forebay_free_state releases what forebay_alloc_state took. */
+static void forebay_free_state(struct state_t *state)
+{
+	struct forebay_state *fs =
+		container_of(state, struct forebay_state, state);
+
+	destroy_fsal_fd(&fs->fsal_fd);
+	gsh_free(fs);
+}
+
+/* forebay_alloc_state gives the server somewhere to keep an open file.
+ *
+ * It is not optional and there is no useful default: the one the server ships
+ * returns nothing, and an OPEN that is handed nothing dereferences it.
+ */
+static struct state_t *forebay_alloc_state(struct fsal_export *exp_hdl,
+					   enum state_type state_type,
+					   struct state_t *related_state)
+{
+	struct state_t *state;
+	struct forebay_state *fs;
+
+	(void)exp_hdl;
+	state = init_state(gsh_calloc(1, sizeof(struct forebay_state)),
+			   forebay_free_state, state_type, related_state);
+	fs = container_of(state, struct forebay_state, state);
+	init_fsal_fd(&fs->fsal_fd, FSAL_FD_STATE, op_ctx->fsal_export);
+	return state;
+}
+
 static fsal_status_t forebay_open2(struct fsal_obj_handle *obj_hdl,
 				   struct state_t *state,
 				   fsal_openflags_t openflags,
@@ -433,19 +550,30 @@ static fsal_status_t forebay_open2(struct fsal_obj_handle *obj_hdl,
 				   struct fsal_attrlist *attrs_out,
 				   bool *caller_perm_check)
 {
-	(void)state;
 	(void)createmode;
 	(void)attrs_in;
 	(void)verifier;
 
-	if (openflags & (FSAL_O_WRITE | FSAL_O_RDWR))
+
+	/* Only the write bit, because FSAL_O_RDWR carries the read bit too and
+	 * masking with it refuses an ordinary read.
+	 */
+	if (openflags & FSAL_O_WRITE)
 		return fsalstat(ERR_FSAL_ROFS, 0);
-	if (name != NULL)
+	if (name != NULL) {
+		if (caller_perm_check != NULL)
+			*caller_perm_check = false;
 		return forebay_lookup(obj_hdl, name, new_obj, attrs_out);
+	}
 	if (attrs_out != NULL)
 		obj_hdl->obj_ops->getattrs(obj_hdl, attrs_out);
 	if (caller_perm_check != NULL)
 		*caller_perm_check = false;
+	/* Published even by handle: the caller's out-parameter is not
+	 * initialised, and a caller that reads it back gets a stack value.
+	 */
+	if (new_obj != NULL)
+		*new_obj = obj_hdl;
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }
 
@@ -471,6 +599,8 @@ static void forebay_handle_ops_init(struct fsal_obj_ops *ops)
 {
 	fsal_default_obj_ops_init(ops);
 	ops->release = forebay_release;
+	ops->handle_to_wire = forebay_handle_to_wire;
+	ops->handle_to_key = forebay_handle_to_key;
 	ops->lookup = forebay_lookup;
 	ops->readdir = forebay_readdir;
 	ops->getattrs = forebay_getattrs;
@@ -532,6 +662,90 @@ static void forebay_export_release(struct fsal_export *exp_hdl)
 	gsh_free(exp);
 }
 
+/* forebay_wire_to_host takes a handle a client sent back.
+ *
+ * Nothing to decode: the handle is the key, so this only bounds it. A length
+ * beyond what a key may be is a client sending something this never issued.
+ */
+static fsal_status_t forebay_wire_to_host(struct fsal_export *exp_hdl,
+					  fsal_digesttype_t in_type,
+					  struct gsh_buffdesc *fh_desc,
+					  int flags)
+{
+	(void)exp_hdl;
+	(void)in_type;
+	(void)flags;
+	if (fh_desc->len < 1 || fh_desc->len > FOREBAY_KEY_MAX + 1)
+		return fsalstat(ERR_FSAL_BADHANDLE, 0);
+	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+}
+
+/* forebay_create_handle rebuilds an object from a handle a client kept.
+ *
+ * A client may hold one across a restart of this server, so the object is
+ * looked up again rather than found in anything this remembers: what it holds
+ * is a name, and the agent is what says whether that name is still a file.
+ */
+static fsal_status_t forebay_create_handle(struct fsal_export *exp_hdl,
+					   struct gsh_buffdesc *fh_desc,
+					   struct fsal_obj_handle **handle,
+					   struct fsal_attrlist *attrs)
+{
+	struct forebay_export *exp =
+		container_of(exp_hdl, struct forebay_export, export);
+	char key[FOREBAY_KEY_MAX + 1];
+	struct forebay_handle *h;
+	const char *name;
+	int64_t size = 0;
+
+	const char *wire = fh_desc->addr;
+
+	if (fh_desc->len < 1 || fh_desc->len > FOREBAY_KEY_MAX + 1 ||
+	    wire[0] != '/')
+		return fsalstat(ERR_FSAL_BADHANDLE, 0);
+	memcpy(key, wire + 1, fh_desc->len - 1);
+	key[fh_desc->len - 1] = '\0';
+
+	if (key[0] == '\0') {
+		*handle = &exp->root->obj_handle;
+		if (attrs != NULL)
+			(*handle)->obj_ops->getattrs(*handle, attrs);
+		return fsalstat(ERR_FSAL_NO_ERROR, 0);
+	}
+
+	name = strrchr(key, '/');
+	name = name != NULL ? name + 1 : key;
+
+	if (forebay_source_size(exp->source, exp->tenant, key, &size) == FOREBAY_OK &&
+	    size >= 0) {
+		h = handle_new(exp, name, key, false, (uint64_t)size);
+	} else {
+		h = handle_new(exp, name, key, true, 0);
+	}
+	*handle = &h->obj_handle;
+	if (attrs != NULL)
+		(*handle)->obj_ops->getattrs(*handle, attrs);
+	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+}
+
+/* forebay_get_dynamic_info answers what df asks.
+ *
+ * The pool is the agent's and this does not have it, so the numbers say the
+ * export is not a place to put things: it is read-only, and a client that
+ * asked how much room there is has asked the wrong question.
+ */
+static fsal_status_t forebay_get_dynamic_info(struct fsal_export *exp_hdl,
+					      struct fsal_obj_handle *obj_hdl,
+					      fsal_dynamicfsinfo_t *info)
+{
+	(void)exp_hdl;
+	(void)obj_hdl;
+	memset(info, 0, sizeof(*info));
+	info->maxread = FOREBAY_MAX_READ;
+	info->maxwrite = 0;
+	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+}
+
 static fsal_status_t forebay_lookup_path(struct fsal_export *exp_hdl,
 					 const char *path,
 					 struct fsal_obj_handle **out,
@@ -576,6 +790,10 @@ static fsal_status_t forebay_create_export(struct fsal_module *fsal_hdl,
 	fsal_export_init(&exp->export);
 	exp->export.exp_ops.lookup_path = forebay_lookup_path;
 	exp->export.exp_ops.release = forebay_export_release;
+	exp->export.exp_ops.wire_to_host = forebay_wire_to_host;
+	exp->export.exp_ops.create_handle = forebay_create_handle;
+	exp->export.exp_ops.get_fs_dynamic_info = forebay_get_dynamic_info;
+	exp->export.exp_ops.alloc_state = forebay_alloc_state;
 	exp->export.fsal = fsal_hdl;
 	exp->export.up_ops = up_ops;
 	exp->tenant = gsh_strdup(cfg.tenant);
@@ -598,6 +816,10 @@ static fsal_status_t forebay_create_export(struct fsal_module *fsal_hdl,
 		forebay_export_release(&exp->export);
 		return fsalstat(ERR_FSAL_SERVERFAULT, 0);
 	}
+	// Published last, and it is not optional: whatever stacks on top of this
+	// export reads it from here, and a caching layer handed nothing writes
+	// through a null pointer before this function has returned.
+	op_ctx->fsal_export = &exp->export;
 	LogEvent(COMPONENT_FSAL, "forebay: export for tenant %s reading %s",
 		 cfg.tenant, cfg.socket);
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
