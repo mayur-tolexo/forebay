@@ -206,6 +206,15 @@ type Tick struct {
 	// Rate is what the workload was observed to consume, in bytes a second,
 	// and is zero on the first pass, which has nothing to difference.
 	Rate float64
+	// Elapsed is how long the reclaim took, measured inside the call on a
+	// monotonic clock, and is zero when this pass reclaimed nothing. Reported
+	// because the deadline is the promise that makes lending safe, and a
+	// promise nobody measures is a hope.
+	Elapsed time.Duration
+	// Bounded says an elastic lease was taken, which is the only class that
+	// promises a deadline, so a latency can be read against the promise it was
+	// measured under rather than against all of them at once.
+	Bounded bool
 }
 
 // Watch keeps free space above the headroom target until ctx is done, calling
@@ -283,6 +292,7 @@ func (a *Agent) Step(ctx context.Context, cfg WatchConfig, free FreeSpace, now t
 		rec, err := a.ReclaimCapacity(t.Observed.Need, now)
 		t.Reclaimed = rec.Result.Reclaimed
 		t.Shortfall = rec.Result.Shortfall
+		t.Elapsed, t.Bounded = rec.Elapsed, rec.Result.Bounded
 		// A missed deadline is a broken promise rather than a failed pass, and
 		// the capacity came back either way, so the watch reports it and
 		// continues rather than stopping the node's only reclaim path.

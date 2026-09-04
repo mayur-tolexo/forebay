@@ -21,6 +21,7 @@ import (
 	"github.com/mayur-tolexo/forebay/internal/agent"
 	"github.com/mayur-tolexo/forebay/internal/dataserver"
 	"github.com/mayur-tolexo/forebay/internal/lease"
+	"github.com/mayur-tolexo/forebay/internal/metrics"
 	"github.com/mayur-tolexo/forebay/internal/pool"
 	"github.com/mayur-tolexo/forebay/internal/topology"
 )
@@ -1033,4 +1034,71 @@ func TestMovingTargetOnlyExplainsAMovingFloor(t *testing.T) {
 			t.Errorf("the reclaim line does not say %q: %q", want, got)
 		}
 	}
+}
+
+// TestRecordPublishesEveryPass covers the counter that makes silence
+// unambiguous: a watch that died and a cluster where nothing is happening
+// produce the same absence of events, and only a number that always moves
+// tells them apart.
+func TestRecordPublishesEveryPass(t *testing.T) {
+	reg := metrics.New()
+	if err := metrics.Node(reg); err != nil {
+		t.Fatal(err)
+	}
+	// A pass in which nothing at all happened.
+	record(reg, agent.Tick{Target: 1 << 30})
+
+	var out strings.Builder
+	reg.WriteTo(&out)
+	got := out.String()
+	if !strings.Contains(got, metrics.WatchPasses+" 1") {
+		t.Errorf("a quiet pass was not counted:\n%s", got)
+	}
+	if !strings.Contains(got, metrics.HeadroomBytes+" 1.073741824e+09") {
+		t.Errorf("the floor this pass kept was not published:\n%s", got)
+	}
+}
+
+// TestReclaimLatencyIsLabelledByTheClassTaken matters because only elastic
+// promises a deadline, and reading both classes against it would judge
+// opportunistic capacity by a promise it never made.
+func TestReclaimLatencyIsLabelledByTheClassTaken(t *testing.T) {
+	for _, c := range []struct {
+		bounded bool
+		want    string
+	}{{true, `class="elastic"`}, {false, `class="opportunistic"`}} {
+		reg := metrics.New()
+		metrics.Node(reg)
+		record(reg, agent.Tick{Reclaimed: 1 << 20, Elapsed: 250 * time.Millisecond, Bounded: c.bounded})
+
+		var out strings.Builder
+		reg.WriteTo(&out)
+		got := out.String()
+		if !strings.Contains(got, c.want) {
+			t.Errorf("bounded=%v did not label the class %s:\n%s", c.bounded, c.want, got)
+		}
+		if !strings.Contains(got, "_sum{"+c.want+"} 0.25") {
+			t.Errorf("bounded=%v recorded the wrong latency:\n%s", c.bounded, got)
+		}
+	}
+}
+
+// TestAShortfallIsPublished covers the number an operator most needs, since it
+// says the node is where it would have been with no lending at all.
+func TestAShortfallIsPublished(t *testing.T) {
+	reg := metrics.New()
+	metrics.Node(reg)
+	record(reg, agent.Tick{Shortfall: 4096})
+
+	var out strings.Builder
+	reg.WriteTo(&out)
+	if !strings.Contains(out.String(), metrics.ReclaimShortfall+" 4096") {
+		t.Errorf("a shortfall was not published:\n%s", out.String())
+	}
+}
+
+// TestRecordWithoutARegistryIsSafe covers an agent started with no metrics
+// address, which must reclaim exactly as it did before.
+func TestRecordWithoutARegistryIsSafe(t *testing.T) {
+	record(nil, agent.Tick{Reclaimed: 1, Shortfall: 1})
 }

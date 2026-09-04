@@ -11,6 +11,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -22,6 +24,7 @@ import (
 	"github.com/mayur-tolexo/forebay/internal/agent"
 	"github.com/mayur-tolexo/forebay/internal/kubelet"
 	"github.com/mayur-tolexo/forebay/internal/lease"
+	"github.com/mayur-tolexo/forebay/internal/metrics"
 	"github.com/mayur-tolexo/forebay/internal/pool"
 	"github.com/mayur-tolexo/forebay/internal/topology"
 	"github.com/mayur-tolexo/forebay/internal/version"
@@ -59,6 +62,7 @@ func run() error {
 		kubeletPort = flag.Int("kubelet-port", 10250, "the kubelet's port")
 		tokenFile   = flag.String("kubelet-token-file", "", "service account token for the kubelet, defaulting to the pod's own")
 		kubeletRoot = flag.String("kubelet-root", "/var/lib/kubelet", "the kubelet's directory, used to check pods are charged against the filesystem the pools are on")
+		metricsAddr = flag.String("metrics-addr", "", "address to serve metrics on, which is an operator surface and carries tenant names, so it binds where only a scrape reaches it")
 		serveSocket = flag.String("serve-socket", "", "path to listen on for reads, which is how something that speaks a storage protocol asks this agent for bytes")
 		backendDir  = flag.String("backend-dir", "", "directory the durable backend serves objects from, read through the file driver")
 		s3Endpoint  = flag.String("backend-s3-endpoint", "", "scheme and host of an S3-compatible durable backend, instead of --backend-dir. Credentials come from "+accessKeyEnv+" and "+secretKeyEnv)
@@ -253,13 +257,28 @@ func run() error {
 		BorrowedDir: cfg.BorrowedDir,
 		Pools:       borrowedFS,
 	})
+	// Registered before anything records, so a scrape of an idle agent still
+	// shows the series exist: a metric that appears only once something
+	// happened cannot be alerted on for not happening.
+	reg := metrics.New()
+	if err := metrics.Node(reg); err != nil {
+		return err
+	}
+	if *metricsAddr != "" {
+		stopMetrics, err := serveMetrics(*metricsAddr, reg)
+		if err != nil {
+			return err
+		}
+		defer stopMetrics()
+	}
+
 	watchCfg := agent.WatchConfig{
 		Headroom:    pool.Bytes(*headroom),
 		HeadroomFor: *headroomFor,
 		MinHeadroom: pool.Bytes(*minHeadroom),
 		Interval:    *interval,
 	}
-	return watchPressure(a, cfg, borrowedFS, *sysroot, *mountinfo, watchCfg, reads, sources...)
+	return watchPressure(a, cfg, borrowedFS, *sysroot, *mountinfo, watchCfg, reads, reg, sources...)
 }
 
 // kubeletOptions is what the pod input needs to reach the kubelet and to prove
@@ -450,7 +469,7 @@ func podSource(ctx context.Context, opts kubeletOptions) (agent.Source, error) {
 //
 // Free space is re-measured each pass rather than derived from the accounting,
 // because the point is to catch writes by workloads that told nobody.
-func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sysroot, mountinfo string, watchCfg agent.WatchConfig, sv *serving, sources ...agent.Source) error {
+func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sysroot, mountinfo string, watchCfg agent.WatchConfig, sv *serving, reg *metrics.Registry, sources ...agent.Source) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -481,6 +500,12 @@ func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sy
 	var lastDegraded string
 	var lastDropped int64
 	report := func(t agent.Tick, err error) {
+		// Recorded first and on every pass, whether or not anything happened.
+		// A watch that has died and a cluster where nothing is happening
+		// produce the same absence of events, and this counter is what tells
+		// them apart: the alert is on a number that must move.
+		record(reg, t)
+
 		if d := strings.Join(t.Degraded, "; "); d != lastDegraded {
 			switch {
 			case d == "":
@@ -604,4 +629,52 @@ func movingTarget(cfg agent.WatchConfig, t agent.Tick) string {
 	}
 	return fmt.Sprintf(", keeping %s for %s of writing at %s/s",
 		t.Target, cfg.HeadroomFor, pool.Bytes(t.Rate))
+}
+
+// serveMetrics starts the scrape endpoint, returning how to stop it.
+//
+// Out of the IO path entirely: a read does not consult it and does not stop
+// when it stops, which is why a failure here is reported and does not end the
+// agent.
+func serveMetrics(addr string, reg *metrics.Registry) (func(), error) {
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("serving metrics on %s: %w", addr, err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", reg.Handler())
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		if err := srv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Fprintln(os.Stderr, "forebay-agent: metrics stopped:", err)
+		}
+	}()
+	fmt.Printf("serving metrics on %s/metrics\n", l.Addr())
+	return func() { srv.Close() }, nil
+}
+
+// record puts one watch pass into the metrics.
+//
+// Errors are dropped rather than returned. A metric that could not be recorded
+// must not stop a reclaim: the watch's job is giving compute its disk back,
+// and failing that to report a number would be the wrong way round.
+func record(reg *metrics.Registry, t agent.Tick) {
+	if reg == nil {
+		return
+	}
+	_ = reg.Add(metrics.WatchPasses, nil, 1)
+	_ = reg.Set(metrics.HeadroomBytes, nil, float64(t.Target))
+	if t.Reclaimed > 0 {
+		// Labelled by the class that was actually taken, since only elastic
+		// promises a deadline and reading both against it would judge
+		// opportunistic capacity by a promise it never made.
+		class := "opportunistic"
+		if t.Bounded {
+			class = "elastic"
+		}
+		_ = reg.Observe(metrics.ReclaimSeconds, metrics.Labels{"class": class}, t.Elapsed.Seconds())
+	}
+	if t.Shortfall > 0 {
+		_ = reg.Add(metrics.ReclaimShortfall, nil, float64(t.Shortfall))
+	}
 }
