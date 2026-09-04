@@ -23,9 +23,12 @@ refuses a grant it cannot honour, replays its journal, times its reclaims and tr
 error. `internal/metrics` computes readiness from observed service time against two bounds, over a
 window, so a node that is slow rather than dead reports it.
 
-Nothing yet feeds reads into it, because the read path does not record its own service time, and
-nothing serves it: the endpoint an orchestrator probes belongs to the same change as the read path's
-instrumentation and neither is written. What exists is the decision and its rules.
+The read path now feeds it. Each read is timed around what a caller waited for rather than around a
+block, because readiness is a claim about what a caller experienced, and the same number goes to the
+histogram an operator reads: a node judged ready by one measurement and reported slow by another
+gives an operator two answers and no way to choose. The agent serves `/ready` on the same listener as
+its metrics, and a refusal carries the reason on the body, since a probe failure with no reason sends
+an operator to the logs of a node that is answering.
 
 ## Assumptions
 

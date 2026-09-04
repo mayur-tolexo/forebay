@@ -18,6 +18,7 @@ import (
 	"github.com/mayur-tolexo/forebay/driver"
 	"github.com/mayur-tolexo/forebay/internal/efficiency"
 	"github.com/mayur-tolexo/forebay/internal/fasttier"
+	"github.com/mayur-tolexo/forebay/internal/metrics"
 	"github.com/mayur-tolexo/forebay/internal/prefetch"
 )
 
@@ -56,6 +57,11 @@ type Server struct {
 	// ahead carries predictions to the worker that fetches them, so no read
 	// ever waits on one.
 	ahead chan fasttier.Key
+	// reg and ready are how this path becomes visible. Both are nil when
+	// nothing is watching, which is the case for a server built in a test that
+	// is not about observability.
+	reg   *metrics.Registry
+	ready *metrics.Readiness
 }
 
 // Stats is what the read path did, for an operator deciding whether the tier
@@ -108,6 +114,14 @@ type Config struct {
 	// starts when the request arrives rather than when the wait for it did.
 	// Zero means DefaultExchangeBudget.
 	Exchange time.Duration
+	// Metrics is where the read path publishes what it did. Nil means it
+	// publishes nothing, and the series RFC-0017 names then read as flat zeros
+	// rather than as absent, which is why the agent always passes one.
+	Metrics *metrics.Registry
+	// Ready is fed each read's service time, which is the signal RFC-0015
+	// names as the one that separates a node that is slow from one that is
+	// dead. Nil means nothing is deciding readiness from reads.
+	Ready *metrics.Readiness
 	// Prefetch turns on predicting what a reader will ask for next. Nil means
 	// off, which is what a caller that has not measured its own workload
 	// should choose: RFC-0011's depth and accuracy floor are guesses, and a
@@ -156,6 +170,8 @@ func New(tier *fasttier.Cache, backend *driver.Backend, cfg Config) (*Server, er
 		name: cfg.Backend, maxRead: cfg.MaxRead,
 		idle: cfg.Idle, exchange: cfg.Exchange, block: tier.BlockSize(),
 		score: efficiency.New(),
+		reg:   cfg.Metrics,
+		ready: cfg.Ready,
 	}
 	if cfg.Prefetch != nil {
 		detect, err := prefetch.New(*cfg.Prefetch)
@@ -194,6 +210,16 @@ func (s *Server) ReadRange(ctx context.Context, tenant, object string, offset, l
 		// first and the process does not survive it.
 		return nil, fmt.Errorf("%w: %d bytes is more than the %d a single read may ask for", ErrRefused, length, s.maxRead)
 	}
+
+	// Counted around the whole read rather than around a block, because what a
+	// caller waited for is the read, and readiness is a claim about what a
+	// caller experienced.
+	began := time.Now()
+	s.inFlight(1)
+	defer func() {
+		s.inFlight(-1)
+		s.answered(time.Since(began))
+	}()
 
 	end := offset + length
 	out := make([]byte, 0, length)
@@ -257,6 +283,7 @@ func (s *Server) blockAt(ctx context.Context, tenant, object string, index, want
 	if data, ok := s.tier.Read(k); ok {
 		s.record(func(st *Stats) { st.Blocks++; st.Hits++ })
 		s.measure(efficiency.Tier, int64(len(data)), time.Since(began))
+		s.delivered(efficiency.Tier, int64(len(data)))
 		return data, nil
 	}
 
@@ -270,6 +297,7 @@ func (s *Server) blockAt(ctx context.Context, tenant, object string, index, want
 		// than part of what the backend cost, and counted whatever the size:
 		// a miss is the evidence a hit of the same size is estimated against.
 		s.measure(efficiency.Backend, int64(len(data)), time.Since(began))
+		s.delivered(efficiency.Backend, int64(len(data)))
 		s.admit(k, data)
 		return data, nil
 	case !errors.Is(err, driver.ErrRange):
@@ -305,6 +333,7 @@ func (s *Server) blockAt(ctx context.Context, tenant, object string, index, want
 	// so it will never be a hit of that size, but it is still evidence of what
 	// this backend costs at that size.
 	s.measure(efficiency.Backend, int64(len(data)), time.Since(began))
+	s.delivered(efficiency.Backend, int64(len(data)))
 	return data, nil
 }
 
@@ -344,6 +373,7 @@ func (s *Server) tailBySize(ctx context.Context, k fasttier.Key, object string, 
 	}
 	s.record(func(st *Stats) { st.Blocks++; st.Fetched++ })
 	s.measure(efficiency.Backend, int64(len(data)), time.Since(began))
+	s.delivered(efficiency.Backend, int64(len(data)))
 	s.admit(k, data)
 	return data, nil
 }
@@ -361,6 +391,50 @@ func (s *Server) admit(k fasttier.Key, data []byte) {
 	case admitted:
 		s.record(func(st *Stats) { st.Admitted++ })
 	}
+}
+
+// inFlight moves the gauge of reads being answered right now, which is the
+// one number that says whether a quiet node is idle or stuck.
+func (s *Server) inFlight(delta float64) {
+	if s.reg == nil {
+		return
+	}
+	_ = s.reg.Add(metrics.ReadsInFlight, nil, delta)
+}
+
+// answered publishes how long one read took, to the histogram an operator
+// reads and to the readiness that decides whether this node should be sent
+// more.
+//
+// Both from the same number on purpose. A node judged ready by one measurement
+// and reported slow by another gives an operator two answers and no way to
+// choose.
+func (s *Server) answered(took time.Duration) {
+	if s.reg != nil {
+		_ = s.reg.Observe(metrics.ReadSeconds, nil, took.Seconds())
+	}
+	if s.ready != nil {
+		s.ready.Observe(took, time.Now())
+	}
+}
+
+// delivered publishes bytes answered and where they came from, which is the
+// only label that distinguishes the tier earning its capacity from the backend
+// doing the work.
+//
+// Called where a caller was waiting and not from the prefetch worker, whose
+// bytes are fetched on nobody's behalf. They are still evidence of what the
+// backend costs, which is why the scoreboard takes them and this does not.
+func (s *Server) delivered(src efficiency.Source, bytes int64) {
+	if s.reg == nil {
+		return
+	}
+	where := "backend"
+	if src == efficiency.Tier {
+		where = "tier"
+		_ = s.reg.Add(metrics.TierHits, nil, 1)
+	}
+	_ = s.reg.Add(metrics.ReadBytes, metrics.Labels{"source": where}, float64(bytes))
 }
 
 // measure records one read for the scoreboard.

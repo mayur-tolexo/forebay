@@ -16,9 +16,15 @@ This RFC also gates RFC-0010, because autonomy without measurement is guessing w
 
 ## What of this is built
 
-**The registry, the node's metric set, and the watch recording into it.** There is no readiness
-beyond RFC-0004's liveness probe, no read identifier following a read across processes, and nothing
-yet re-reads the two facts that decay.
+**The registry, the node's metric set, the watch recording into it, and now the read path.** Every
+read publishes how long it took, how many bytes it delivered and which side delivered them, so the
+series this document names carry numbers rather than the zeros of a registered metric nobody writes
+to. There is still no read identifier following a read across processes, and nothing yet re-reads the
+two facts that decay.
+
+The bytes a prefetch fetched are deliberately not counted as delivered. They were fetched on nobody's
+behalf, and counting them would make the backend look as though it served more than anyone asked
+for.
 
 `internal/metrics` holds the registry and emits the text exposition format directly, which is a
 dozen lines against a client library that would be the largest dependency here. It enforces the

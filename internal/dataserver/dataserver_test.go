@@ -18,6 +18,7 @@ import (
 	"github.com/mayur-tolexo/forebay/driver/filedriver"
 	"github.com/mayur-tolexo/forebay/internal/dataserver"
 	"github.com/mayur-tolexo/forebay/internal/fasttier"
+	"github.com/mayur-tolexo/forebay/internal/metrics"
 	"github.com/mayur-tolexo/forebay/internal/prefetch"
 )
 
@@ -1066,5 +1067,133 @@ func TestPredictingNeverBlocksTheReadPath(t *testing.T) {
 	}
 	if got := srv.Stats().Prefetched; got != 0 {
 		t.Errorf("%d blocks were prefetched with no worker running", got)
+	}
+}
+
+// registry builds a node registry, since the series have to be registered
+// before anything can record into them.
+func registry(t *testing.T) *metrics.Registry {
+	t.Helper()
+	r := metrics.New()
+	if err := metrics.Node(r); err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// exposed renders the registry, which is what a scrape actually sees and so
+// the only honest place to assert a series appeared.
+func exposed(t *testing.T, r *metrics.Registry) string {
+	t.Helper()
+	var out strings.Builder
+	if _, err := r.WriteTo(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out.String()
+}
+
+// TestTheReadPathPublishesWhatItDid closes RFC-0017's gap the other way round:
+// the series were registered and nothing wrote to them, so a dashboard showed
+// flat zeros rather than an absence anybody would notice.
+func TestTheReadPathPublishesWhatItDid(t *testing.T) {
+	const object = "shard"
+	reg := registry(t)
+	srv, _ := serveWith(t, object, pattern(8*blockSize),
+		dataserver.Config{Backend: "store", Metrics: reg}, 0)
+
+	// Twice, so one read comes from the backend and one from the tier.
+	for i := 0; i < 3; i++ {
+		if _, err := srv.ReadRange(context.Background(), "t1", object, 0, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Values, not names. Every series here is registered at startup so that an
+	// idle agent still shows it exists, which means a name in the scrape says
+	// nothing about anything having been written to it.
+	//
+	// Three reads of one block: the first misses and is not admitted, the
+	// second misses and is, the third hits.
+	got := exposed(t, reg)
+	for _, want := range []string{
+		fmt.Sprintf(`forebay_read_bytes_total{source="backend"} %d`, 2*blockSize),
+		fmt.Sprintf(`forebay_read_bytes_total{source="tier"} %d`, blockSize),
+		"forebay_tier_hits_total 1",
+		"forebay_read_seconds_count 3",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the scrape does not carry %s:\n%s", want, got)
+		}
+	}
+	// The in-flight gauge came back down, or a node that answered everything
+	// would look permanently busy.
+	if !strings.Contains(got, "forebay_reads_in_flight 0") {
+		t.Errorf("reads in flight did not return to zero:\n%s", got)
+	}
+}
+
+// TestSpeculativeBytesAreNotReportedAsDelivered matters because a prefetched
+// block is fetched on nobody's behalf. Counting it as delivered would make the
+// backend look like it served more than anybody asked for.
+func TestSpeculativeBytesAreNotReportedAsDelivered(t *testing.T) {
+	const object = "shard"
+	reg := registry(t)
+	cfg := prefetch.DefaultConfig()
+	srv, _ := serveWith(t, object, pattern(32*blockSize),
+		dataserver.Config{Backend: "store", Metrics: reg, Prefetch: &cfg}, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l, err := net.Listen("unix", socketPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); srv.Serve(ctx, l) }()
+	defer func() { cancel(); wg.Wait() }()
+
+	// Four blocks read, and prefetching well ahead of them.
+	for i := int64(0); i < 4; i++ {
+		if _, err := srv.ReadRange(ctx, "t1", object, i*blockSize, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, "the reader to be got ahead of", func() bool { return srv.Stats().Prefetched > 0 })
+	settleFor(100 * time.Millisecond)
+
+	// Four blocks were asked for, so four blocks' worth was delivered however
+	// many were fetched ahead.
+	want := fmt.Sprintf(`forebay_read_bytes_total{source="backend"} %d`, 4*blockSize)
+	if got := exposed(t, reg); !strings.Contains(got, want) {
+		t.Errorf("delivered bytes include speculative fetches, want %s:\n%s", want, got)
+	}
+}
+
+// TestReadinessIsFedByTheSameNumberItReports keeps a node from being judged
+// ready by one measurement and reported slow by another, which gives an
+// operator two answers and no way to choose.
+func TestReadinessIsFedByTheSameNumberItReports(t *testing.T) {
+	const object = "shard"
+	// A backend slower than the failing bound, so every read is a slow one.
+	ready, err := metrics.NewReadiness(20*time.Millisecond, 5*time.Millisecond, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := serveWith(t, object, pattern(4*blockSize),
+		dataserver.Config{Backend: "store", Ready: ready}, 50*time.Millisecond)
+
+	if ok, _ := ready.Ready(time.Now()); !ok {
+		t.Fatal("a node that has answered nothing is not ready, so this proves nothing")
+	}
+	if _, err := srv.ReadRange(context.Background(), "t1", object, 0, blockSize); err != nil {
+		t.Fatal(err)
+	}
+	ok, why := ready.Ready(time.Now())
+	if ok {
+		t.Error("a node whose only read took longer than the failing bound reports itself ready")
+	}
+	if !strings.Contains(why, "slowest read") {
+		t.Errorf("the reason does not say what was slow: %q", why)
 	}
 }

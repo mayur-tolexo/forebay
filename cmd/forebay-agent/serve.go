@@ -14,6 +14,7 @@ import (
 	"github.com/mayur-tolexo/forebay/internal/dataserver"
 	"github.com/mayur-tolexo/forebay/internal/fasttier"
 	"github.com/mayur-tolexo/forebay/internal/lease"
+	"github.com/mayur-tolexo/forebay/internal/metrics"
 	"github.com/mayur-tolexo/forebay/internal/pool"
 )
 
@@ -29,6 +30,11 @@ type servingOptions struct {
 	TierBytes  pool.Bytes
 	BlockBytes int64
 	FirstReads int
+	// Metrics is where the read path publishes, and Ready is what decides
+	// whether this node should be sent more work. Both come from the agent
+	// rather than being made here, since the agent is what serves them.
+	Metrics *metrics.Registry
+	Ready   *metrics.Readiness
 }
 
 // serving is a running read path.
@@ -113,7 +119,9 @@ func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
 		tier.Close()
 		return nil, fmt.Errorf("naming the backend: %w", err)
 	}
-	srv, err := dataserver.New(tier, backend, dataserver.Config{Backend: name})
+	srv, err := dataserver.New(tier, backend, dataserver.Config{
+		Backend: name, Metrics: opts.Metrics, Ready: opts.Ready,
+	})
 	if err != nil {
 		tier.Close()
 		return nil, err

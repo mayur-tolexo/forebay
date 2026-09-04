@@ -53,6 +53,9 @@ func run() error {
 		mountinfo   = flag.String("mountinfo", "/proc/self/mountinfo", "mount table used to find the device under the pools")
 		drain       = flag.Bool("drain", false, "return what this node lent and exit, so it can be upgraded. Exits non-zero if something is still held, since a rolling upgrade should stop rather than read a log line")
 		autonomy    = flag.Bool("autonomy", true, "let the node adapt what it may adapt, which today is its post-reclaim cooldown. Turning it off holds the configured values and stops nothing the node promised: it still reclaims and still expires")
+		readySlow   = flag.Duration("ready-slow", 2*time.Second, "a read at or over this makes the node report itself not ready, since a node that is slow rather than dead keeps taking work nobody else can see it failing")
+		readyWell   = flag.Duration("ready-recovered", 500*time.Millisecond, "reads must come back under this before the node reports itself ready again. Two bounds rather than one, or a marginal node flaps between ready and not")
+		readyWindow = flag.Duration("ready-window", 30*time.Second, "how far back readiness looks")
 		liveness    = flag.Bool("liveness", false, "check whether the agent owning the pool is still making progress, and exit non-zero if not")
 		staleAfter  = flag.Duration("stale-after", 60*time.Second, "how long without progress means the agent is wedged")
 		watch       = flag.Bool("watch", false, "stay running, keeping free space above the headroom target")
@@ -221,6 +224,18 @@ func run() error {
 		return drainNode(a, time.Now())
 	}
 
+	// Registered before anything records, so a scrape of an idle agent still
+	// shows the series exist: a metric that appears only once something
+	// happened cannot be alerted on for not happening.
+	reg := metrics.New()
+	if err := metrics.Node(reg); err != nil {
+		return err
+	}
+	ready, err := metrics.NewReadiness(*readySlow, *readyWell, *readyWindow)
+	if err != nil {
+		return err
+	}
+
 	var reads *serving
 	if *serveSocket == "" {
 		fmt.Fprintln(os.Stderr, "not serving: pass --serve-socket and a backend to answer reads")
@@ -237,6 +252,8 @@ func run() error {
 			TierBytes:  pool.Bytes(*tierBytes),
 			BlockBytes: *blockBytes,
 			FirstReads: *firstReads,
+			Metrics:    reg,
+			Ready:      ready,
 		})
 		if err != nil {
 			return err
@@ -264,15 +281,8 @@ func run() error {
 		BorrowedDir: cfg.BorrowedDir,
 		Pools:       borrowedFS,
 	})
-	// Registered before anything records, so a scrape of an idle agent still
-	// shows the series exist: a metric that appears only once something
-	// happened cannot be alerted on for not happening.
-	reg := metrics.New()
-	if err := metrics.Node(reg); err != nil {
-		return err
-	}
 	if *metricsAddr != "" {
-		stopMetrics, err := serveMetrics(*metricsAddr, reg)
+		stopMetrics, err := serveMetrics(*metricsAddr, reg, ready)
 		if err != nil {
 			return err
 		}
@@ -655,20 +665,32 @@ func movingTarget(cfg agent.WatchConfig, t agent.Tick) string {
 // Out of the IO path entirely: a read does not consult it and does not stop
 // when it stops, which is why a failure here is reported and does not end the
 // agent.
-func serveMetrics(addr string, reg *metrics.Registry) (func(), error) {
+func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness) (func(), error) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("serving metrics on %s: %w", addr, err)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", reg.Handler())
+	// On the same listener as the metrics, because an orchestrator that could
+	// reach one and not the other would draw a conclusion from the wrong
+	// silence.
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) {
+		if ok, why := ready.Ready(time.Now()); !ok {
+			// The reason on the body, since a probe failure with no reason
+			// sends an operator to the logs of a node that is answering.
+			http.Error(w, why, http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprintln(w, "ready")
+	})
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := srv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintln(os.Stderr, "forebay-agent: metrics stopped:", err)
 		}
 	}()
-	fmt.Printf("serving metrics on %s/metrics\n", l.Addr())
+	fmt.Printf("serving metrics on %s/metrics and readiness on %s/ready\n", l.Addr(), l.Addr())
 	return func() { srv.Close() }, nil
 }
 
