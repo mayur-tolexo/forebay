@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 3 |
 | **Depends on** | 0012, 0020 |
 | **Supersedes** | The unified-namespace non-goal in 0001 |
@@ -18,6 +18,26 @@ RFC-0001 originally listed a unified namespace as a non-goal, on the grounds tha
 consistency problems for a benefit nobody had asked for. That was wrong on the second half: the
 benefit has been asked for. This RFC replaces that position with a narrower one that is actually
 deliverable.
+
+## What of this is built
+
+**The two renderings, and the proof that they name one thing.** `internal/dataset` renders a
+reference as the path the file view serves and as the key the object view serves, and parses either
+back to the same reference and the same backend address. That is the feature's core reduced to the
+part that can exist before either server does: if the two views could resolve to different addresses
+the tier would hold two copies, and no amount of server code would fix it afterwards.
+
+Neither server exists. The file view is RFC-0008's and is not written; the object view has no
+document of its own and is not written either.
+
+## Assumptions
+
+| Assumption | Basis | Risk if wrong |
+| --- | --- | --- |
+| AI datasets do not depend on rename, partial overwrite or POSIX metadata | Reasoned, from what a shard-based dataset is: whole immutable objects with names | The file view declines semantics real jobs need, and the boundary drawn below is in the wrong place |
+| Immutability is what makes two views agree, rather than a protocol between them | Reasoned, and close to a proof: there is no partial-write window because there are no partial writes to a published version | The two views need a consistency mechanism, which is the multiplied consistency problem RFC-0001 originally refused this feature over |
+| Concurrent block access to the same bytes is not deliverable by anyone | Reasoned, from a block volume being an opaque range with a foreign filesystem inside it | The boundary is more conservative than it needed to be, and a competitor offers something real that this declines to |
+| A dataloader written against S3 needs reads and listing, not writes | Reasoned, from what a dataloader does, and unverified against the tools people actually use | The object view is too narrow to adopt without changing the loader, which is the cost this feature exists to avoid |
 
 ## The honest boundary
 
@@ -91,6 +111,47 @@ Mutable working areas exist, and they are single-view: a scratch volume is a scr
 multi-protocol guarantee applies to published, immutable dataset versions, which is where it is
 actually wanted.
 
+### What the file view declines
+
+Stated here rather than discovered at runtime, which is what the stub asked for. Each is refused with
+an error rather than silently ignored, because a write that appears to succeed and does not is worse
+than one that fails.
+
+| Operation | Answer | Why |
+| --- | --- | --- |
+| Read, open, stat, readdir | Served | This is what a dataset is read with |
+| Write, truncate, partial overwrite | Refused, read-only | A published version is immutable, which is what makes the two views agree |
+| Rename | Refused | A name is part of the address the object view resolves. Renaming one view's name would unname the other's bytes |
+| Hard link | Refused | Two names for one object is what a clone is, and it belongs in the metadata graph rather than in a directory |
+| `mtime` and `ctime` | The version's publication time | One time for every object in a version, because that is when the bytes became what they are. A per-object time would be invented |
+| Ownership and mode | The export's, uniformly | POSIX identity on the read path is RFC-0016's question, and it answers it with the network path rather than with a uid |
+
+### What the object view offers
+
+Reads and listing over published versions: `GET`, `HEAD`, and listing with a prefix. Not `PUT`, not
+`DELETE`, not multipart upload, not versioning or lifecycle APIs.
+
+That is enough for a dataloader written against object storage to work unchanged, which is the whole
+point of offering the view, and it is deliberately not an S3 clone. A view that accepted `PUT` would
+be a view that could write to a published version, which is the immutability the file view's answers
+above are built on.
+
+### Deleting a version that somebody is reading
+
+One answer for both views, which is what the stub asks for and what RFC-0007 left unowned as a
+consistency question.
+
+Deleting a published version is **unnaming** it. The control plane stops resolving that
+dataset-and-version pair, so no new read can address it, and because the version is part of the
+address, cached blocks for it become unreachable rather than wrongly served. A reader already holding
+a layout finishes what it was doing: its extents are not taken from underneath it, and it fails on
+its next lookup rather than mid-read.
+
+What that leaves is the bytes themselves, which cannot be freed until the last reference to them is
+gone. Enumerating those references safely is the hardest part of the model and belongs to
+[RFC-0012](0012-dataset-object-model.md), which owns it already. This document settles only what a
+reader sees, and it is the same in both views because both resolve the same address.
+
 ## Alternatives considered
 
 | Alternative | Trade-off | Why not |
@@ -112,11 +173,43 @@ about what a delete means to an open reader.
 Quota and capacity reporting become ambiguous when one set of bytes is visible under several names.
 An operator asking how much this dataset costs deserves one answer, not a sum that double counts.
 
+## Performance implications
+
+Rendering and parsing an address is string work per request on the path that resolves a read, which
+is not where time goes.
+
+The saving is capacity rather than speed, and it is the reason for the feature: one copy instead of
+one per protocol. It is unmeasured because neither view is served.
+
+## Complexity
+
+Small, and most of it is refusal. The design's work is drawing the boundary and holding it.
+
+What it makes harder later is offering a writable view of a published version, which is now something
+two other decisions rest on rather than a feature to add.
+
+## Security and tenancy
+
+Two doors to the same bytes need the same lock. Both views resolve through the same reference, so a
+tenant that cannot name a dataset cannot address it in either, and the object view's listing is
+bounded by the same scoping: it lists inside a dataset a tenant can already name rather than across
+the export.
+
+The object view is the one to watch, because listing is a capability the file view grants more
+narrowly. A prefix listing that spanned datasets would let a tenant enumerate names they were not
+given, which is the disclosure RFC-0016 constrains, and it is why listing is scoped to a dataset
+rather than to a bucket.
+
 ## Open questions
 
-- Which POSIX semantics the file view declines to support, stated explicitly rather than discovered
-  by users at runtime.
-- Whether the object view should be S3-compatible enough for existing tooling, and what is dropped.
-- How delete-with-open-readers behaves, and whether the two views can share one answer.
-- Whether snapshot export to a block volume is worth building in v1 or belongs later.
-- How capacity is attributed when extents are shared between versions and views.
+- **Whether the object view's narrowness is narrow enough to break real tooling.** This document
+  fixes what it offers and cannot say whether a given loader needs more, which is a question about
+  the tools people use rather than about the design. Owned by
+  [RFC-0018](0018-benchmark-and-falsification-suite.md), which owns workload definition.
+- **How capacity is attributed when extents are shared between versions and views.** A version that
+  shares everything with its predecessor costs nothing, and something has to decide who pays for the
+  bytes both point at. Owned by [RFC-0012](0012-dataset-object-model.md), which owns the reference
+  graph that makes the question answerable.
+- **Whether snapshot export to a block volume is worth building.** Not in v1: it is an explicit
+  operation and there is no block path to export to. Owned by this document, and it should be
+  reopened when there is.

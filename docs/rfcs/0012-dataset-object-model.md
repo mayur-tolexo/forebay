@@ -180,6 +180,10 @@ another's bytes alive by cloning them. That is a quota question and belongs with
 
 ## Open questions
 
+- **How capacity is attributed when extents are shared between versions and views**, deferred here by
+  [RFC-0021](0021-single-copy-multi-protocol.md). A version that shares everything with its
+  predecessor costs nothing, and something has to decide who pays for the bytes both point at. Owned
+  by this document, which owns the reference graph that makes it answerable.
 - **Whether sharing below an object is offered**, deferred here by
   [RFC-0020](0020-no-copy-policy.md), which fixes the unit of sharing at the object because that is
   the only granularity every backend can name. A version reusing an unchanged part of its

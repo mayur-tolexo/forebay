@@ -315,6 +315,8 @@ holder. That is RFC-0005's residual-data problem and RFC-0016 owns the mechanism
 - **How large the record of first reads has to be** for admission to fire at all, since it is sized
   by the read stream rather than by the cache and a bound too small admits nothing. Owned by
   [RFC-0018](0018-benchmark-and-falsification-suite.md), because it is a measurement.
-- **What a reader holding blocks from a deleted dataset version should see.** No RFC owns this yet as
-  a consistency question because it is a lifecycle one, and
-  [RFC-0012](0012-dataset-object-model.md) owns the lifecycle.
+- **When the blocks of a deleted version may be freed.** What a reader sees is settled by
+  [RFC-0021](0021-single-copy-multi-protocol.md), which needed one answer for both of its views:
+  deletion unnames the version, a reader already holding a layout finishes, and it fails on its next
+  lookup rather than mid-read. What is left is when the bytes stop being referenced at all. Owned by
+  [RFC-0012](0012-dataset-object-model.md), which owns the reference graph.
