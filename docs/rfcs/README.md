@@ -35,7 +35,7 @@ edited away, which is the point of keeping these.
 | [0006](0006-durable-backend-driver-contract.md) | Durable backend driver contract | **Accepted** | 1 | 0002 |
 | [0007](0007-fast-tier-data-path.md) | Fast tier data path | **Accepted** | 1 | 0005, 0006 |
 | [0008](0008-access-layer-pnfs.md) | Access layer over pNFS | **Accepted** | 1 | 0007 |
-| [0009](0009-intent-and-policy-model.md) | Intent and policy model | Not started | 2 | 0006 |
+| [0009](0009-intent-and-policy-model.md) | Intent and policy model | Accepted    | 2 | 0006 |
 | [0010](0010-autonomy-engine.md) | Autonomy engine | Not started | 2 | 0009, 0017 |
 | [0011](0011-prefetch-and-dataset-manifests.md) | Prefetch and dataset manifests | Not started | 3 | 0007 |
 | [0012](0012-dataset-object-model.md) | Dataset, version, snapshot and clone model | Not started | 3 | 0006, 0009 |

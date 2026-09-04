@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/mayur-tolexo/forebay/driver"
+	"github.com/mayur-tolexo/forebay/internal/intent"
 )
 
 // DatasetResource names the kind a user declares.
@@ -32,6 +35,10 @@ type Metadata struct {
 
 // DatasetSpec is the declaration.
 type DatasetSpec struct {
+	// Intent is what the user needs of it, in the vocabulary RFC-0009 fixes.
+	// Omitted means the default, which asks the store for nothing beyond
+	// existing and spends no borrowed capacity.
+	Intent intent.Intent `json:"intent,omitempty"`
 	// Object names it in the durable store. The store itself is the
 	// controller's configuration rather than the user's, so a dataset does not
 	// carry credentials or an endpoint.
@@ -48,6 +55,12 @@ type DatasetStatus struct {
 	// Reason carries the store's own words when it could not be checked, so
 	// an operator is not left to guess between absent and unreachable.
 	Reason string `json:"reason,omitempty"`
+	// Satisfiable says the declared intent can be met here, and Unsatisfiable
+	// says by what it cannot. A dataset whose intent stopped being satisfiable
+	// keeps its data and its declaration: what changed is the system's ability
+	// to honour it, not what the user asked for.
+	Satisfiable   bool   `json:"satisfiable"`
+	Unsatisfiable string `json:"unsatisfiable,omitempty"`
 	// ObservedGeneration is the spec this describes.
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
@@ -66,6 +79,13 @@ type Sizer interface {
 // ErrNoObject rejects a dataset that names nothing.
 var ErrNoObject = errors.New("kube: dataset names no object")
 
+// Resolvable is what resolving an intent needs: a backend that declares what
+// it can do, and a fleet that may or may not know its own racks.
+type Resolvable struct {
+	Backend *driver.Backend
+	Fleet   intent.Fleet
+}
+
 // Resolve asks the store about one dataset and returns what to record.
 //
 // An object that is not there and a store that could not be reached are
@@ -75,14 +95,27 @@ func Resolve(ctx context.Context, store Sizer, d Dataset) (DatasetStatus, error)
 	if d.Spec.Object == "" {
 		return DatasetStatus{}, fmt.Errorf("%w: %s", ErrNoObject, d.Metadata.Name)
 	}
-	status := DatasetStatus{ObservedGeneration: d.Metadata.Generation}
+	status := DatasetStatus{ObservedGeneration: d.Metadata.Generation, Satisfiable: true}
 	size, err := store.SizeOf(ctx, d.Spec.Object)
 	if err != nil {
 		status.Reason = err.Error()
-		return status, nil
+	} else {
+		status.Present, status.Bytes = true, size
 	}
-	status.Present, status.Bytes = true, size
 	return status, nil
+}
+
+// ResolveIntent records whether the declaration can be met here.
+//
+// Separate from asking the store how large an object is, because the two
+// answer different questions and an object being absent says nothing about
+// whether the intent attached to it could be honoured.
+func ResolveIntent(d Dataset, r Resolvable, status *DatasetStatus) {
+	if err := intent.Resolve(d.Spec.Intent, r.Backend, r.Fleet); err != nil {
+		status.Satisfiable, status.Unsatisfiable = false, err.Error()
+		return
+	}
+	status.Satisfiable, status.Unsatisfiable = true, ""
 }
 
 // Changed reports whether a status says anything the recorded one does not,

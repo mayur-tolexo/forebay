@@ -20,6 +20,7 @@ import (
 
 	"github.com/mayur-tolexo/forebay/driver"
 	"github.com/mayur-tolexo/forebay/driver/s3driver"
+	"github.com/mayur-tolexo/forebay/internal/intent"
 	"github.com/mayur-tolexo/forebay/internal/kube"
 	"github.com/mayur-tolexo/forebay/internal/version"
 )
@@ -46,6 +47,7 @@ func run() error {
 		endpoint    = flag.String("s3-endpoint", "", "scheme and host of the durable backend")
 		bucket      = flag.String("s3-bucket", "", "bucket the backend serves from")
 		region      = flag.String("s3-region", "", "region the backend signs for")
+		knowsRacks  = flag.Bool("fleet-knows-racks", false, "whether topology can name the rack a node is in, which rack tolerance needs and no backend can supply")
 	)
 	flag.Parse()
 
@@ -66,6 +68,14 @@ func run() error {
 		return err
 	}
 
+	// What an intent resolves against: the backend's own declaration, and
+	// whether this fleet can name a rack. The second is not a backend's to
+	// answer and an intent needing it fails for a reason no backend could fix.
+	resolvable := kube.Resolvable{
+		Backend: backend,
+		Fleet:   intent.Fleet{KnowsRacks: *knowsRacks},
+	}
+
 	resource := kube.DatasetResource
 	resource.Namespace = *namespace
 	where := *namespace
@@ -81,7 +91,7 @@ func run() error {
 	tick := time.NewTicker(*interval)
 	defer tick.Stop()
 	for {
-		if n, err := reconcile(ctx, client, resource, backend); err != nil {
+		if n, err := reconcile(ctx, client, resource, backend, resolvable); err != nil {
 			// A pass that failed does not end the controller: the API server
 			// being away is a condition it is expected to sit through, and
 			// stopping would need something else to start it again.
@@ -114,7 +124,7 @@ func checkFlags(endpoint, bucket string, interval time.Duration) error {
 // It writes only what changed. A controller that patched every object on every
 // pass would put a cluster's worth of writes into etcd for nothing, and the
 // cost lands on everything else using it rather than on this.
-func reconcile(ctx context.Context, c *kube.Client, r kube.Resource, store kube.Sizer) (int, error) {
+func reconcile(ctx context.Context, c *kube.Client, r kube.Resource, store kube.Sizer, resolvable kube.Resolvable) (int, error) {
 	var list kube.DatasetList
 	if err := c.List(ctx, r, &list); err != nil {
 		return 0, err
@@ -125,6 +135,9 @@ func reconcile(ctx context.Context, c *kube.Client, r kube.Resource, store kube.
 	)
 	for _, d := range list.Items {
 		status, err := kube.Resolve(ctx, store, d)
+		if err == nil {
+			kube.ResolveIntent(d, resolvable, &status)
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "forebay-controller: %s: %v\n", d.Metadata.Name, err)
 			continue

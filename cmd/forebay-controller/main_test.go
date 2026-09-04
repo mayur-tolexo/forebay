@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mayur-tolexo/forebay/driver"
+	"github.com/mayur-tolexo/forebay/internal/intent"
 	"github.com/mayur-tolexo/forebay/internal/kube"
 )
 
@@ -79,6 +81,30 @@ func (a *api) client(t *testing.T) *kube.Client {
 	return c
 }
 
+// resolvable is a backend and a fleet that can meet the default intent, so a
+// test about reconciling is not also a test about intent.
+func resolvable(t *testing.T) kube.Resolvable {
+	t.Helper()
+	b, err := driver.Open(plain{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return kube.Resolvable{Backend: b, Fleet: intent.Fleet{KnowsRacks: true}}
+}
+
+// plain declares the mandatory core and nothing else.
+type plain struct{}
+
+func (plain) Declare() driver.Declaration {
+	return driver.Declaration{Contract: 1, Capabilities: []driver.Capability{driver.ReadRange}}
+}
+func (plain) ReadRange(context.Context, string, int64, int64) ([]byte, error) { return nil, nil }
+func (plain) SizeOf(context.Context, string) (int64, error)                   { return 0, nil }
+func (plain) WriteObject(context.Context, string, []byte) error               { return nil }
+func (plain) DeleteObject(context.Context, string) error                      { return nil }
+func (plain) SnapshotObject(context.Context, string) (string, error)          { return "", nil }
+func (plain) CloneObject(context.Context, string, string) error               { return nil }
+
 func dataset(name, object string, status *kube.DatasetStatus) kube.Dataset {
 	return kube.Dataset{
 		Metadata: kube.Metadata{Name: name, Namespace: "team", Generation: 1},
@@ -91,7 +117,11 @@ func dataset(name, object string, status *kube.DatasetStatus) kube.Dataset {
 // off etcd's back: every pass resolves every dataset, and almost every pass
 // should write nothing.
 func TestReconcileWritesOnlyWhatChanged(t *testing.T) {
-	current := &kube.DatasetStatus{Present: true, Bytes: 100, ObservedGeneration: 1}
+	// Satisfiable is part of what is recorded, so a status written before this
+	// field existed differs from a freshly resolved one and is rewritten once.
+	// That is a real upgrade cost and it is one write per dataset, not one per
+	// pass.
+	current := &kube.DatasetStatus{Present: true, Bytes: 100, ObservedGeneration: 1, Satisfiable: true}
 	a := &api{items: []kube.Dataset{
 		dataset("fresh", "a", nil),
 		dataset("known", "b", current),
@@ -99,7 +129,8 @@ func TestReconcileWritesOnlyWhatChanged(t *testing.T) {
 	c := a.client(t)
 	s := store{sizes: map[string]int64{"a": 42, "b": 100}}
 
-	wrote, err := reconcile(context.Background(), c, kube.DatasetResource, s)
+	wrote, err := reconcile(context.Background(), c, kube.DatasetResource,
+		s, resolvable(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +149,7 @@ func TestReconcileWritesOnlyWhatChanged(t *testing.T) {
 // listing and writing.
 func TestADatasetDeletedMidPassIsNotAFailure(t *testing.T) {
 	a := &api{items: []kube.Dataset{dataset("going", "a", nil)}, gone: map[string]bool{"going": true}}
-	wrote, err := reconcile(context.Background(), a.client(t), kube.DatasetResource, store{sizes: map[string]int64{"a": 1}})
+	wrote, err := reconcile(context.Background(), a.client(t), kube.DatasetResource, store{sizes: map[string]int64{"a": 1}}, resolvable(t))
 	if err != nil {
 		t.Fatalf("a deleted dataset failed the pass: %v", err)
 	}
@@ -134,7 +165,7 @@ func TestOneBadDatasetDoesNotStopTheRest(t *testing.T) {
 		dataset("empty", "", nil),
 		dataset("good", "a", nil),
 	}}
-	wrote, err := reconcile(context.Background(), a.client(t), kube.DatasetResource, store{sizes: map[string]int64{"a": 7}})
+	wrote, err := reconcile(context.Background(), a.client(t), kube.DatasetResource, store{sizes: map[string]int64{"a": 7}}, resolvable(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +181,8 @@ func TestOneBadDatasetDoesNotStopTheRest(t *testing.T) {
 // reported as a cluster with no datasets.
 func TestAListThatFailedIsReported(t *testing.T) {
 	a := &api{listErr: http.StatusForbidden}
-	if _, err := reconcile(context.Background(), a.client(t), kube.DatasetResource, store{}); err == nil {
+	if _, err := reconcile(context.Background(), a.client(t), kube.DatasetResource,
+		store{}, resolvable(t)); err == nil {
 		t.Fatal("a forbidden list was treated as an empty cluster")
 	}
 }
@@ -160,7 +192,7 @@ func TestAListThatFailedIsReported(t *testing.T) {
 func TestAnUnreachableStoreIsRecordedRatherThanDropped(t *testing.T) {
 	a := &api{items: []kube.Dataset{dataset("shards", "a", nil)}}
 	wrote, err := reconcile(context.Background(), a.client(t), kube.DatasetResource,
-		store{fail: errors.New("dial tcp: no route to host")})
+		store{fail: errors.New("dial tcp: no route to host")}, resolvable(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +272,7 @@ func TestOneUnwritableDatasetDoesNotStopTheRest(t *testing.T) {
 	}, refuse: map[string]bool{"refused": true}}
 
 	wrote, err := reconcile(context.Background(), a.client(t), kube.DatasetResource,
-		store{sizes: map[string]int64{"a": 1, "b": 2}})
+		store{sizes: map[string]int64{"a": 1, "b": 2}}, resolvable(t))
 	if err == nil {
 		t.Fatal("a refused write was not reported")
 	}
@@ -253,4 +285,43 @@ func TestOneUnwritableDatasetDoesNotStopTheRest(t *testing.T) {
 	if _, ok := a.patches["fine"]; !ok {
 		t.Error("the dataset after the broken one was never reconciled")
 	}
+}
+
+// TestAnUnsatisfiableIntentIsRecordedAndKeepsItsData covers a declaration the
+// system cannot honour. The dataset is not deleted and its object is not
+// touched: what changed is the ability to meet the intent, not the request.
+func TestAnUnsatisfiableIntentIsRecordedAndKeepsItsData(t *testing.T) {
+	d := dataset("wants-racks", "a", nil)
+	d.Spec.Intent = intent.Intent{Durability: intent.DurabilityRackTolerant}
+	a := &api{items: []kube.Dataset{d}}
+
+	// A backend that can replicate, on a fleet that cannot name a rack.
+	b, err := driver.Open(replicating{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := kube.Resolvable{Backend: b, Fleet: intent.Fleet{KnowsRacks: false}}
+
+	if _, err := reconcile(context.Background(), a.client(t), kube.DatasetResource,
+		store{sizes: map[string]int64{"a": 64}}, r); err != nil {
+		t.Fatal(err)
+	}
+	got := a.patches["wants-racks"]
+	if got.Satisfiable {
+		t.Error("an intent this fleet cannot meet was recorded as satisfiable")
+	}
+	if !strings.Contains(got.Unsatisfiable, "rack") {
+		t.Errorf("the reason does not name the fleet's own blindness: %q", got.Unsatisfiable)
+	}
+	if !got.Present || got.Bytes != 64 {
+		t.Errorf("the object was forgotten because its intent could not be met: %+v", got)
+	}
+}
+
+// replicating declares replication and nothing about racks, which no backend
+// can declare.
+type replicating struct{ plain }
+
+func (replicating) Declare() driver.Declaration {
+	return driver.Declaration{Contract: 1, Capabilities: []driver.Capability{driver.ReadRange, driver.Replicate}}
 }

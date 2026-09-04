@@ -24,6 +24,7 @@ spec:
     additionalPrinterColumns:
     - {name: Object, type: string, jsonPath: .spec.object}
     - {name: Present, type: boolean, jsonPath: .status.present}
+    - {name: Satisfiable, type: boolean, jsonPath: .status.satisfiable}
     - {name: Bytes, type: integer, jsonPath: .status.bytes}
     - {name: Age, type: date, jsonPath: .metadata.creationTimestamp}
     schema:
@@ -34,6 +35,31 @@ spec:
             type: object
             required: [object]
             properties:
+              intent:
+                type: object
+                description: >-
+                  What the user needs of it. The vocabulary is closed and every
+                  value maps to something a backend declares or a node can be
+                  asked for; a word that mapped to nothing would be marketing.
+                properties:
+                  durability:
+                    type: string
+                    enum: [none, backend, replicated, rack-tolerant]
+                    description: >-
+                      Omitted means backend, which is the store's own guarantee
+                      and is what the user already bought.
+                  latency:
+                    type: string
+                    enum: [best-effort, cached]
+                    description: >-
+                      Omitted means best-effort. Asking for cached spends
+                      borrowed capacity, so it is never the default.
+                  cost:
+                    type: string
+                    enum: [cheapest, balanced]
+                    description: >-
+                      cheapest refuses to spend borrowed capacity, and so
+                      contradicts a latency of cached rather than losing to it.
               object:
                 type: string
                 minLength: 1
@@ -53,6 +79,15 @@ spec:
               reason:
                 type: string
                 description: The store's own words when it could not be checked, so absent and unreachable are told apart.
+              satisfiable:
+                type: boolean
+                description: Whether the declared intent can be met here.
+              unsatisfiable:
+                type: string
+                description: >-
+                  What it cannot be met by, naming both a backend that lacks a
+                  capability and a fleet that cannot see its own racks, since a
+                  user should not be sent to change the wrong one.
               observedGeneration:
                 type: integer
                 format: int64

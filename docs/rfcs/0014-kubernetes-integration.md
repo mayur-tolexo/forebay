@@ -278,6 +278,12 @@ control plane's own credentials become the weak point, which is
 
 ## Open questions
 
+- **Whether an admission webhook should refuse an unsatisfiable intent at apply time.** A user learns
+  from a status a pass later that what they declared cannot be met, when the API server could have
+  told them as they typed it. A webhook is a request-path dependency on this project, which is a
+  serious thing to add to a cluster, and the trade is immediacy against being able to break every
+  `kubectl apply` in the namespace. Owned by this document, since it owns what this project puts in
+  front of the API server.
 - **Whether a declared ephemeral-storage request predicts writing well enough to be worth acting
   on.** Counting one node makes this look weak: almost nothing declares. What that does not settle
   is whether the few that declare are the ones that write, which is the version of the question that
