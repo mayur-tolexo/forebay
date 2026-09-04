@@ -432,6 +432,10 @@ and RFC-0016 has to say so explicitly.
 - **Whether oldest-first remains the right tiebreak within a class** once per-lease hit rates exist
   to do better. Owned by [RFC-0007](0007-fast-tier-data-path.md), which owns eviction, using the
   measurements from [RFC-0017](0017-observability.md).
+- **Whether a pool should distinguish a distributed cache from local borrowing**, deferred here by
+  [RFC-0025](0025-cross-cluster-datasets.md). They are the same bytes under the same reclamation
+  rules, and an operator may still want to see which is which. Owned by this document, which owns
+  what a pool reports.
 - **Whether an operator wants to see what part of the reserve is durable data they donated**, now
   that Forebay does not track it separately. Nothing needs the number to work, and an operator may
   reasonably want it reported. No RFC owns this: it is a question about what people want to see
