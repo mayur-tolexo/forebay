@@ -97,6 +97,24 @@ func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
 	// A lease outlives its process, so a restart replays this one and a second
 	// grant is refused. Released first rather than adopted: a previous run may
 	// have sized it differently, and what it holds is a cache.
+	// Capacity a control plane proposed becomes tier capacity, which is what
+	// makes a grant worth anything: without this a lease adds bytes to the
+	// pool that nothing can put a block in.
+	a.OnGranted(func(id, extent string) {
+		if id == selfLease {
+			// The tier is given this one below, once its extent path has been
+			// resolved with the rest of the setup. Taking it here as well
+			// would hand the tier the same extent twice.
+			return
+		}
+		if err := tier.AddCapacity(id, extent); err != nil {
+			// Not fatal to the grant, which already happened: the node lent
+			// the capacity and the tier could not take it, which is a smaller
+			// tier rather than a broken promise.
+			fmt.Fprintf(os.Stderr, "forebay-agent: lease %s could not become tier capacity: %v\n", id, err)
+		}
+	})
+
 	now := time.Now()
 	switch _, err := a.Release(selfLease, now); {
 	case err == nil, errors.Is(err, lease.ErrNoSuchLease), errors.Is(err, agent.ErrNoExtent):

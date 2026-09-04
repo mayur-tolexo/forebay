@@ -49,6 +49,9 @@ func (a *Agent) Grant(l lease.Lease, now time.Time) error {
 		}
 		return err
 	}
+	// Told last, so a holder is handed an extent that exists and accounting
+	// that already counts it.
+	a.granted(l.ID)
 	return nil
 }
 

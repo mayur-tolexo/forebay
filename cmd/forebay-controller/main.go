@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -39,18 +40,20 @@ func main() {
 
 func run() error {
 	var (
-		showVersion  = flag.Bool("version", false, "print the build identity and exit")
-		apiServer    = flag.String("api-server", "", "API server URL, defaulting to the one this pod was given")
-		token        = flag.String("token", "", "bearer token, defaulting to this pod's own")
-		namespace    = flag.String("namespace", "", "namespace to watch, empty for every one")
-		interval     = flag.Duration("interval", 30*time.Second, "how often datasets are resolved against the store")
-		endpoint     = flag.String("s3-endpoint", "", "scheme and host of the durable backend")
-		bucket       = flag.String("s3-bucket", "", "bucket the backend serves from")
-		region       = flag.String("s3-region", "", "region the backend signs for")
-		knowsRacks   = flag.Bool("fleet-knows-racks", false, "whether topology can name the rack a node is in, which rack tolerance needs and no backend can supply")
-		agentService = flag.String("agent-service", "", "the headless service the node agents answer on. Set it to publish node residency labels, which needs this controller to be able to patch nodes")
-		agentNS      = flag.String("agent-namespace", "", "namespace that service is in")
-		floor        = flag.String("durability-floor", "", "the least durability every dataset here must require, which can only raise what a user declared and never lower it")
+		showVersion    = flag.Bool("version", false, "print the build identity and exit")
+		apiServer      = flag.String("api-server", "", "API server URL, defaulting to the one this pod was given")
+		token          = flag.String("token", "", "bearer token, defaulting to this pod's own")
+		namespace      = flag.String("namespace", "", "namespace to watch, empty for every one")
+		interval       = flag.Duration("interval", 30*time.Second, "how often datasets are resolved against the store")
+		endpoint       = flag.String("s3-endpoint", "", "scheme and host of the durable backend")
+		bucket         = flag.String("s3-bucket", "", "bucket the backend serves from")
+		region         = flag.String("s3-region", "", "region the backend signs for")
+		knowsRacks     = flag.Bool("fleet-knows-racks", false, "whether topology can name the rack a node is in, which rack tolerance needs and no backend can supply")
+		agentService   = flag.String("agent-service", "", "the headless service the node agents answer on. Set it to publish node residency labels, which needs this controller to be able to patch nodes")
+		agentNS        = flag.String("agent-namespace", "", "namespace that service is in")
+		leaseTokenFile = flag.String("lease-token-file", "", "file holding the token the node agents require before they will consider a lease proposal. Set it to plan tier capacity from what datasets declare")
+		nodeShare      = flag.Float64("node-share", 0.25, "the most of a node's free space this will ask for. A node exists to run compute, and the pool arithmetic is its floor rather than something a planner should aim at")
+		floor          = flag.String("durability-floor", "", "the least durability every dataset here must require, which can only raise what a user declared and never lower it")
 	)
 	flag.Parse()
 
@@ -101,6 +104,26 @@ func run() error {
 	// Nil unless asked for. Publishing residency needs permission to patch
 	// every node, which is the widest thing this project asks for, so an
 	// operator turns it on rather than finding it on.
+	// Read before the loop starts, so a controller pointed at a token file it
+	// cannot read stops rather than proposing to every node and being refused
+	// by all of them for a reason nobody looks at.
+	planToken, err := readToken(*leaseTokenFile)
+	if err != nil {
+		return err
+	}
+	var plan *proposer
+	if planToken != "" && *agentService != "" {
+		if *nodeShare <= 0 || *nodeShare > 1 {
+			return fmt.Errorf("--node-share must be a share of a node, got %v", *nodeShare)
+		}
+		plan = &proposer{
+			client: client, token: planToken, service: *agentService,
+			namespace: *agentNS, timeout: defaultResidencyTimeout, share: *nodeShare,
+		}
+		fmt.Printf("planning tier capacity across the agents on %s/%s, up to %.0f%% of each node's free space\n",
+			*agentNS, *agentService, *nodeShare*100)
+	}
+
 	var residency *residencyPass
 	if *agentService != "" {
 		residency = &residencyPass{
@@ -125,6 +148,15 @@ func run() error {
 				fmt.Printf("relabelled %d node(s)\n", n)
 			}
 		}
+		if plan != nil {
+			// After the datasets are reconciled below on the previous pass,
+			// which is where their sizes come from: planning against a list
+			// nothing has resolved yet would ask for capacity for datasets
+			// whose size is still unknown.
+			if err := planCapacity(ctx, plan, client, resource, resolvable); err != nil {
+				fmt.Fprintln(os.Stderr, "forebay-controller: planning capacity:", err)
+			}
+		}
 		if n, err := reconcile(ctx, client, resource, backend, resolvable); err != nil {
 			// A pass that failed does not end the controller: the API server
 			// being away is a condition it is expected to sit through, and
@@ -140,6 +172,40 @@ func run() error {
 		case <-tick.C:
 		}
 	}
+}
+
+// readToken reads the token the agents require, trimming what a file written
+// by an operator or mounted from a secret carries.
+func readToken(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading the lease token: %w", err)
+	}
+	token := strings.TrimSpace(string(body))
+	if token == "" {
+		return "", fmt.Errorf("the lease token in %s is empty", path)
+	}
+	return token, nil
+}
+
+// planCapacity asks the nodes to cover what the datasets declare.
+func planCapacity(ctx context.Context, p *proposer, c *kube.Client, r kube.Resource, resolvable kube.Resolvable) error {
+	var list kube.DatasetList
+	if err := c.List(ctx, r, &list); err != nil {
+		return err
+	}
+	want := wanted(list, resolvable.Floor)
+	if len(want) == 0 {
+		return nil
+	}
+	granted, refused, err := p.propose(ctx, want)
+	if granted > 0 || refused > 0 {
+		fmt.Println(describe(granted, refused))
+	}
+	return err
 }
 
 // checkFlags rejects a controller that could not resolve anything.

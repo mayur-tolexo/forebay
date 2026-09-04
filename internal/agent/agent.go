@@ -58,6 +58,10 @@ type Agent struct {
 	leases *lease.Manager
 	// releasingFn is told which leases are about to lose their extents.
 	releasingFn func(leaseIDs []string)
+	// grantedFn is told when a lease's extent has been made, so a holder can
+	// start using capacity a control plane proposed rather than only the one
+	// the agent granted itself at startup.
+	grantedFn func(leaseID, extent string)
 	// rate remembers the previous pass, so a floor configured as a duration
 	// can be turned into bytes. Only the watch touches it, and a watch is one
 	// loop.
@@ -309,6 +313,28 @@ func (a *Agent) reconcile(now time.Time) (Reconciliation, error) {
 		rec.LeasesWithoutExtents = append(rec.LeasesWithoutExtents, id)
 	}
 	return rec, nil
+}
+
+// OnGranted registers what to tell once a lease's extent exists.
+//
+// After the extent rather than after the accounting, because a holder told
+// earlier would be handed a path to a file that is not there yet. Who the
+// holder is stays out of this package, exactly as it does for releasing.
+func (a *Agent) OnGranted(f func(leaseID, extent string)) { a.grantedFn = f }
+
+// granted tells the holder, if there is one.
+func (a *Agent) granted(leaseID string) {
+	if a.grantedFn == nil {
+		return
+	}
+	path, err := a.ExtentPath(leaseID)
+	if err != nil {
+		// A lease whose identifier cannot be a path was refused before the
+		// extent was made, so this cannot happen from Grant. Nothing is told
+		// rather than a wrong path passed on.
+		return
+	}
+	a.grantedFn(leaseID, path)
 }
 
 // OnReleasing registers what to tell before a lease's extent is unlinked.

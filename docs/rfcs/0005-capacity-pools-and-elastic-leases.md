@@ -36,7 +36,7 @@ nobody has written.
 | Never worse off, with the shortfall reported rather than hidden | Built |
 | The journal, replay, and refusing grants until it has been replayed | Built |
 | Post-reclaim cooldown and the churn budget | Built |
-| Allocating capacity as preallocated extents, one per lease | Built, `fallocate` on Linux, and a build that cannot commit blocks says so at startup rather than implying it did. It has one caller: the agent grants itself the lease its fast tier sits on, in the absence of a control plane to propose one. That stand-in is the caller, not the design |
+| Allocating capacity as preallocated extents, one per lease | Built, `fallocate` on Linux, and a build that cannot commit blocks says so at startup rather than implying it did. A control plane now proposes leases over `internal/leaseapi` and a granted one becomes tier capacity, so the agent's self-grant is no longer the only caller. It remains, sizing the tier a node serves from before any control plane has spoken to it |
 | Draining readers between invalidating and unlinking | **Not built**, and no longer for want of a reader. The fast tier holds an extent open, and it is told which leases are losing theirs before the unlink, so the blocks are dropped rather than left with a descriptor. Nothing waits for a read already in flight: a revoked block is read as a miss instead |
 | Freeing the disk before the accounting, on every path | Built for release. **Not on reclaim**, where the lease manager owns the ladder and frees the accounting before the extents are gone, leaving a window in which a grant could be accepted against space still occupied |
 | The reclaim deadline | **Stated, validated and now timed, but not enforced.** An elastic grant is refused if no deadline is configured, and a reclaim that overruns is returned as an error rather than logged. Honouring it end to end still means invalidating readers, which is the data path, so what is timed is the half that exists |
@@ -125,6 +125,26 @@ A proposal is idempotent on its identifier. A control plane that timed out and a
 the lease is already held rather than that it is a duplicate, or a retry that worked would look like
 a failure and the lease would be abandoned on a node that is holding it. Releasing one the node does
 not have is done, for the same reason: the caller wanted it gone and it is gone.
+
+A granted lease becomes tier capacity. Without that a proposal adds bytes to the pool that nothing
+can put a block in, and the control plane would be lending against a tier that never grew. The holder
+is told after the extent exists and exactly once, since one told early is handed a path to a file
+that is not there and one told twice takes the same extent twice.
+
+What drives a proposal is what users declared. A dataset asking for the fast tier and present in the
+store is demand; one nobody has uploaded is not, because lending against it takes space from datasets
+that exist. Demand is summed per tenant, since a lease is charged to one and a quota counted against
+one, and a single lease covering every tenant would be capacity no quota could bound.
+
+The identifier is derived from the tenant rather than generated. That is what makes a proposal
+idempotent across a control plane restarting: it asks for the capacity it already has and is told so,
+instead of asking for a second copy of it.
+
+Every node is asked for the same demand rather than the demand being divided between them. A dataset
+is read from wherever the job lands, so capacity on one node does not serve a job on another, and
+dividing would leave every node holding a fraction that serves nobody. What bounds it is a share of
+each node's free space, because a node exists to run compute and the pool arithmetic is its floor
+rather than something a planner should aim at.
 
 The endpoint is guarded by a token and is not served at all without one. A node whose capacity
 anything on the network can claim is a node anything can fill, and the disk it fills belongs to the

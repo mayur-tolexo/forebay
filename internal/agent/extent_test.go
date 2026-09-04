@@ -359,3 +359,76 @@ func TestAMissedDeadlineIsAnError(t *testing.T) {
 		t.Errorf("borrowed = %s after a late reclaim, want the capacity returned anyway", got)
 	}
 }
+
+// TestAGrantTellsItsHolder is what makes a control plane's proposal worth
+// anything: without it a granted lease adds bytes to the pool that nothing can
+// put a block in.
+func TestAGrantTellsItsHolder(t *testing.T) {
+	a, _, err := Open(testConfig(t), acct(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	var gotID string
+	var calls int
+	var missing int
+	a.OnGranted(func(id, extent string) {
+		gotID = id
+		calls++
+		// Checked here rather than afterwards. The extent exists by the time
+		// Grant returns whatever the order, so a test that looked later would
+		// pass for a holder handed a path to a file that was not there yet.
+		if _, err := os.Stat(extent); err != nil {
+			missing++
+		}
+	})
+
+	if err := a.Grant(lease.Lease{ID: "from-cp", Class: lease.Elastic, Size: 1 << 20, Term: time.Hour}, t0); err != nil {
+		t.Fatal(err)
+	}
+	if gotID != "from-cp" {
+		t.Errorf("the holder was told about %q", gotID)
+	}
+	// Once, because a holder told twice takes the same extent twice.
+	if calls != 1 {
+		t.Errorf("the holder was told %d times about one grant", calls)
+	}
+	if missing != 0 {
+		t.Errorf("the holder was handed an extent that did not exist yet, %d times", missing)
+	}
+}
+
+// TestAFailedGrantTellsNobody keeps a holder from being handed capacity the
+// node did not lend.
+func TestAFailedGrantTellsNobody(t *testing.T) {
+	a, _, err := Open(testConfig(t), pool.Accounting{Capacity: 1 << 20}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	var told bool
+	a.OnGranted(func(string, string) { told = true })
+
+	if err := a.Grant(lease.Lease{ID: "too-big", Class: lease.Elastic, Size: 1 << 30, Term: time.Hour}, t0); err == nil {
+		t.Fatal("a grant larger than the node has was accepted")
+	}
+	if told {
+		t.Error("a holder was told about a lease the node refused")
+	}
+}
+
+// TestNoHolderIsNotAFailure covers an agent nothing is listening to, which is
+// every agent that is not serving reads.
+func TestNoHolderIsNotAFailure(t *testing.T) {
+	a, _, err := Open(testConfig(t), acct(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	if err := a.Grant(lease.Lease{ID: "x", Class: lease.Elastic, Size: 1 << 20, Term: time.Hour}, t0); err != nil {
+		t.Errorf("granting with nothing listening: %v", err)
+	}
+}
