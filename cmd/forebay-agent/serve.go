@@ -50,6 +50,10 @@ type serving struct {
 	srv  *dataserver.Server
 	// dropped counts cached blocks given up to reclamation.
 	dropped *atomic.Int64
+	// residency answers what this node holds, for the controller that turns it
+	// into node labels. Held here because it needs both the tier and the
+	// backend, which is what this struct joins.
+	residency *residencyReporter
 }
 
 // Dropped reports how many cached blocks reclamation has taken back.
@@ -138,6 +142,7 @@ func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
 		tier.Close()
 		return nil, fmt.Errorf("naming the backend: %w", err)
 	}
+	reporter := newResidencyReporter(tier, backend)
 	srv, err := dataserver.New(tier, backend, dataserver.Config{
 		Backend: name, Metrics: opts.Metrics, Ready: opts.Ready,
 		Prefetch: opts.Prefetch,
@@ -171,7 +176,7 @@ func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
 	fmt.Fprintln(os.Stderr, "the tier's capacity is a lease this agent granted itself, which a control plane would otherwise do")
 
 	return &serving{
-		tier: tier, srv: srv, dropped: &dropped,
+		tier: tier, srv: srv, dropped: &dropped, residency: reporter,
 		stop: func() {
 			cancel()
 			wg.Wait()

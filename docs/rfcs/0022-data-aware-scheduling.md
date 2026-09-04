@@ -24,8 +24,9 @@ how much of a dataset a node holds into a stable label value, quantised into thr
 margin around each boundary, so a node whose residency hovers at a threshold does not rewrite its
 labels on every eviction.
 
-Nothing publishes the labels yet, and nothing pre-fills. The publisher is a controller loop that does
-not exist and the pre-fill is RFC-0011's prefetch pointed at a dataset rather than a stream.
+The agent reports what it holds, at `/residency`, in the levels a label would carry. Nothing writes a
+label yet: the controller half is not built, and the pre-fill is RFC-0011's prefetch pointed at a
+dataset rather than a stream.
 
 ## Assumptions
 
@@ -82,6 +83,25 @@ The key is derived from the tenant and dataset by hashing, because a Kubernetes 
 in length and a tenant and dataset name together are not. A collision means one dataset's residency
 is reported for another's, which is a worse scheduling hint and never a wrong read, since nothing on
 the read path consults a label.
+
+### Who writes the label
+
+The node knows its residency and the node must not be the thing that writes it.
+
+RFC-0016 settles this without a new argument. A node-resident component holding a credential that can
+patch node objects is a compromised node able to label every other node, and Kubernetes has no way to
+scope that to one node for a credential that is not the kubelet's. Its answer there was that where a
+node cannot be given a narrow enough credential it holds none, and asks the controller, which does
+hold the wider view and does not run on a node a tenant's pods share.
+
+So the agent holds no Kubernetes credential for this at all. It reports what it holds, and the
+controller reads that and writes the labels. The hysteresis lives on the agent rather than the
+controller, because it is the agent that knows what it last said and a controller restarting would
+otherwise republish everything at whatever the fraction happened to be.
+
+A dataset whose size the agent cannot learn is left out of the report rather than reported at an
+assumed share. A scheduler acting on a residency the node invented would place work for data that is
+not there, which is worse than placing it with no hint at all.
 
 ### Racks, for jobs that land together
 

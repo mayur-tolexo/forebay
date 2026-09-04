@@ -18,11 +18,15 @@ import (
 	"time"
 
 	"bytes"
+	"github.com/mayur-tolexo/forebay/driver"
+	"github.com/mayur-tolexo/forebay/driver/filedriver"
 	"github.com/mayur-tolexo/forebay/internal/agent"
 	"github.com/mayur-tolexo/forebay/internal/dataserver"
+	"github.com/mayur-tolexo/forebay/internal/fasttier"
 	"github.com/mayur-tolexo/forebay/internal/lease"
 	"github.com/mayur-tolexo/forebay/internal/metrics"
 	"github.com/mayur-tolexo/forebay/internal/pool"
+	"github.com/mayur-tolexo/forebay/internal/residency"
 	"github.com/mayur-tolexo/forebay/internal/topology"
 )
 
@@ -1374,6 +1378,176 @@ func TestABadPrefetchFlagIsRefusedAtStartup(t *testing.T) {
 		}
 		if err := cfg.Validate(); err == nil {
 			t.Errorf("%s was accepted", c.name)
+		}
+	}
+}
+
+// residencyPieces builds a tier over a backend holding one object, which is
+// what a reporter needs to say anything.
+func residencyPieces(t *testing.T, object string, size int) (*fasttier.Cache, *driver.Backend) {
+	t.Helper()
+	dir := t.TempDir()
+	store := filepath.Join(dir, "store")
+	if err := os.MkdirAll(store, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store, object), make([]byte, size), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fd, err := filedriver.New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := driver.Open(fd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tier, err := fasttier.New(fasttier.Config{BlockSize: 1 << 20, FirstReadLimit: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { tier.Close() })
+	extent := filepath.Join(dir, "extent")
+	if err := os.WriteFile(extent, make([]byte, 64<<20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := tier.AddCapacity("lease", extent); err != nil {
+		t.Fatal(err)
+	}
+	return tier, back
+}
+
+// hold makes n blocks of an object resident, the way the read path does.
+func hold(t *testing.T, tier *fasttier.Cache, object string, n int) {
+	t.Helper()
+	body := make([]byte, 1<<20)
+	for i := 0; i < n; i++ {
+		k := fasttier.Key{Tenant: "t1", Block: fasttier.BlockRef{Backend: "store", Object: object, Index: int64(i)}}
+		tier.Read(k)
+		if _, err := tier.Admit(k, body, false); err != nil {
+			t.Fatal(err)
+		}
+		tier.Read(k)
+		if admitted, err := tier.Admit(k, body, false); err != nil || !admitted {
+			t.Fatalf("holding block %d: admitted=%v err=%v", i, admitted, err)
+		}
+	}
+}
+
+// TestResidencyReportsWhatTheNodeActuallyHolds is what a controller turns into
+// a node label, so it has to describe this node rather than this node's guess.
+func TestResidencyReportsWhatTheNodeActuallyHolds(t *testing.T) {
+	const object = "shard"
+	tier, back := residencyPieces(t, object, 16<<20)
+	hold(t, tier, object, 13)
+
+	got := newResidencyReporter(tier, back).report(context.Background())
+	if len(got) != 1 {
+		t.Fatalf("reported %d datasets, want one: %+v", len(got), got)
+	}
+	if got[0].Level != "most" {
+		t.Errorf("13 of 16 blocks reported as %q, want most", got[0].Level)
+	}
+	if got[0].Blocks != 13 || got[0].Total != 16<<20 {
+		t.Errorf("reported %d blocks of %d bytes", got[0].Blocks, got[0].Total)
+	}
+	// The label key is what the scheduler matches, so it travels with the
+	// report rather than being derived twice.
+	if got[0].Label != residency.Key("t1", object) {
+		t.Errorf("label = %q, want the key a scheduler matches", got[0].Label)
+	}
+	if got[0].Rack == got[0].Label {
+		t.Error("the rack label is the same as the node label")
+	}
+}
+
+// TestAFullyResidentObjectIsNotOverCounted covers the tail block, which is
+// counted whole and would otherwise make an object read as larger than it is.
+func TestAFullyResidentObjectIsNotOverCounted(t *testing.T) {
+	const object = "shard"
+	// Four and a bit blocks, so the fifth is a tail.
+	tier, back := residencyPieces(t, object, 4<<20+4096)
+	hold(t, tier, object, 5)
+
+	got := newResidencyReporter(tier, back).report(context.Background())
+	if len(got) != 1 {
+		t.Fatalf("reported %d datasets, want one", len(got))
+	}
+	if got[0].Fraction > 1 {
+		t.Errorf("fraction = %v, which says the node holds more than exists", got[0].Fraction)
+	}
+	if got[0].Level != "most" {
+		t.Errorf("a fully resident object reported as %q", got[0].Level)
+	}
+}
+
+// TestADatasetWhoseSizeIsUnknownIsLeftOut matters because a scheduler acting
+// on a residency this node invented would place work for data that is not
+// here.
+func TestADatasetWhoseSizeIsUnknownIsLeftOut(t *testing.T) {
+	const object = "shard"
+	tier, back := residencyPieces(t, object, 16<<20)
+	hold(t, tier, object, 8)
+
+	// A block of an object the backend does not have.
+	k := fasttier.Key{Tenant: "t1", Block: fasttier.BlockRef{Backend: "store", Object: "ghost", Index: 0}}
+	tier.Read(k)
+	tier.Admit(k, make([]byte, 1<<20), false)
+	tier.Read(k)
+	if admitted, err := tier.Admit(k, make([]byte, 1<<20), false); err != nil || !admitted {
+		t.Fatalf("seeding the ghost: %v %v", admitted, err)
+	}
+
+	got := newResidencyReporter(tier, back).report(context.Background())
+	for _, r := range got {
+		if r.Object == "ghost" {
+			t.Error("a dataset whose size could not be learned was reported anyway")
+		}
+	}
+	if len(got) != 1 {
+		t.Errorf("reported %d datasets, want only the one whose size is known", len(got))
+	}
+}
+
+// TestAReclaimedDatasetStopsBeingPublished keeps a node from advertising data
+// it gave back, which is the failure that makes a stale label worse than none.
+func TestAReclaimedDatasetStopsBeingPublished(t *testing.T) {
+	const object = "shard"
+	tier, back := residencyPieces(t, object, 16<<20)
+	hold(t, tier, object, 13)
+
+	r := newResidencyReporter(tier, back)
+	if got := r.report(context.Background()); len(got) != 1 {
+		t.Fatalf("reported %d datasets before reclamation", len(got))
+	}
+
+	// The lease goes, and the blocks with it.
+	tier.Revoke("lease")
+	if got := r.report(context.Background()); len(got) != 0 {
+		t.Errorf("a node still reports %+v after its tier was reclaimed", got)
+	}
+	if levels := r.levels.Levels(); len(levels) != 0 {
+		t.Errorf("the tracker still carries %v", levels)
+	}
+}
+
+// TestTheReportIsOrdered matters because two reports of one state that differ
+// only in order read as two different states.
+func TestTheReportIsOrdered(t *testing.T) {
+	tier, back := residencyPieces(t, "a", 8<<20)
+	hold(t, tier, "a", 7)
+
+	r := newResidencyReporter(tier, back)
+	first := r.report(context.Background())
+	for i := 0; i < 10; i++ {
+		got := r.report(context.Background())
+		if len(got) != len(first) {
+			t.Fatalf("report %d has %d entries, want %d", i, len(got), len(first))
+		}
+		for j := range got {
+			if got[j].Object != first[j].Object || got[j].Tenant != first[j].Tenant {
+				t.Fatalf("report %d is ordered differently at %d", i, j)
+			}
 		}
 	}
 }

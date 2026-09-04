@@ -305,6 +305,28 @@ func (c *Cache) evictOneLocked() bool {
 	return false
 }
 
+// Held identifies one dataset's blocks in the tier, without the block index.
+// It is what residency is counted per, since a scheduler is told about a
+// dataset rather than about a block.
+type Held struct {
+	Tenant, Backend, Object string
+}
+
+// HeldBlocks reports how many blocks of each object are resident.
+//
+// A count rather than a share, because the tier does not know how large an
+// object is: it holds blocks and never asked what they were part of. Turning
+// the count into a share needs the object's size, which the backend knows.
+func (c *Cache) HeldBlocks() map[Held]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[Held]int, len(c.resident))
+	for k := range c.resident {
+		out[Held{Tenant: k.Tenant, Backend: k.Block.Backend, Object: k.Block.Object}]++
+	}
+	return out
+}
+
 // Resident reports whether a block is held, without touching its recency.
 //
 // A prefetcher needs to know before it fetches, and asking with Read would

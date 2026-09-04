@@ -151,3 +151,73 @@ func TestFractionRefusesWhatItCannotDivide(t *testing.T) {
 		t.Errorf("3 of 4 bytes is %v, want 0.75", got)
 	}
 }
+
+// TestATrackerIsWhatMakesHysteresisMeanAnything covers the state the margin
+// needs: a boundary is crossed relative to what was last published, so a
+// level computed from a fraction alone would flap exactly as a raw percentage
+// would.
+func TestATrackerIsWhatMakesHysteresisMeanAnything(t *testing.T) {
+	tr := NewTracker()
+
+	if got := tr.Update("a", 0.30); got != Some {
+		t.Fatalf("a node holding 0.30 published %v", got)
+	}
+	// Back into the margin: held, because it was already at some.
+	if got := tr.Update("a", 0.22); got != Some {
+		t.Errorf("holding 0.22 after 0.30 published %v, want some", got)
+	}
+	// A different dataset in the same place has no history, so it has not
+	// risen yet.
+	if got := tr.Update("b", 0.22); got != None {
+		t.Errorf("a dataset with no history holding 0.22 published %v, want none", got)
+	}
+}
+
+// TestFallingToNoneIsForgotten keeps a node that serves many datasets from
+// carrying an entry for every one it ever held.
+func TestFallingToNoneIsForgotten(t *testing.T) {
+	tr := NewTracker()
+	tr.Update("a", 0.9)
+	if len(tr.Levels()) != 1 {
+		t.Fatalf("levels = %v, want the one dataset", tr.Levels())
+	}
+
+	if got := tr.Update("a", 0); got != None {
+		t.Errorf("a dataset that went published %v", got)
+	}
+	if len(tr.Levels()) != 0 {
+		t.Errorf("a dataset at none is still carried: %v", tr.Levels())
+	}
+}
+
+// TestForgetDropsWhatTheTierNoLongerHolds matters because a node that kept
+// publishing a reclaimed dataset would advertise data it gave back.
+func TestForgetDropsWhatTheTierNoLongerHolds(t *testing.T) {
+	tr := NewTracker()
+	tr.Update("a", 0.9)
+	tr.Update("b", 0.9)
+	tr.Forget("a")
+
+	got := tr.Levels()
+	if _, still := got["a"]; still {
+		t.Error("a forgotten dataset is still published")
+	}
+	if got["b"] != Most {
+		t.Errorf("forgetting one dataset changed another: %v", got)
+	}
+}
+
+// TestLevelsIsACopy keeps a caller iterating the report from being able to
+// change what the tracker believes it published.
+func TestLevelsIsACopy(t *testing.T) {
+	tr := NewTracker()
+	tr.Update("a", 0.9)
+
+	got := tr.Levels()
+	got["a"] = None
+	delete(got, "a")
+
+	if again := tr.Levels(); again["a"] != Most {
+		t.Errorf("the tracker's own state was changed through the report: %v", again)
+	}
+}

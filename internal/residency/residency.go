@@ -126,3 +126,47 @@ func Fraction(resident, total int64) (float64, error) {
 	}
 	return float64(resident) / float64(total), nil
 }
+
+// Tracker remembers the level last published for each dataset.
+//
+// The hysteresis means nothing without it: a boundary is crossed relative to
+// what was last said, so a level computed from a fraction alone would flap
+// exactly as a raw percentage would.
+//
+// Not safe for concurrent use. One publisher drives it on one cadence, and a
+// lock here would be for a caller this does not have.
+type Tracker struct {
+	at map[string]Level
+}
+
+// NewTracker returns a tracker holding nothing, which reads as every dataset
+// being at None: a node that has published nothing has advertised nothing.
+func NewTracker() *Tracker { return &Tracker{at: map[string]Level{}} }
+
+// Update moves one dataset to the level its residency now warrants, and
+// returns it.
+func (t *Tracker) Update(key string, fraction float64) Level {
+	next := Next(t.at[key], fraction)
+	if next == None {
+		// Forgotten rather than stored as None, so a node that has stopped
+		// holding a dataset stops carrying it at all: a map entry per dataset
+		// ever seen is a leak on a node that serves many.
+		delete(t.at, key)
+		return None
+	}
+	t.at[key] = next
+	return next
+}
+
+// Forget drops a dataset, for one the tier no longer holds anything of.
+func (t *Tracker) Forget(key string) { delete(t.at, key) }
+
+// Levels reports what is currently published, which is what a publisher writes
+// and what an operator asking why a node was not chosen needs to see.
+func (t *Tracker) Levels() map[string]Level {
+	out := make(map[string]Level, len(t.at))
+	for k, v := range t.at {
+		out[k] = v
+	}
+	return out
+}

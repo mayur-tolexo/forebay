@@ -287,7 +287,7 @@ func run() error {
 		Pools:       borrowedFS,
 	})
 	if *metricsAddr != "" {
-		stopMetrics, err := serveMetrics(*metricsAddr, reg, ready)
+		stopMetrics, err := serveMetrics(*metricsAddr, reg, ready, reads)
 		if err != nil {
 			return err
 		}
@@ -675,7 +675,7 @@ func movingTarget(cfg agent.WatchConfig, t agent.Tick) string {
 // Out of the IO path entirely: a read does not consult it and does not stop
 // when it stops, which is why a failure here is reported and does not end the
 // agent.
-func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness) (func(), error) {
+func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness, reads *serving) (func(), error) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("serving metrics on %s: %w", addr, err)
@@ -694,6 +694,12 @@ func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness) 
 		}
 		fmt.Fprintln(w, "ready")
 	})
+	// Only when there is a read path. A node that serves nothing holds
+	// nothing, and an endpoint answering an empty list would be indistinguish-
+	// able from one whose tier is genuinely empty.
+	if reads != nil {
+		mux.Handle("/residency", residencyHandler(reads.residency))
+	}
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := srv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -701,6 +707,9 @@ func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness) 
 		}
 	}()
 	fmt.Printf("serving metrics on %s/metrics and readiness on %s/ready\n", l.Addr(), l.Addr())
+	if reads != nil {
+		fmt.Printf("reporting residency on %s/residency, which a controller turns into node labels\n", l.Addr())
+	}
 	return func() { srv.Close() }, nil
 }
 
