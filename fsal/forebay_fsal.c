@@ -560,20 +560,17 @@ static fsal_status_t forebay_open2(struct fsal_obj_handle *obj_hdl,
 	 */
 	if (openflags & FSAL_O_WRITE)
 		return fsalstat(ERR_FSAL_ROFS, 0);
-	if (name != NULL) {
-		if (caller_perm_check != NULL)
-			*caller_perm_check = false;
+	/* Left to the caller, because this opens nothing and checks nothing:
+	 * saying otherwise is telling the server a permission check it is
+	 * about to skip has already happened, and the mode this export
+	 * reports would then never be enforced against anyone.
+	 */
+	if (caller_perm_check != NULL)
+		*caller_perm_check = true;
+	if (name != NULL)
 		return forebay_lookup(obj_hdl, name, new_obj, attrs_out);
-	}
 	if (attrs_out != NULL)
 		obj_hdl->obj_ops->getattrs(obj_hdl, attrs_out);
-	if (caller_perm_check != NULL)
-		*caller_perm_check = false;
-	/* Published even by handle: the caller's out-parameter is not
-	 * initialised, and a caller that reads it back gets a stack value.
-	 */
-	if (new_obj != NULL)
-		*new_obj = obj_hdl;
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }
 
