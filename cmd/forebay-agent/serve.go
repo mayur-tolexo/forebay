@@ -16,6 +16,7 @@ import (
 	"github.com/mayur-tolexo/forebay/internal/lease"
 	"github.com/mayur-tolexo/forebay/internal/metrics"
 	"github.com/mayur-tolexo/forebay/internal/pool"
+	"github.com/mayur-tolexo/forebay/internal/prefetch"
 )
 
 // selfLease names the lease an agent grants itself to hold the fast tier,
@@ -35,6 +36,11 @@ type servingOptions struct {
 	// rather than being made here, since the agent is what serves them.
 	Metrics *metrics.Registry
 	Ready   *metrics.Readiness
+	// Prefetch turns on predicting what a reader will ask for next. Nil is
+	// off, which is the default: RFC-0011's depth and accuracy floor are
+	// guesses, and a prediction spends bandwidth on a node whose bandwidth
+	// feeds an accelerator.
+	Prefetch *prefetch.Config
 }
 
 // serving is a running read path.
@@ -134,6 +140,7 @@ func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
 	}
 	srv, err := dataserver.New(tier, backend, dataserver.Config{
 		Backend: name, Metrics: opts.Metrics, Ready: opts.Ready,
+		Prefetch: opts.Prefetch,
 	})
 	if err != nil {
 		tier.Close()

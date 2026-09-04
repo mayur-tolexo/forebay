@@ -1334,3 +1334,46 @@ func TestNothingServingPublishesNoTier(t *testing.T) {
 		}
 	}
 }
+
+// TestPrefetchIsOffUnlessTheFlagSaysSo covers the default. RFC-0011's depth
+// and accuracy floor are guesses, and a wrong prediction spends bandwidth on a
+// node whose bandwidth feeds an accelerator, so an operator has to ask.
+func TestPrefetchIsOffUnlessTheFlagSaysSo(t *testing.T) {
+	if got := prefetchConfig(false, 8, 0.5); got != nil {
+		t.Errorf("prefetch was configured without being asked for: %+v", got)
+	}
+
+	got := prefetchConfig(true, 12, 0.75)
+	if got == nil {
+		t.Fatal("prefetch was asked for and not configured")
+	}
+	if got.Depth != 12 || got.MinAccuracy != 0.75 {
+		t.Errorf("the flags did not reach the configuration: %+v", got)
+	}
+	// The rest comes from the default, which the detector has to accept.
+	if err := got.Validate(); err != nil {
+		t.Errorf("the configuration the flags built is one the detector refuses: %v", err)
+	}
+}
+
+// TestABadPrefetchFlagIsRefusedAtStartup keeps a node from running with a
+// prefetch configuration that predicts from noise, which is what a depth or a
+// floor outside its bounds would do.
+func TestABadPrefetchFlagIsRefusedAtStartup(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		depth int
+		floor float64
+	}{
+		{"no depth", 0, 0.5},
+		{"a floor above one", 8, 1.5},
+	} {
+		cfg := prefetchConfig(true, c.depth, c.floor)
+		if cfg == nil {
+			t.Fatalf("%s: nothing was configured", c.name)
+		}
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("%s was accepted", c.name)
+		}
+	}
+}

@@ -25,8 +25,13 @@ the code.
 
 `internal/dataserver` now drives it: every block it answers tells the detector what was read, and
 what the detector predicts is fetched by one worker off the read path and offered to the tier as a
-prediction. Prefetching is off unless a caller asks for it, because the depth and the accuracy floor
-are guesses and a prediction costs bandwidth on a node whose bandwidth feeds an accelerator.
+prediction. `forebay-agent --prefetch` turns it on, and it is off by default because the depth and the accuracy
+floor are guesses and a prediction costs bandwidth on a node whose bandwidth feeds an accelerator.
+
+Measured once, on a local backend rather than a real one, which makes it a demonstration of the path
+and not of the benefit: a single pass over twenty-four blocks was answered twenty-one from the tier,
+where admission on second read would have answered none of it. That is the argument above turned into
+a number rather than evidence that prefetching pays.
 
 The manifest is still designed and not built. What is built is the half that works without one.
 

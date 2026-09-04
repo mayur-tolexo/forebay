@@ -26,6 +26,7 @@ import (
 	"github.com/mayur-tolexo/forebay/internal/lease"
 	"github.com/mayur-tolexo/forebay/internal/metrics"
 	"github.com/mayur-tolexo/forebay/internal/pool"
+	"github.com/mayur-tolexo/forebay/internal/prefetch"
 	"github.com/mayur-tolexo/forebay/internal/topology"
 	"github.com/mayur-tolexo/forebay/internal/version"
 )
@@ -76,6 +77,9 @@ func run() error {
 		tierBytes   = flag.Int64("tier-bytes", 0, "capacity to hold the fast tier, granted to this agent by itself in the absence of a control plane")
 		blockBytes  = flag.Int64("tier-block-bytes", 1<<20, "the unit the fast tier is keyed in")
 		firstReads  = flag.Int("tier-first-reads", 1<<16, "how many first reads are remembered, which decides whether admission on the second read fires at all")
+		doPrefetch  = flag.Bool("prefetch", false, "predict what a reader will ask for next and fetch it ahead. Off by default, since the numbers below are guesses and a wrong prediction spends bandwidth on a node whose bandwidth feeds an accelerator")
+		pfDepth     = flag.Int("prefetch-depth", prefetch.DefaultConfig().Depth, "how many blocks ahead of a confirmed reader to fetch")
+		pfFloor     = flag.Float64("prefetch-accuracy", prefetch.DefaultConfig().MinAccuracy, "the share of recent predictions that must have been read for a stream to keep being predicted")
 	)
 	flag.Parse()
 
@@ -254,6 +258,7 @@ func run() error {
 			FirstReads: *firstReads,
 			Metrics:    reg,
 			Ready:      ready,
+			Prefetch:   prefetchConfig(*doPrefetch, *pfDepth, *pfFloor),
 		})
 		if err != nil {
 			return err
@@ -697,6 +702,19 @@ func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness) 
 	}()
 	fmt.Printf("serving metrics on %s/metrics and readiness on %s/ready\n", l.Addr(), l.Addr())
 	return func() { srv.Close() }, nil
+}
+
+// prefetchConfig turns the flags into a configuration, or into nothing.
+//
+// Nil rather than a zeroed configuration, since the data server reads nil as
+// off and a zeroed one as a configuration it must refuse.
+func prefetchConfig(on bool, depth int, floor float64) *prefetch.Config {
+	if !on {
+		return nil
+	}
+	cfg := prefetch.DefaultConfig()
+	cfg.Depth, cfg.MinAccuracy = depth, floor
+	return &cfg
 }
 
 // recordTier publishes what the tier holds and whether it is earning it.
