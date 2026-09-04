@@ -41,7 +41,7 @@ edited away, which is the point of keeping these.
 | [0012](0012-dataset-object-model.md) | Dataset, version, snapshot and clone model | Not started | 3 | 0006, 0009 |
 | [0013](0013-checkpoint-path.md) | Checkpoint path | Not started | 3 | 0007, 0009 |
 | [0014](0014-kubernetes-integration.md) | Kubernetes integration | **Accepted** | 1 | 0004, 0005 |
-| [0015](0015-failure-model.md) | Failure model and split brain | Not started | 4 | 0005, 0007 |
+| [0015](0015-failure-model.md) | Failure model and split brain | Accepted    | 4 | 0005, 0007 |
 | [0016](0016-multi-tenancy-qos-and-security.md) | Multi-tenancy, QoS and security | Not started | 4 | 0005, 0009 |
 | [0017](0017-observability.md) | Observability | Accepted       | 2 | 0004 |
 | [0018](0018-benchmark-and-falsification-suite.md) | Benchmark and falsification suite | Accepted | 1 | 0007, 0008 |
