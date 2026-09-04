@@ -1,0 +1,33 @@
+# The controller reads what users declared and writes only what it observed.
+# It has no access to secrets, no access to pods, and cannot change a spec:
+# the split between the two is the whole point of the status subresource.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forebay-controller
+  namespace: forebay-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: forebay-controller
+rules:
+- apiGroups: ["forebay.io"]
+  resources: ["datasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["forebay.io"]
+  resources: ["datasets/status"]
+  verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: forebay-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: forebay-controller
+subjects:
+- kind: ServiceAccount
+  name: forebay-controller
+  namespace: forebay-system

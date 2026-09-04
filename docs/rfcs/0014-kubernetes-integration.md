@@ -17,7 +17,33 @@ believe they own the same bytes.
 
 ## What of this is built
 
-**The pod input, and nothing else.** There is no operator, no CRD and no CSI driver.
+**The pod input, the dataset CRD, and the half of the controller that resolves one.** There is no
+CSI driver, and nothing yet grants a lease over a network.
+
+`Dataset` is the first CRD and it obeys the rule below: it carries what a user declares, an object
+in the durable store, and its status carries what the control plane observed. `forebay-controller`
+lists them, asks the store how large each object is, and records present, absent or unreachable,
+which are three answers rather than two. It writes only what changed, since a controller patching
+every object on every pass puts a cluster's worth of writes into etcd for nothing.
+
+`internal/kube` is the API client, written against the REST API rather than built on a generated
+one, because the types are the small subset of one resource this project declares and a client
+library would be the largest dependency in the repository by an order of magnitude. The agent does
+not use it: reclamation must not need the control plane, so a node still reads pods from its own
+kubelet.
+
+On a cluster, against a real store, with two datasets declared and one object uploaded:
+
+```
+NAME            OBJECT                  PRESENT   BYTES
+shard-absent    forebay-ctl/not-there   false
+shard-present   forebay-ctl/present     true      1048576
+```
+
+The absent one records the store's own words, `s3driver: 404 Not Found`, so a dataset waiting for
+its data is told apart from a store nobody can reach. A second pass wrote nothing. The service
+account can list datasets and patch their status, and cannot patch a spec, delete one, read a secret
+or list a pod.
 
 `internal/agent` gained the seam this document asks for: the watch takes sources, each naming itself
 and reporting a shortfall, and reclaims against the largest. It holds no Kubernetes type, which is
