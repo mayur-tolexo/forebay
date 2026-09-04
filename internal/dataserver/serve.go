@@ -44,6 +44,12 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
+	// Cancelled before the wait above, since defers unwind in reverse: a
+	// worker that stopped only on the caller's context would outlive a Serve
+	// that returned because its listener broke, and the wait would never end.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// Closing the listener is what unblocks Accept, since Accept does not
 	// take a context. The watcher stops with Serve so it does not outlive it.
 	stopped := make(chan struct{})
@@ -55,6 +61,18 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 		}
 		l.Close()
 	}()
+
+	// Started with Serve and stopped with it, so predictions are fetched only
+	// while there is somebody to fetch them for. A server used directly,
+	// without Serve, still predicts and drops what it predicts, which is the
+	// same cost as not having predicted.
+	if s.ahead != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.fetchAhead(ctx)
+		}()
+	}
 
 	// A token per conversation, taken before one is started rather than
 	// after, so a refusal is a closed connection instead of a goroutine that

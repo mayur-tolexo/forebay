@@ -18,6 +18,7 @@ import (
 	"github.com/mayur-tolexo/forebay/driver/filedriver"
 	"github.com/mayur-tolexo/forebay/internal/dataserver"
 	"github.com/mayur-tolexo/forebay/internal/fasttier"
+	"github.com/mayur-tolexo/forebay/internal/prefetch"
 )
 
 // overSocket serves an object and returns a client connected to it.
@@ -787,5 +788,34 @@ func TestTimeSpentWaitingIsNotTakenFromTimeToAnswer(t *testing.T) {
 	}
 	if len(got) != want {
 		t.Errorf("got %d bytes, want %d", len(got), want)
+	}
+}
+
+// TestServeReturnsWhenItsListenerBreaks covers the unwind rather than the
+// happy path. Serve waits for what it started, and anything it started that
+// stopped only on the caller's context would outlive a Serve that returned for
+// any other reason, leaving that wait forever.
+//
+// Prefetching is on, because the worker it starts is what has to stop.
+func TestServeReturnsWhenItsListenerBreaks(t *testing.T) {
+	cfg := prefetch.DefaultConfig()
+	srv, _ := serveWith(t, "shard", pattern(8*blockSize), dataserver.Config{Backend: "store", Prefetch: &cfg}, 0)
+
+	l, err := net.Listen("unix", socketPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Closed underneath Serve, with the caller's context still live, which is
+	// the case a context-only shutdown misses.
+	done := make(chan error, 1)
+	go func() { done <- srv.Serve(context.Background(), l) }()
+	time.Sleep(20 * time.Millisecond)
+	l.Close()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Serve did not return after its listener was closed")
 	}
 }

@@ -23,8 +23,12 @@ stream whose recent predictions were not read. `internal/fasttier` now refuses a
 when placing it would evict one, which is the rule below and was previously written here and not in
 the code.
 
-What the detector produces is a list of blocks worth fetching; nothing fetches them yet, because the
-read path that would is RFC-0008's and is not written.
+`internal/dataserver` now drives it: every block it answers tells the detector what was read, and
+what the detector predicts is fetched by one worker off the read path and offered to the tier as a
+prediction. Prefetching is off unless a caller asks for it, because the depth and the accuracy floor
+are guesses and a prediction costs bandwidth on a node whose bandwidth feeds an accelerator.
+
+The manifest is still designed and not built. What is built is the half that works without one.
 
 The manifest is designed here and not built. The tier's admission path already takes the flag a
 manifest would set: `Admit` bypasses the second-read rule for a prefetched block, because a manifest
@@ -64,6 +68,21 @@ This answers what RFC-0007 deferred here: **admission on second read is not good
 because it is inaccurate. It cannot fire in the first epoch at all, since the second read of a shard
 arrives an epoch after the first, and for a job that reads each shard once it never fires. It is a
 good rule for what it can see and it cannot see the thing that matters most.
+
+### Predicting is on the read path and fetching is not
+
+Observing a read is a map lookup and a subtraction, which is why it can happen where the read
+happens. Fetching cannot: a read that waited for a speculative fetch would be paying for a guess made
+on its behalf, which is the opposite of the point.
+
+So predictions go to a bounded queue drained by one worker. Bounded, because a queue that grew would
+trade the thing prefetch protects for the thing it provides, and a full one drops the prediction —
+which costs a miss that would have happened anyway. One worker rather than several, because the aim
+is to be ahead of a reader rather than to saturate the backend, and a pool of fetchers competing with
+the reads they exist to help is the failure this is most likely to become.
+
+A predicted block already resident is not fetched. A detector following a stride does not know what
+the tier holds, so without that check the frontier would be refetched on every pass.
 
 ### Detection, where nothing was declared
 

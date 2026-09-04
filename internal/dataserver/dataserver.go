@@ -18,6 +18,7 @@ import (
 	"github.com/mayur-tolexo/forebay/driver"
 	"github.com/mayur-tolexo/forebay/internal/efficiency"
 	"github.com/mayur-tolexo/forebay/internal/fasttier"
+	"github.com/mayur-tolexo/forebay/internal/prefetch"
 )
 
 // ErrRefused marks a request this will not answer, as opposed to one it
@@ -48,6 +49,13 @@ type Server struct {
 	// scoreboard is not safe for concurrent use and this is the one place that
 	// writes it.
 	score *efficiency.Scoreboard
+	// detect predicts what a reader will ask for next, and is nil when
+	// prefetching is off. Guarded by mu, since a detector is not safe for
+	// concurrent use.
+	detect *prefetch.Detector
+	// ahead carries predictions to the worker that fetches them, so no read
+	// ever waits on one.
+	ahead chan fasttier.Key
 }
 
 // Stats is what the read path did, for an operator deciding whether the tier
@@ -67,6 +75,18 @@ type Stats struct {
 	// NotAdmitted is an admission that failed. The read still answered, so
 	// this is the only place it shows.
 	NotAdmitted int64
+	// Prefetched were fetched ahead of any read and placed in the tier.
+	Prefetched int64
+	// PrefetchRefused were fetched and declined because placing them would
+	// have evicted a block somebody read. This is the rule working rather than
+	// a fault, and it is counted apart from the ones that are.
+	PrefetchRefused int64
+	// PrefetchFailed were predicted and could not be fetched, which for a
+	// stride running past the end of an object is ordinary.
+	PrefetchFailed int64
+	// PrefetchDropped were predicted and never attempted, because fetching was
+	// not keeping up with predicting.
+	PrefetchDropped int64
 }
 
 // DefaultMaxRead bounds a single read when nothing else says to.
@@ -88,6 +108,12 @@ type Config struct {
 	// starts when the request arrives rather than when the wait for it did.
 	// Zero means DefaultExchangeBudget.
 	Exchange time.Duration
+	// Prefetch turns on predicting what a reader will ask for next. Nil means
+	// off, which is what a caller that has not measured its own workload
+	// should choose: RFC-0011's depth and accuracy floor are guesses, and a
+	// prediction costs bandwidth on a node whose bandwidth feeds an
+	// accelerator.
+	Prefetch *prefetch.Config
 	// MaxRead bounds one read. Zero means DefaultMaxRead.
 	//
 	// The bound is on what is asked for, not on what exists, because the
@@ -125,12 +151,20 @@ func New(tier *fasttier.Cache, backend *driver.Backend, cfg Config) (*Server, er
 	if cfg.Exchange == 0 {
 		cfg.Exchange = DefaultExchangeBudget
 	}
-	return &Server{
+	srv := &Server{
 		tier: tier, backend: backend,
 		name: cfg.Backend, maxRead: cfg.MaxRead,
 		idle: cfg.Idle, exchange: cfg.Exchange, block: tier.BlockSize(),
 		score: efficiency.New(),
-	}, nil
+	}
+	if cfg.Prefetch != nil {
+		detect, err := prefetch.New(*cfg.Prefetch)
+		if err != nil {
+			return nil, err
+		}
+		srv.detect, srv.ahead = detect, make(chan fasttier.Key, aheadQueue)
+	}
+	return srv, nil
 }
 
 // ReadRange answers length bytes of object from offset.
@@ -217,6 +251,8 @@ func (s *Server) blockAt(ctx context.Context, tenant, object string, index, want
 		Tenant: tenant,
 		Block:  fasttier.BlockRef{Backend: s.name, Object: object, Index: index},
 	}
+	s.predict(tenant, object, index)
+
 	began := time.Now()
 	if data, ok := s.tier.Read(k); ok {
 		s.record(func(st *Stats) { st.Blocks++; st.Hits++ })

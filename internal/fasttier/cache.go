@@ -305,6 +305,18 @@ func (c *Cache) evictOneLocked() bool {
 	return false
 }
 
+// Resident reports whether a block is held, without touching its recency.
+//
+// A prefetcher needs to know before it fetches, and asking with Read would
+// count a hit nobody had and make the block look recently used, which is the
+// signal eviction orders by.
+func (c *Cache) Resident(k Key) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.resident[k]
+	return ok
+}
+
 // BlockSize is the unit the cache is keyed in.
 //
 // A caller that splits a read into blocks has to use this number and not one

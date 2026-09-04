@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,13 +18,15 @@ import (
 	"github.com/mayur-tolexo/forebay/driver/filedriver"
 	"github.com/mayur-tolexo/forebay/internal/dataserver"
 	"github.com/mayur-tolexo/forebay/internal/fasttier"
+	"github.com/mayur-tolexo/forebay/internal/prefetch"
 )
 
 const blockSize = 1 << 12
 
-// serve builds a data server over a tier with capacity and a backend holding
-// one object of the given content.
-func serve(t *testing.T, object string, content []byte) (*dataserver.Server, *fasttier.Cache) {
+// serveWith builds a data server over a tier with capacity and a backend
+// holding one object, delayed by the given amount so a test that cares which
+// side is faster can decide it rather than measure an accident.
+func serveWith(t *testing.T, object string, content []byte, cfg dataserver.Config, delay time.Duration) (*dataserver.Server, *fasttier.Cache) {
 	t.Helper()
 	store := t.TempDir()
 	if err := os.WriteFile(filepath.Join(store, object), content, 0o600); err != nil {
@@ -32,7 +36,8 @@ func serve(t *testing.T, object string, content []byte) (*dataserver.Server, *fa
 	if err != nil {
 		t.Fatal(err)
 	}
-	back, err := driver.Open(fd)
+	var d driver.Driver = &slow{Driver: fd, delay: delay}
+	back, err := driver.Open(d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,11 +53,17 @@ func serve(t *testing.T, object string, content []byte) (*dataserver.Server, *fa
 	if err := tier.AddCapacity("lease", extent); err != nil {
 		t.Fatal(err)
 	}
-	srv, err := dataserver.New(tier, back, dataserver.Config{Backend: "store"})
+	srv, err := dataserver.New(tier, back, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return srv, tier
+}
+
+// serve is the ordinary case: no delay, no prefetching.
+func serve(t *testing.T, object string, content []byte) (*dataserver.Server, *fasttier.Cache) {
+	t.Helper()
+	return serveWith(t, object, content, dataserver.Config{Backend: "store"}, 0)
 }
 
 // pattern is content whose every byte says where it is, so a misplaced slice
@@ -766,7 +777,7 @@ type slow struct {
 	delay time.Duration
 }
 
-func (s slow) ReadRange(ctx context.Context, object string, offset, length int64) ([]byte, error) {
+func (s *slow) ReadRange(ctx context.Context, object string, offset, length int64) ([]byte, error) {
 	time.Sleep(s.delay)
 	return s.Driver.ReadRange(ctx, object, offset, length)
 }
@@ -774,34 +785,7 @@ func (s slow) ReadRange(ctx context.Context, object string, offset, length int64
 // serveSlow is serve with a backend that takes its time.
 func serveSlow(t *testing.T, object string, content []byte, delay time.Duration) *dataserver.Server {
 	t.Helper()
-	store := t.TempDir()
-	if err := os.WriteFile(filepath.Join(store, object), content, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	fd, err := filedriver.New(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	back, err := driver.Open(slow{Driver: fd, delay: delay})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tier, err := fasttier.New(fasttier.Config{BlockSize: blockSize, FirstReadLimit: 128})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { tier.Close() })
-	extent := filepath.Join(t.TempDir(), "extent")
-	if err := os.WriteFile(extent, make([]byte, 64*blockSize), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := tier.AddCapacity("lease", extent); err != nil {
-		t.Fatal(err)
-	}
-	srv, err := dataserver.New(tier, back, dataserver.Config{Backend: "store"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	srv, _ := serveWith(t, object, content, dataserver.Config{Backend: "store"}, delay)
 	return srv
 }
 
@@ -883,5 +867,204 @@ func TestAReadServedEntirelyFromTheBackendSavesNothing(t *testing.T) {
 	}
 	if got.Covered != 0 || got.Uncovered != 0 {
 		t.Errorf("scored %d covered and %d uncovered hits with no hits", got.Covered, got.Uncovered)
+	}
+}
+
+// waitFor polls until a condition holds, since prefetching happens off the
+// read path and a test that asserted immediately would be asserting that it
+// happens on it.
+func waitFor(t *testing.T, why string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", why)
+}
+
+// TestASequentialReaderIsGotAheadOf is the point of the detector: a reader
+// walking an object should find blocks already resident that it never read.
+func TestASequentialReaderIsGotAheadOf(t *testing.T) {
+	const object = "shard"
+	cfg := prefetch.DefaultConfig()
+	srv, tier := serveWith(t, object, pattern(32*blockSize),
+		dataserver.Config{Backend: "store", Prefetch: &cfg}, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l, err := net.Listen("unix", socketPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); srv.Serve(ctx, l) }()
+	defer func() { cancel(); wg.Wait() }()
+
+	// Three blocks in a row confirms the stride, and the fourth read is where
+	// predictions start being issued.
+	for i := int64(0); i < 4; i++ {
+		if _, err := srv.ReadRange(ctx, "t1", object, i*blockSize, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	waitFor(t, "a block the reader has not reached to be resident", func() bool {
+		return srv.Stats().Prefetched > 0
+	})
+
+	// The block ahead of the reader is there, and putting it there did not
+	// count as a read anybody made.
+	ahead := fasttier.Key{Tenant: "t1", Block: fasttier.BlockRef{Backend: "store", Object: object, Index: 5}}
+	if !tier.Resident(ahead) {
+		t.Error("the block after the reader is not resident, though something was prefetched")
+	}
+}
+
+// TestPrefetchIsOffUnlessAsked matters because RFC-0011's depth and accuracy
+// floor are guesses, and a prediction costs bandwidth on a node whose
+// bandwidth feeds an accelerator.
+func TestPrefetchIsOffUnlessAsked(t *testing.T) {
+	const object = "shard"
+	srv, _ := serve(t, object, pattern(32*blockSize))
+
+	for i := int64(0); i < 8; i++ {
+		if _, err := srv.ReadRange(context.Background(), "t1", object, i*blockSize, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := srv.Stats()
+	if got.Prefetched+got.PrefetchRefused+got.PrefetchFailed+got.PrefetchDropped != 0 {
+		t.Errorf("a server with no prefetch configured predicted something: %+v", got)
+	}
+}
+
+// TestAPredictionPastTheEndIsOrdinary covers the stride that runs off the end
+// of an object, which a detector following a difference cannot know about.
+func TestAPredictionPastTheEndIsOrdinary(t *testing.T) {
+	const object = "shard"
+	cfg := prefetch.DefaultConfig()
+	// Two blocks only, so predictions run past the end almost immediately.
+	srv, _ := serveWith(t, object, pattern(3*blockSize),
+		dataserver.Config{Backend: "store", Prefetch: &cfg}, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l, err := net.Listen("unix", socketPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); srv.Serve(ctx, l) }()
+	defer func() { cancel(); wg.Wait() }()
+
+	for i := int64(0); i < 3; i++ {
+		if _, err := srv.ReadRange(ctx, "t1", object, i*blockSize, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	waitFor(t, "a prediction past the end of the object", func() bool {
+		return srv.Stats().PrefetchFailed > 0
+	})
+	// Reads still work, because nothing was waiting on any of it.
+	if _, err := srv.ReadRange(ctx, "t1", object, 0, blockSize); err != nil {
+		t.Errorf("a read after failed predictions: %v", err)
+	}
+}
+
+// settleFor gives background work time to do the thing a test is asserting it
+// does not do. There is no state to poll for here: the assertion is that
+// nothing happened, and nothing happening has no edge to wait on.
+func settleFor(d time.Duration) { time.Sleep(d) }
+
+// TestAResidentBlockIsNotFetchedAgain covers the check that keeps prefetching
+// from paying for what it already has. A detector following a stride predicts
+// blocks without knowing which are resident, so the saving is entirely in the
+// skip.
+func TestAResidentBlockIsNotFetchedAgain(t *testing.T) {
+	const object = "shard"
+	cfg := prefetch.DefaultConfig()
+	cfg.Depth = 2
+	srv, tier := serveWith(t, object, pattern(32*blockSize),
+		dataserver.Config{Backend: "store", Prefetch: &cfg}, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l, err := net.Listen("unix", socketPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); srv.Serve(ctx, l) }()
+	defer func() { cancel(); wg.Wait() }()
+
+	// Walk far enough that the detector is confirmed and has fetched ahead.
+	for i := int64(0); i < 8; i++ {
+		if _, err := srv.ReadRange(ctx, "t1", object, i*blockSize, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, "the reader to be got ahead of", func() bool { return srv.Stats().Prefetched > 0 })
+
+	// The blocks prefetch placed are the resident ones: a block read once on
+	// demand is not admitted, and nothing predicts backwards, so the early
+	// indices of the walk are still absent.
+	var held []int64
+	for i := int64(1); i < 6; i++ {
+		k := fasttier.Key{Tenant: "t1", Block: fasttier.BlockRef{Backend: "store", Object: object, Index: i}}
+		if tier.Resident(k) {
+			held = append(held, i)
+		}
+	}
+	if len(held) < 3 {
+		t.Fatalf("only %d blocks were got ahead of, so a second walk proves nothing", len(held))
+	}
+
+	// Walking them again predicts blocks already held. A fetch of one would
+	// come back, find the tier already has it, and be counted as dropped, so
+	// that counter is what separates the skip from the wasted round trip.
+	// Predictions past the resident region are fetched and admitted, and show
+	// up as prefetched rather than dropped.
+	for _, i := range held {
+		if _, err := srv.ReadRange(ctx, "t1", object, i*blockSize, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Nothing should happen, which is what has to be waited for rather than
+	// polled for: the worker has a dozen predictions to consider and each one
+	// it acts on would be a read of the store.
+	settleFor(200 * time.Millisecond)
+	if got := srv.Stats().PrefetchDropped; got != 0 {
+		t.Errorf("%d predictions were fetched and then found already resident", got)
+	}
+}
+
+// TestPredictingNeverBlocksTheReadPath is the bound on the queue. Nothing
+// drains it here, so it fills and every prediction after that is dropped, and
+// the reads have to keep going regardless.
+func TestPredictingNeverBlocksTheReadPath(t *testing.T) {
+	const object = "shard"
+	cfg := prefetch.DefaultConfig()
+	cfg.Depth = 16
+	// No Serve, so no worker: the queue fills and stays full.
+	srv, _ := serveWith(t, object, pattern(256*blockSize),
+		dataserver.Config{Backend: "store", Prefetch: &cfg}, 0)
+
+	for i := int64(0); i < 64; i++ {
+		if _, err := srv.ReadRange(context.Background(), "t1", object, i*blockSize, blockSize); err != nil {
+			t.Fatalf("read %d with a full prediction queue: %v", i, err)
+		}
+	}
+	if got := srv.Stats().PrefetchDropped; got == 0 {
+		t.Error("a queue nothing drains dropped no predictions, so nothing bounded it")
+	}
+	if got := srv.Stats().Prefetched; got != 0 {
+		t.Errorf("%d blocks were prefetched with no worker running", got)
 	}
 }
