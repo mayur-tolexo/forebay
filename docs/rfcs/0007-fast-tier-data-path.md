@@ -287,6 +287,12 @@ holder. That is RFC-0005's residual-data problem and RFC-0016 owns the mechanism
 
 ## Open questions
 
+- **Whether a block cache addressed by slot can hold variable-length blocks**, deferred here by
+  [RFC-0020](0020-no-copy-policy.md), which wants the option of compressing what Forebay writes into
+  the tier. The slab addresses a block by slot and a fixed size, so compression is a change to how a
+  block is found rather than a flag. Owned by this document, which owns that structure. Whether the
+  CPU it takes from the dataloader is repaid is a separate question, owned by
+  [RFC-0018](0018-benchmark-and-falsification-suite.md).
 - **The block size**, which trades index size against read amplification. Owned by
   [RFC-0018](0018-benchmark-and-falsification-suite.md), because it is a measurement.
 - **Whether the rack tier earns its place at all**, which may remove peer fetch entirely. Owned by

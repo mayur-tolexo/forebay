@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 1 |
 | **Depends on** | 0002, 0006, 0007 |
 
@@ -20,6 +20,36 @@ latency is paid by an accelerator that is doing nothing while it waits.
 Forebay's architecture already forbids the largest copy of all: reclaiming borrowed capacity is a
 delete rather than a migration. This RFC generalises that instinct into a rule the whole system is
 held to.
+
+## What of this is built
+
+**The rules that bind on paths that exist, enforced where they bind rather than here.** This document
+is a policy, and a policy package that other packages had to remember to call would be a policy
+nobody enforced. Each rule lives in the code it constrains:
+
+| Rule | Where it is enforced today |
+| --- | --- |
+| No copy to ingest | `internal/kube`. A dataset names an object that already exists in the store, and nothing is rewritten |
+| No copy to reclaim | `internal/agent`. Reclamation is a rename and an unlink |
+| No copy to promote | `internal/fasttier`. A fill is admitted a block at a time, and abandoning one costs a later miss rather than leaving a migration half done |
+| No copy to clone | Decided in `internal/dataset`, which refuses rather than copying, and reachable from nothing. No path performs a clone yet |
+| No copy to version | Nothing. There are no versions |
+| No copy to serve a second protocol | Nothing. There is one protocol |
+| Minimum copies in the IO path | Partly. The tier reads a block into one buffer; how many copies remain on a realistic stack is a measurement RFC-0018 owns |
+
+Two things are stated here rather than left to be discovered. The clone rule is written and unreached,
+so it is a decision waiting for a caller and not yet a property of the system. And the two
+compression capabilities RFC-0006 declares are consulted by no code, because nothing Forebay writes
+is compressed.
+
+## Assumptions
+
+| Assumption | Basis | Risk if wrong |
+| --- | --- | --- |
+| Operators will not adopt a system that rewrites the data they already have | Reasoned, from what a migration project costs and how often one is declined | The register-in-place rule is defended against an objection nobody raises, and a native format would have been the better design |
+| A backend that compresses transparently keeps compressing data registered in place, because nothing was rewritten | Reasoned, from what registering in place means: the object is untouched | Registered data quietly loses the backend's compression, and the capacity argument for delegating downward is wrong |
+| Compression of the payloads this project moves is worth roughly three to one | Measured once, on one object in one environment: the 226 MiB compressed object RFC-0018 records, against the same payload read raw. One object is not a corpus | The capacity and bandwidth argument for compressing anything is weaker than stated, and the CPU it costs on a GPU node buys less |
+| Sharing bytes between references is safe only when deletion is exact | Reasoned, and stated as this document's dangerous failure mode | Either data is lost by an eager collector or capacity is held by a lazy one, and both look like storage bugs rather than policy consequences |
 
 ## The policy
 
@@ -57,15 +87,26 @@ during implementation.
 The third is the position this document takes.
 
 Data registered in place stays exactly as the backend holds it, and whatever compression that backend
-already applies keeps applying, because nothing has been rewritten. Data Forebay writes itself may be
-compressed by Forebay: fast-tier fills and checkpoint staging are bytes we produce, and they are
-regenerable, so compressing them costs nothing that a re-fetch cannot restore.
+already applies keeps applying, because nothing has been rewritten.
 
-Two consequences follow. The driver contract has to let a backend declare whether it compresses and
-whether Forebay can ask it to, which is [RFC-0006](0006-durable-backend-driver-contract.md). And
-compressing the fast tier spends CPU on a GPU node, where CPU is not spare: it competes with the
-dataloader feeding the accelerator this project exists to keep busy. Whether that trade pays is a
-measurement, not a preference.
+Data Forebay writes itself divides, and the two halves get opposite answers.
+
+A fast-tier fill is regenerable, so a frame that will not decompress is a miss and the read falls
+through to the backend. Compressing it risks nothing that a re-fetch cannot restore, and it is the
+half where compression is defensible.
+
+Checkpoint staging is not regenerable, and an earlier draft of this document said it was. RFC-0013
+and RFC-0016 both rest on the opposite: a guaranteed lease holds bytes that are the only copy of
+themselves until they reach durable storage, which is why a drain refuses to take one. A frame that
+will not decompress there is a lost job rather than a miss. So Forebay does not compress checkpoint
+staging, and would need a verified round trip on the write path before it could.
+
+Three consequences follow. The driver contract has to let a backend declare whether it compresses and
+whether Forebay can ask it to, which is [RFC-0006](0006-durable-backend-driver-contract.md). The
+fast tier as built stores fixed-size blocks in slabs and addresses them by slot, so compressing it is
+not a flag but a change to how a block is addressed — the trade is structural before it is a CPU
+question, and RFC-0007 owns it. And the CPU it would cost is spent on a GPU node, where CPU is not
+spare: it competes with the dataloader feeding the accelerator this project exists to keep busy.
 
 ## What a copy is still allowed for
 
@@ -110,16 +151,31 @@ The second is amplification. Sharing extents between versions means one badly pl
 hot for many logical datasets at once, so a placement mistake has a larger blast radius than it would
 if every dataset owned its bytes.
 
+## What this document settles
+
+**The unit of sharing is the object, as the backend addresses it.** It is the only granularity every
+backend exposes, and a policy stated in a unit some drivers cannot name would be unenforceable in
+exactly the drivers that most needed it. Sharing below an object — one version reusing an unchanged
+part of another — is a real want and a harder problem, and it belongs to
+[RFC-0012](0012-dataset-object-model.md) with the rest of versioning.
+
+**Register-in-place is not offered for every backend.** It needs the backend to address existing data
+stably, which is why it is a declared capability rather than an assumption: a driver says whether it
+can, and a dataset on a driver that cannot is refused rather than silently copied.
+
+**Extent sharing between tenants is off unless the owning tenant grants it.** Sharing bytes discloses
+that two tenants hold identical data, which is a disclosure neither of them agreed to, and it makes
+one tenant's deletion depend on another's reference.
+[RFC-0016](0016-multi-tenancy-qos-and-security.md) settles the terms: granted by the owner, charged
+to the owner, revocable by the owner. The capacity this costs is real and is the price of the
+default being off.
+
 ## Open questions
 
-- The unit of sharing. Extent, object or shard, and how that interacts with backends whose native
-  granularity differs.
-- Whether register-in-place ingest can be offered for every backend, or only for those that expose
-  stable addressing for existing data.
-- How many copies the IO path actually has on a realistic stack, which is a measurement rather than a
-  design decision and belongs in [0018](0018-benchmark-and-falsification-suite.md).
-- Whether extent sharing between tenants is ever acceptable, given that it leaks the fact of
-  identical data. The likely answer is no, and it costs real capacity.
-- Whether compressing the fast tier pays for the CPU it takes from the dataloader, which is a
-  measurement owned by [RFC-0018](0018-benchmark-and-falsification-suite.md) rather than a preference
-  to be settled here.
+- **How many copies the IO path actually has on a realistic stack.** A measurement rather than a
+  design decision. Owned by [RFC-0018](0018-benchmark-and-falsification-suite.md), which owns what
+  this project measures.
+- **Whether compressing the fast tier is worth what it costs**, which is two questions rather than
+  one: whether a block cache addressed by slot can hold variable-length blocks without giving up
+  what makes it fast, owned by [RFC-0007](0007-fast-tier-data-path.md), and whether the CPU it takes
+  from the dataloader is repaid, owned by [RFC-0018](0018-benchmark-and-falsification-suite.md).

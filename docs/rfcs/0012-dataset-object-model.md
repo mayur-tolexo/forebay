@@ -180,6 +180,11 @@ another's bytes alive by cloning them. That is a quota question and belongs with
 
 ## Open questions
 
+- **Whether sharing below an object is offered**, deferred here by
+  [RFC-0020](0020-no-copy-policy.md), which fixes the unit of sharing at the object because that is
+  the only granularity every backend can name. A version reusing an unchanged part of its
+  predecessor is a real want and needs a unit the drivers do not all expose. Owned by this document,
+  which owns versioning.
 - **Who may clone across a tenancy boundary**, since a clone that shares bytes makes one tenant's
   deletion depend on another's reference. Owned by
   [RFC-0016](0016-multi-tenancy-qos-and-security.md), which owns tenancy.

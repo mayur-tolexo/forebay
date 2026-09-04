@@ -46,7 +46,7 @@ edited away, which is the point of keeping these.
 | [0017](0017-observability.md) | Observability | Accepted       | 2 | 0004 |
 | [0018](0018-benchmark-and-falsification-suite.md) | Benchmark and falsification suite | Accepted | 1 | 0007, 0008 |
 | [0019](0019-upgrades-and-operations.md) | Upgrades and operations | Accepted    | 4 | 0014 |
-| [0020](0020-no-copy-policy.md) | The no-copy policy | Draft | 1 | 0002, 0006, 0007 |
+| [0020](0020-no-copy-policy.md) | The no-copy policy | Accepted    | 1 | 0002, 0006, 0007 |
 | [0021](0021-single-copy-multi-protocol.md) | Single-copy multi-protocol access | Draft | 3 | 0012, 0020 |
 | [0022](0022-data-aware-scheduling.md) | Data-aware scheduling and warm start | Not started | 2 | 0003, 0007, 0014 |
 | [0023](0023-lineage-and-reproducibility.md) | Lineage, provenance and immutable versions | Not started | 3 | 0012, 0021 |
