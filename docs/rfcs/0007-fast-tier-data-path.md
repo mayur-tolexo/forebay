@@ -32,7 +32,7 @@ layer, so the tier has a caller only in tests.
 | A revoked read becoming a miss, never an error or stale bytes | Built, and the harder half with it: a read runs outside the cache lock so readers do not queue behind each other, which lets a slot be refilled mid-read. Each occupancy is stamped and the stamp checked afterwards, so a block whose slot was taken reads as a miss rather than as another object's content |
 | Blocks never shared between tenants, and the record per tenant too | Built |
 | Peer fetch and the rack tier | **Not built,** deliberately. The tier is designed as removable there and [RFC-0018](0018-benchmark-and-falsification-suite.md) owns whether it earns its place |
-| Anything that reads from the tier | **Not built.** The caller is the access layer, [RFC-0008](0008-access-layer-pnfs.md) |
+| Anything that reads from the tier | **Built.** The data server reads blocks from it, admits what it fetched, and fills ahead of a reader it recognises. What is still missing above that is the access layer, [RFC-0008](0008-access-layer-pnfs.md) |
 
 Run on a GPU node against a real agent extent. A first epoch over 32 blocks admitted nothing and
 left the cache empty, a second admitted all of them, and a third served every one. A reclaim then

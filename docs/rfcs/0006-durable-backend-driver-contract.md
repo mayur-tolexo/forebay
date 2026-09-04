@@ -32,7 +32,7 @@ is not built.
 | The conformance suite | Built, `driver/conformance`, and importable so a third party can demonstrate a driver without us reviewing it. It returns findings rather than only failing a test, so it can be run against a real backend outside `go test`, repeatedly, and it removes what it created wherever the backend allows |
 | S3 driver | Built, `driver/s3driver`, signing its own requests so the contract gains no dependency. It declares read-range, object-size, write-object and delete-object, and declines snapshot and clone rather than emulating them with a copy. It passes the conformance suite against a real S3-compatible store |
 | Ceph driver | **Not built.** It needs a Ceph cluster to develop against, which is [RFC-0018](0018-benchmark-and-falsification-suite.md)'s open question about what the suite runs against |
-| Anything calling a driver | **Not built.** The fast tier is the caller, and it is [RFC-0007](0007-fast-tier-data-path.md) |
+| Anything calling a driver | **Built.** The read path misses to the driver for a block the tier does not hold, asks it how large an object is to fetch a tail, and the controller asks it the same to resolve a dataset |
 
 `driver/filedriver` serves objects from a directory. It exists so the contract has something real to
 be exercised against and is the simplest case of register-in-place: files already there are readable

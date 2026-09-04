@@ -31,8 +31,8 @@ the whole picture as description.
 | The access layer | **A spike, not the layer.** An FSAL over NFS-Ganesha lets a stock NFS client read bytes that came through Forebay, and advertises the flexible file layout, but nothing serves a layout or revokes one. Owned by [RFC-0008](0008-access-layer-pnfs.md) |
 | Backend drivers and capability negotiation | Built, `driver`, with a file and an S3 driver and a conformance suite. An undeclared capability is refused before the driver is reached. Owned by [RFC-0006](0006-durable-backend-driver-contract.md) |
 | Both autonomy loops | **Not built.** Owned by [RFC-0010](0010-autonomy-engine.md) |
-| Kubernetes integration, and any control plane at all | **Not built**, beyond the agent reading pods from its node's own kubelet to see pressure before it lands. Nothing reconciles a CRD and there is no control plane. Owned by [RFC-0014](0014-kubernetes-integration.md) |
-| The copy doctrine and single-copy multi-protocol access | **Not built.** Owned by [RFC-0020](0020-no-copy-policy.md) and [RFC-0021](0021-single-copy-multi-protocol.md) |
+| Kubernetes integration, and any control plane at all | **Partly built.** A controller reconciles the Dataset CRD, labels nodes from what their agents hold, and proposes leases the nodes decide on. What is missing is everything on the data path: no CSI driver, no admission webhook, and no metadata server. Owned by [RFC-0014](0014-kubernetes-integration.md) |
+| The copy doctrine and single-copy multi-protocol access | **Partly built.** The rules that bind on paths that exist are enforced there, and a reference renders as both a file path and an object key that resolve to one address. Neither server exists. Owned by [RFC-0020](0020-no-copy-policy.md) and [RFC-0021](0021-single-copy-multi-protocol.md) |
 
 ## Assumptions
 

@@ -308,8 +308,9 @@ agent itself gave back: without that correction a reclaim would read as the work
 the floor would shrink in the pass that had just proved it too small.
 
 What is left is most of it. One of the watch's three inputs is still missing, the CSI one. No Ceph
-driver exists, there is no peer fetch and no control plane interface, and nothing an unmodified job
-can mount: the access layer is a spike that proves a client can read Forebay's bytes, not the layer.
+driver exists, there is no peer fetch, and nothing an unmodified job can mount: the access layer is a
+spike that proves a client can read Forebay's bytes, not the layer. A control plane does propose
+leases now, which the nodes decide on, but it touches nothing a job reads through.
 
 **Done when** a GPU job runs on a node whose spare NVMe is serving the fabric, capacity is reclaimed
 mid-job without the job noticing, and the benchmark reports a number either way.

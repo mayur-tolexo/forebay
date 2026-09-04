@@ -179,7 +179,7 @@ forebay-agent --borrowed-dir=/var/lib/forebay/borrowed \
 | Works | Detail |
 | --- | --- |
 | Reads its own capacity | Finds the filesystem holding its pools, refuses storage it cannot prove is local, and reserves nothing it has not measured |
-| Lends capacity as real bytes | One preallocated extent per lease, so reclaiming is an unlink rather than a compaction. An interface with no caller yet: granting is the control plane's job and there is no control plane |
+| Lends capacity as real bytes | One preallocated extent per lease, so reclaiming is an unlink rather than a compaction. A control plane proposes one over HTTP and the node decides, from arithmetic only it can do; a granted lease becomes tier capacity |
 | Takes it back on a deadline | Invalidates before unlinking, times the reclaim, and treats overrunning as a broken promise. Reached today only through the watch, since nothing an operator can run grants a lease |
 | Keeps a floor of free space | Polls the filesystem and reclaims the shortfall, reporting one it cannot meet |
 | Serves a byte range | From the fast tier where the blocks are resident and from the durable backend where they are not, absorbing the miss rather than passing it on, so capacity taken back mid-read is a slower answer and never an error |
@@ -215,9 +215,13 @@ Forebay's bytes, and the crossover says those bytes arrive faster than the backe
 them.
 
 What is missing is most of it: no metadata server to hand a client a layout, so nothing is mountable
-without a patched one; no CSI driver; no control plane, so a running agent guards capacity nothing
-lends; and no measurement of whether node-local NVMe beats a fanned-out backend on hardware this is
-actually for, which is the question the whole thesis rests on.
+without a patched one; no CSI driver; and no measurement of whether node-local NVMe beats a fanned-out
+backend on hardware this is actually for, which is the question the whole thesis rests on.
+
+There is now a control plane, and it is worth being precise about how little that means. A controller
+reconciles datasets, labels nodes from what their agents hold, and proposes leases those agents
+decide on — verified on a cluster, where a node accepted a 200 MiB lease for a dataset that asked for
+the tier and the tier grew to hold it. What it does not do is anything on the data path.
 
 Several pieces exist as decisions with no caller yet, and they are worth naming separately because
 they read as features and are not: a prefetch detector that recognises a read stream and gives up on
