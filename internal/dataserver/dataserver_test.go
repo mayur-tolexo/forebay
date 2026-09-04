@@ -1197,3 +1197,73 @@ func TestReadinessIsFedByTheSameNumberItReports(t *testing.T) {
 		t.Errorf("the reason does not say what was slow: %q", why)
 	}
 }
+
+// TestPredictionsArePublishedByOutcome matters because the four outcomes are
+// read against each other: refused against admitted says whether there is
+// room, and dropped against either says whether fetching keeps up. One series
+// with a label is what makes that comparison possible.
+func TestPredictionsArePublishedByOutcome(t *testing.T) {
+	const object = "shard"
+	reg := registry(t)
+	cfg := prefetch.DefaultConfig()
+	srv, _ := serveWith(t, object, pattern(32*blockSize),
+		dataserver.Config{Backend: "store", Metrics: reg, Prefetch: &cfg}, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l, err := net.Listen("unix", socketPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); srv.Serve(ctx, l) }()
+	defer func() { cancel(); wg.Wait() }()
+
+	for i := int64(0); i < 6; i++ {
+		if _, err := srv.ReadRange(ctx, "t1", object, i*blockSize, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, "a prediction to be admitted", func() bool { return srv.Stats().Prefetched > 0 })
+
+	// The admitted series carries a number, which a registered-but-unwritten
+	// series would not: labelled series exist only once something writes one.
+	got := exposed(t, reg)
+	if !strings.Contains(got, `forebay_prefetch_blocks_total{fact="admitted"}`) {
+		t.Errorf("no admitted predictions were published:\n%s", got)
+	}
+}
+
+// TestPredictionsPastTheEndArePublishedAsFailed keeps the ordinary case of a
+// stride running off an object from being invisible, since an operator seeing
+// only admitted counts would not know how much was wasted.
+func TestPredictionsPastTheEndArePublishedAsFailed(t *testing.T) {
+	const object = "shard"
+	reg := registry(t)
+	cfg := prefetch.DefaultConfig()
+	srv, _ := serveWith(t, object, pattern(3*blockSize),
+		dataserver.Config{Backend: "store", Metrics: reg, Prefetch: &cfg}, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l, err := net.Listen("unix", socketPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); srv.Serve(ctx, l) }()
+	defer func() { cancel(); wg.Wait() }()
+
+	for i := int64(0); i < 3; i++ {
+		if _, err := srv.ReadRange(ctx, "t1", object, i*blockSize, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, "a prediction past the end", func() bool { return srv.Stats().PrefetchFailed > 0 })
+
+	if got := exposed(t, reg); !strings.Contains(got, `forebay_prefetch_blocks_total{fact="failed"}`) {
+		t.Errorf("predictions past the end of the object were not published:\n%s", got)
+	}
+}

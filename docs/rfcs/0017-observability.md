@@ -22,6 +22,16 @@ series this document names carry numbers rather than the zeros of a registered m
 to. There is still no read identifier following a read across processes, and nothing yet re-reads the
 two facts that decay.
 
+The tier now publishes what it holds, what it saved and how much of its own hits that saving rests
+on, and predictions publish what became of them as one series with a label rather than four series,
+because an operator reads them against each other: refused against admitted is whether there is room,
+and dropped against either is whether fetching keeps up.
+
+Those three tier numbers are gauges read on the watch pass rather than written on every block. They
+describe a level rather than an event, and a node with no read path publishes no sample for them at
+all — a gauge nobody sets emits its declaration and no value, so having no tier stays a different
+answer from a tier that saved nothing.
+
 The bytes a prefetch fetched are deliberately not counted as delivered. They were fetched on nobody's
 behalf, and counting them would make the backend look as though it served more than anyone asked
 for.

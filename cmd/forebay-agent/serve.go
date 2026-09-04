@@ -49,6 +49,19 @@ type serving struct {
 // Dropped reports how many cached blocks reclamation has taken back.
 func (s *serving) Dropped() int64 { return s.dropped.Load() }
 
+// Resident reports what the tier is holding, in bytes.
+func (s *serving) Resident() int64 {
+	_, _, blocks := s.tier.Stats()
+	return int64(blocks) * s.tier.BlockSize()
+}
+
+// Saved reports what the tier saved against this node's own backend, and how
+// much of its own hits that rests on.
+func (s *serving) Saved() (time.Duration, float64) {
+	e := s.srv.Efficiency()
+	return e.Saved, e.CoveredFraction()
+}
+
 // serveReads joins the pieces that answer a read and starts listening.
 func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
 	if opts.TierBytes <= 0 {

@@ -18,6 +18,9 @@ const (
 	WatchPasses      = "forebay_watch_passes_total"
 	PoolReserve      = "forebay_pool_reserve_bytes"
 	TopologyDegraded = "forebay_topology_degraded_total"
+	PrefetchBlocks   = "forebay_prefetch_blocks_total"
+	TierSavedSeconds = "forebay_tier_saved_seconds"
+	TierSavingCover  = "forebay_tier_saving_covered_ratio"
 )
 
 // readBuckets span a read that hits the tier and one that crosses a network to
@@ -57,6 +60,9 @@ func Node(r *Registry) error {
 		{WatchPasses, Counter, "passes the pressure watch has made, so silence can be told from a stopped watch", nil},
 		{PoolReserve, Gauge, "what the filesystem holds for everything which is not Forebay", nil},
 		{TopologyDegraded, Counter, "facts this node could once discover and no longer can", nil},
+		{PrefetchBlocks, Counter, "blocks predicted, by what became of them", nil},
+		{TierSavedSeconds, Gauge, "reader seconds the tier saved against this node's own backend, which is signed because the tier is sometimes slower", nil},
+		{TierSavingCover, Gauge, "the share of tier hits the saving above actually rests on, since a hit with no comparable miss is not estimated", nil},
 	} {
 		if err := r.Register(m.name, m.kind, m.help, m.buckets...); err != nil {
 			return fmt.Errorf("metrics: registering the node set: %w", err)

@@ -522,6 +522,11 @@ func watchPressure(a *agent.Agent, cfg agent.Config, fs topology.PoolStorage, sy
 		// produce the same absence of events, and this counter is what tells
 		// them apart: the alert is on a number that must move.
 		record(reg, t)
+		// The tier's own numbers are gauges, so they are read on the pass
+		// rather than written on every block: what they describe is a level
+		// rather than an event, and sampling a level at the watch's rate is
+		// what a gauge is.
+		recordTier(reg, sv)
 
 		if d := strings.Join(t.Degraded, "; "); d != lastDegraded {
 			switch {
@@ -692,6 +697,22 @@ func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness) 
 	}()
 	fmt.Printf("serving metrics on %s/metrics and readiness on %s/ready\n", l.Addr(), l.Addr())
 	return func() { srv.Close() }, nil
+}
+
+// recordTier publishes what the tier holds and whether it is earning it.
+//
+// A node that is not serving publishes no sample for them, rather than zeros.
+// The series are still declared, since RFC-0017 registers the whole set up
+// front, but a gauge nobody has set emits no value: a node with no tier has
+// not saved nothing, it has no tier, and those are different answers.
+func recordTier(reg *metrics.Registry, sv *serving) {
+	if sv == nil {
+		return
+	}
+	_ = reg.Set(metrics.TierBytes, nil, float64(sv.Resident()))
+	saved, covered := sv.Saved()
+	_ = reg.Set(metrics.TierSavedSeconds, nil, saved.Seconds())
+	_ = reg.Set(metrics.TierSavingCover, nil, covered)
 }
 
 // record puts one watch pass into the metrics.

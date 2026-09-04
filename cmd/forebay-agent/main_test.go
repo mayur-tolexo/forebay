@@ -1234,3 +1234,103 @@ func TestDrainOutcome(t *testing.T) {
 		t.Errorf("held staging was reported as %v", err)
 	}
 }
+
+// TestTheTierIsPublishedAsALevel covers the gauges the watch pass sets. They
+// describe a level rather than an event, which is why they are read on the
+// pass instead of written on every block.
+func TestTheTierIsPublishedAsALevel(t *testing.T) {
+	dir := t.TempDir()
+	backend := filepath.Join(dir, "backend")
+	if err := os.Mkdir(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := make([]byte, 3*(1<<20))
+	if err := os.WriteFile(filepath.Join(backend, "obj"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	a, _, err := agent.Open(agent.Config{
+		BorrowedDir: filepath.Join(dir, "borrowed"),
+		JournalPath: filepath.Join(dir, "state", "leases.json"),
+		Lease:       lease.Config{ReclaimWithin: 30 * time.Second},
+	}, pool.Accounting{Capacity: testCapacity}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("fb%d", time.Now().UnixNano()))
+	defer os.Remove(sock)
+	sv, err := serveReads(a, servingOptions{
+		Socket: sock, Backend: backendOptions{Dir: backend},
+		TierBytes: testCapacity / 2, BlockBytes: 1 << 20, FirstReads: 64,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sv.stop()
+
+	// Twice, so the second read is admitted and the tier holds something.
+	for i := 0; i < 2; i++ {
+		if _, err := sv.srv.ReadRange(context.Background(), "t1", "obj", 0, 1<<20); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reg := metrics.New()
+	if err := metrics.Node(reg); err != nil {
+		t.Fatal(err)
+	}
+	recordTier(reg, sv)
+
+	var out strings.Builder
+	if _, err := reg.WriteTo(&out); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, metrics.TierBytes+" 1.048576e+06") {
+		t.Errorf("the tier holds a block and did not say so:\n%s", got)
+	}
+	// The saving rests on no comparable miss yet, so the cover is zero and the
+	// number is published as such rather than withheld.
+	if !sampled(got, metrics.TierSavingCover) {
+		t.Errorf("the covered share of the saving was not published:\n%s", got)
+	}
+}
+
+// sampled reports whether a metric has a value in the exposition, as against
+// merely being declared. An unset gauge emits its HELP and TYPE and no sample,
+// and matching the name as a substring finds the HELP line instead.
+func sampled(text, name string) bool {
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, name+" ") || strings.HasPrefix(line, name+"{") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestNothingServingPublishesNoTier keeps a node that is not serving from
+// reporting a tier that saved nothing, which is a different claim from having
+// no tier at all. A gauge nobody sets emits no sample, so the difference
+// survives all the way to the scrape.
+func TestNothingServingPublishesNoTier(t *testing.T) {
+	reg := metrics.New()
+	if err := metrics.Node(reg); err != nil {
+		t.Fatal(err)
+	}
+	recordTier(reg, nil)
+
+	var out strings.Builder
+	if _, err := reg.WriteTo(&out); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{metrics.TierBytes, metrics.TierSavedSeconds, metrics.TierSavingCover} {
+		if sampled(out.String(), name) {
+			t.Errorf("a node with no read path published %s", name)
+		}
+	}
+}

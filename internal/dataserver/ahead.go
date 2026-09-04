@@ -7,6 +7,7 @@ import (
 
 	"github.com/mayur-tolexo/forebay/internal/efficiency"
 	"github.com/mayur-tolexo/forebay/internal/fasttier"
+	"github.com/mayur-tolexo/forebay/internal/metrics"
 	"github.com/mayur-tolexo/forebay/internal/prefetch"
 )
 
@@ -45,8 +46,20 @@ func (s *Server) predict(tenant, object string, index int64) {
 			// predicting. Dropped rather than waited on, because waiting here
 			// is waiting on the read path.
 			s.record(func(st *Stats) { st.PrefetchDropped++ })
+			s.predicted("dropped")
 		}
 	}
+}
+
+// predicted publishes what became of one prediction. The outcomes are one
+// series with a label rather than four series, because an operator reads them
+// against each other: refused against admitted is whether there is room, and
+// dropped against either is whether fetching keeps up.
+func (s *Server) predicted(fact string) {
+	if s.reg == nil {
+		return
+	}
+	_ = s.reg.Add(metrics.PrefetchBlocks, metrics.Labels{"fact": fact}, 1)
 }
 
 // fetchAhead fetches predicted blocks until its context is done.
@@ -85,6 +98,7 @@ func (s *Server) fetchOne(ctx context.Context, k fasttier.Key) {
 		// error, which is ordinary rather than a fault: a detector following a
 		// stride does not know where the object stops.
 		s.record(func(st *Stats) { st.PrefetchFailed++ })
+		s.predicted("failed")
 		return
 	}
 	// Recorded like any other backend read. It is evidence of what this
@@ -96,11 +110,14 @@ func (s *Server) fetchOne(ctx context.Context, k fasttier.Key) {
 	switch admitted, err := s.tier.Admit(k, data, true); {
 	case admitted:
 		s.record(func(st *Stats) { st.Prefetched++ })
+		s.predicted("admitted")
 	case errors.Is(err, fasttier.ErrWouldEvict):
 		// The rule working, not a problem: a prediction may take space nothing
 		// is using and may never take space from a block somebody read.
 		s.record(func(st *Stats) { st.PrefetchRefused++ })
+		s.predicted("refused")
 	default:
 		s.record(func(st *Stats) { st.PrefetchDropped++ })
+		s.predicted("dropped")
 	}
 }
