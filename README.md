@@ -191,6 +191,14 @@ forebay-agent --borrowed-dir=/var/lib/forebay/borrowed \
 | Sees pressure before it lands | Reads pods from this node's own kubelet rather than the API server, so a partition cannot block reclamation, and counts what they have asked for but not yet written. Free space cannot see that until it is gone |
 | Survives being killed | Replays its journal, reconciles it against the disk in both directions, and finishes an interrupted reclaim |
 | Refuses to run twice | One agent per node, and a wedged one is killed by its own liveness probe so a replacement can take the lock |
+| Proves the capacity it lends is clean | Reclamation is an unlink, so nothing scrubs an extent on the way out. Before it will lend anything the node reserves a probe the way it reserves a real extent, reads every byte, and refuses to lend at all if one is not zero. A node that stayed out of the pool is the right failure; a cluster that leaked is not |
+| Drains for an upgrade | Returns what it lent and exits non-zero if something is still held, so a rolling upgrade stops rather than logging a line. It cannot take a checkpoint's lease: those bytes are the only copy of themselves until they are durable |
+| Backs off when it is being churned | The post-reclaim cooldown grows while reclaims keep happening and returns to base when they stop. The churn budget does not move, because an engine that could raise its own limit when it started hitting it is the failure operators are right to fear. `--autonomy=false` holds both and stops neither reclamation nor expiry |
+| Bounds what one tenant may hold | Two ceilings, since guaranteed capacity denies itself to everyone else by construction and has to be scarcer than the borrowed one. The tenant is journalled, so a restart does not let a tenant exceed its quota by waiting for one |
+| Reconciles datasets against a cluster | A hand-rolled Kubernetes client, a Dataset CRD, and a controller that writes only what changed and carries one object the API server would not take rather than stopping the pass |
+| Says whether an intent can be met | Nine words, resolved against what a backend declares and what the fleet knows, naming both causes when it cannot. An administrator may raise a namespace's durability and may not raise its latency or cost, because those two spend the user's money |
+| Reports itself | Prometheus text over a registry with a closed label set, and readiness computed from observed service time against two bounds, so a node that is slow rather than dead says so |
+| Says whether the tier paid | Estimates what a tier hit would have cost from the node's own misses of comparable size, carries the spread of that estimate, and reports a loss with the same prominence as a gain — which matters, because it has measured one |
 
 Everything above is exercised on a GPU node with local NVMe rather than only in tests, though the two
 rows that need a lease were driven by a stand-in for the control plane rather than by the agent
@@ -208,8 +216,16 @@ them.
 
 What is missing is most of it: no metadata server to hand a client a layout, so nothing is mountable
 without a patched one; no CSI driver; no control plane, so a running agent guards capacity nothing
-lends; and no measurement of whether node-local NVMe beats a fanned-out backend, which is the
-question the whole thesis rests on.
+lends; and no measurement of whether node-local NVMe beats a fanned-out backend on hardware this is
+actually for, which is the question the whole thesis rests on.
+
+Several pieces exist as decisions with no caller yet, and they are worth naming separately because
+they read as features and are not: a prefetch detector that recognises a read stream and gives up on
+one whose predictions go unread, a lineage graph that records whether each claim was observed or
+asserted, residency rules that refuse a transfer before it can happen, a residency signal quantised
+so it could be published as node labels, and a break-even gate that refuses to fetch a KV block back
+when recomputing it would be faster. Each is the part of its design that could not be added
+afterwards. None of them is wired to anything.
 
 ## The honest part
 

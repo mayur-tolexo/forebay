@@ -3,18 +3,19 @@
 Forebay is a Kubernetes-native storage control plane for AI infrastructure. This document is both the
 plan and the honest status of it.
 
-**Nothing is usable yet.** The first packages exist and are tested, but nothing is wired to a device
-or a cluster, so no row below says `Shipped`. That is deliberate: a roadmap that reads like a
-datasheet before anything runs is how open-source projects lose the people who would otherwise have
-helped.
+**Nothing is usable yet.** A good deal of code exists and is tested, and a stock NFS client has read
+through it once, but nothing is wired end to end, so no row below says `Shipped`. That is deliberate:
+a roadmap that reads like a datasheet before anything runs is how open-source projects lose the
+people who would otherwise have helped.
+
+Every RFC is now accepted, so no row says `Specified` or `Planned` either. That means the design
+argument is finished and the building is not, which is a much earlier stage than it sounds.
 
 | Status | Meaning |
 | --- | --- |
 | `Shipped` | Exists, is tested, and you can use it |
 | `In progress` | Code exists and is tested, but nothing is wired up end to end |
-| `Designed` | An accepted RFC describes it in full |
-| `Specified` | An RFC is written and under discussion |
-| `Planned` | The problem and the questions are recorded, nobody has written the RFC |
+| `Designed` | An accepted RFC describes it in full, and no code exists |
 | `Not planned` | Deliberately excluded, with a reason |
 
 ## The capability surface
@@ -27,19 +28,19 @@ the first.
 
 | Capability | Status | RFC |
 | --- | --- | --- |
-| Snapshots | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
-| Instant writable clones, copy on write | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
-| Thin provisioning | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
-| Compression, delegated to the backend for data registered in place | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md), [0020](docs/rfcs/0020-no-copy-policy.md) |
-| Replication and disaster recovery | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
-| Encryption at rest and in flight | Planned | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
-| Tiering between hot and cold media | Planned | [0010](docs/rfcs/0010-autonomy-engine.md) |
-| No copy to clone, version, tier or serve a second protocol | Specified | [0020](docs/rfcs/0020-no-copy-policy.md) |
-| Register data in place, no copy on ingest | Specified | [0020](docs/rfcs/0020-no-copy-policy.md) |
-| Extent sharing between dataset versions | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
-| Minimum-copy IO path, io_uring and RDMA where available | Planned | [0020](docs/rfcs/0020-no-copy-policy.md) |
+| Snapshots | Designed | [0012](docs/rfcs/0012-dataset-object-model.md) |
+| Instant writable clones, copy on write | Designed | [0012](docs/rfcs/0012-dataset-object-model.md) |
+| Thin provisioning | Designed | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
+| Compression, delegated to the backend for data registered in place | Designed | [0006](docs/rfcs/0006-durable-backend-driver-contract.md), [0020](docs/rfcs/0020-no-copy-policy.md) |
+| Replication and disaster recovery | Designed | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
+| Encryption at rest and in flight | Designed | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
+| Tiering between hot and cold media | Designed | [0010](docs/rfcs/0010-autonomy-engine.md) |
+| No copy to clone, version, tier or serve a second protocol | In progress | [0020](docs/rfcs/0020-no-copy-policy.md) |
+| Register data in place, no copy on ingest | In progress | [0020](docs/rfcs/0020-no-copy-policy.md) |
+| Extent sharing between dataset versions | Designed | [0012](docs/rfcs/0012-dataset-object-model.md) |
+| Minimum-copy IO path, io_uring and RDMA where available | Designed | [0020](docs/rfcs/0020-no-copy-policy.md) |
 | Deduplication across unrelated data | Not planned for v1 | [0020](docs/rfcs/0020-no-copy-policy.md) |
-| Immutability and retention locks | Not planned for v1 | — |
+| Immutability and retention locks | Designed | [0023](docs/rfcs/0023-lineage-and-reproducibility.md) |
 
 Several of these are delegated rather than implemented. Where a backend already does snapshots or
 replication well, Forebay drives it instead of reimplementing it, and declares honestly when a
@@ -49,13 +50,13 @@ backend cannot.
 
 | Capability | Status | RFC |
 | --- | --- | --- |
-| pNFS and NFSv4.2, parallel by design | Planned | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
-| NFSv3 for compatibility | Planned | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
-| S3 object access | Planned | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
-| Block access through CSI | Planned | [0014](docs/rfcs/0014-kubernetes-integration.md) |
-| Write once, read as file **and** object over the same bytes | Specified | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
-| Block under the same namespace, policy and snapshots | Specified | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
-| Snapshot export between block and object | Planned | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
+| pNFS and NFSv4.2, parallel by design | Designed | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
+| NFSv3 for compatibility | Designed | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
+| S3 object access | Designed | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
+| Block access through CSI | Designed | [0014](docs/rfcs/0014-kubernetes-integration.md) |
+| Write once, read as file **and** object over the same bytes | In progress | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
+| Block under the same namespace, policy and snapshots | Designed | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
+| Snapshot export between block and object | Designed | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
 | SMB | Not planned | — |
 | Concurrent block access to the same bytes as file or object | Not possible | [0021](docs/rfcs/0021-single-copy-multi-protocol.md) |
 
@@ -63,15 +64,15 @@ backend cannot.
 
 | Capability | Status | RFC |
 | --- | --- | --- |
-| Declarative, intent-based API | Planned | [0009](docs/rfcs/0009-intent-and-policy-model.md) |
-| Multi-tenancy and RBAC | Planned | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
-| Quotas | Planned | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
-| Quality of service, floors and ceilings | Planned | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
-| Capacity reporting and planning | Planned | [0017](docs/rfcs/0017-observability.md) |
-| Audit logging | Planned | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
-| Non-disruptive upgrade | Planned | [0019](docs/rfcs/0019-upgrades-and-operations.md) |
-| Draining a node, evacuating a rack | Planned | [0019](docs/rfcs/0019-upgrades-and-operations.md) |
-| Telemetry, metrics and tracing | Planned | [0017](docs/rfcs/0017-observability.md) |
+| Declarative, intent-based API | Designed | [0009](docs/rfcs/0009-intent-and-policy-model.md) |
+| Multi-tenancy and RBAC | Designed | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
+| Quotas | In progress | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
+| Quality of service, floors and ceilings | Designed | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
+| Capacity reporting and planning | Designed | [0017](docs/rfcs/0017-observability.md) |
+| Audit logging | Designed | [0016](docs/rfcs/0016-multi-tenancy-qos-and-security.md) |
+| Non-disruptive upgrade | Designed | [0019](docs/rfcs/0019-upgrades-and-operations.md) |
+| Draining a node, evacuating a rack | Designed | [0019](docs/rfcs/0019-upgrades-and-operations.md) |
+| Telemetry, metrics and tracing | Designed | [0017](docs/rfcs/0017-observability.md) |
 
 ### Kubernetes native
 
@@ -80,12 +81,12 @@ orchestrator in the MVP, and the control plane's objects are Kubernetes objects.
 
 | Capability | Status | RFC |
 | --- | --- | --- |
-| CRDs as the primary API | Planned | [0014](docs/rfcs/0014-kubernetes-integration.md) |
-| Operator reconciling desired state | Planned | [0014](docs/rfcs/0014-kubernetes-integration.md) |
-| CSI driver for volumes and ephemeral volumes | Planned | [0014](docs/rfcs/0014-kubernetes-integration.md) |
-| Snapshots and clones through the Kubernetes API | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
+| CRDs as the primary API | Designed | [0014](docs/rfcs/0014-kubernetes-integration.md) |
+| Operator reconciling desired state | Designed | [0014](docs/rfcs/0014-kubernetes-integration.md) |
+| CSI driver for volumes and ephemeral volumes | Designed | [0014](docs/rfcs/0014-kubernetes-integration.md) |
+| Snapshots and clones through the Kubernetes API | Designed | [0012](docs/rfcs/0012-dataset-object-model.md) |
 | Node agent as a DaemonSet | In progress | [0004](docs/rfcs/0004-node-agent.md) |
-| Reclamation driven by scheduler signals | Planned | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
+| Reclamation driven by scheduler signals | Designed | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
 
 ### Extensibility
 
@@ -94,13 +95,13 @@ them without a fork.
 
 | Capability | Status | RFC |
 | --- | --- | --- |
-| Durable backend driver contract with capability negotiation | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
-| Driver conformance suite, so a third-party driver can prove itself | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
-| Ceph driver | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
+| Durable backend driver contract with capability negotiation | Designed | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
+| Driver conformance suite, so a third-party driver can prove itself | Designed | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
+| Ceph driver | Designed | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 | S3 driver | In progress | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
-| OpenEBS driver | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
-| Protocol plug-ins above the fast tier | Planned | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
-| Bring an existing array as a backend | Planned | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
+| OpenEBS driver | Designed | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
+| Protocol plug-ins above the fast tier | Designed | [0008](docs/rfcs/0008-access-layer-pnfs.md) |
+| Bring an existing array as a backend | Designed | [0006](docs/rfcs/0006-durable-backend-driver-contract.md) |
 
 ### What requires seeing the compute
 
@@ -112,17 +113,17 @@ cannot offer them, however good it is at everything above.
 | Elastic capacity leased from compute-node NVMe and returned on demand | In progress | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
 | Reclamation by deletion, never by migration | In progress | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
 | Placement that follows the accelerator, using GPU, NUMA, PCIe and NIC topology | In progress | [0003](docs/rfcs/0003-topology-model.md) |
-| Rack-local fast tier | Planned | [0007](docs/rfcs/0007-fast-tier-data-path.md) |
-| Shard-aware prefetch driven by dataset manifests | Planned | [0011](docs/rfcs/0011-prefetch-and-dataset-manifests.md) |
-| Checkpoint fast acknowledgement with a stated durability policy | Planned | [0013](docs/rfcs/0013-checkpoint-path.md) |
-| Datasets, versions, experiments and checkpoints as first-class objects | Planned | [0012](docs/rfcs/0012-dataset-object-model.md) |
-| GB per second per GPU, and GPU stall attributed to storage | Planned | [0017](docs/rfcs/0017-observability.md) |
-| Continuous autonomy across compute and storage signals | Planned | [0010](docs/rfcs/0010-autonomy-engine.md) |
-| Data-aware scheduling, telling the scheduler where the data already is | Planned | [0022](docs/rfcs/0022-data-aware-scheduling.md) |
-| Warm start, pre-filling a rack before the pod is admitted | Planned | [0022](docs/rfcs/0022-data-aware-scheduling.md) |
-| Lineage from dataset version to experiment to checkpoint to model | Planned | [0023](docs/rfcs/0023-lineage-and-reproducibility.md) |
-| GPU hours lost to storage, costed per dataset and per tenant | Planned | [0024](docs/rfcs/0024-efficiency-accounting.md) |
-| Cross-cluster and cross-region immutable dataset distribution | Planned | [0025](docs/rfcs/0025-cross-cluster-datasets.md) |
+| Rack-local fast tier | Designed | [0007](docs/rfcs/0007-fast-tier-data-path.md) |
+| Shard-aware prefetch driven by dataset manifests | In progress | [0011](docs/rfcs/0011-prefetch-and-dataset-manifests.md) |
+| Checkpoint fast acknowledgement with a stated durability policy | Designed | [0013](docs/rfcs/0013-checkpoint-path.md) |
+| Datasets, versions, experiments and checkpoints as first-class objects | Designed | [0012](docs/rfcs/0012-dataset-object-model.md) |
+| GB per second per GPU, and GPU stall attributed to storage | Designed | [0017](docs/rfcs/0017-observability.md) |
+| Continuous autonomy across compute and storage signals | Designed | [0010](docs/rfcs/0010-autonomy-engine.md) |
+| Data-aware scheduling, telling the scheduler where the data already is | In progress | [0022](docs/rfcs/0022-data-aware-scheduling.md) |
+| Warm start, pre-filling a rack before the pod is admitted | Designed | [0022](docs/rfcs/0022-data-aware-scheduling.md) |
+| Lineage from dataset version to experiment to checkpoint to model | In progress | [0023](docs/rfcs/0023-lineage-and-reproducibility.md) |
+| GPU hours lost to storage, costed per dataset and per tenant | In progress | [0024](docs/rfcs/0024-efficiency-accounting.md) |
+| Cross-cluster and cross-region immutable dataset distribution | In progress | [0025](docs/rfcs/0025-cross-cluster-datasets.md) |
 
 ## Phases
 

@@ -12,14 +12,19 @@ the value of writing them down.
 
 ## Status
 
-RFC-0000 through RFC-0005 are accepted. Everything else is open for argument.
+**All twenty-eight are accepted.** That is not a claim that the design is right. It means each one
+meets the bar in RFC-0000: nobody is still arguing about what it says, and what it says is
+defensible with what this project knows today. Several of them are mostly refusals, and two of them
+say plainly that the thing they describe should not be built until a measurement nobody has taken
+says otherwise.
 
 What acceptance requires is defined in [RFC-0000](0000-rfc-process.md), not here, so that there is
 one statement of it rather than two that can drift. In short: assumptions carry an honest basis, open
 questions are answered or deferred to an owner that actually carries them, no claim is one we could
 not defend, and the document says which parts are built.
 
-Accepted does not mean finished. RFC-0021 has already superseded a non-goal in RFC-0001.
+Accepted does not mean finished, and it does not mean built. Each document says which of its parts
+exist, and for most of them the answer is a small piece rather than the whole.
 
 RFC-0021 supersedes the unified-namespace non-goal in RFC-0001. That reversal is recorded rather than
 edited away, which is the point of keeping these.
@@ -54,9 +59,6 @@ edited away, which is the point of keeping these.
 | [0025](0025-cross-cluster-datasets.md) | Cross-cluster and cross-region datasets | Accepted    | 4 | 0006, 0021 |
 | [0026](0026-transport-and-throughput.md) | Transport and the high-throughput path | Accepted    | 2 | 0007, 0008 |
 | [0027](0027-kv-cache-spill.md) | KV cache spill and the inference path | Accepted    | 4 | 0005, 0007, 0026 |
-
-`Not started` means the file holds a problem statement and the questions the RFC has to answer, but
-nobody has written it. Those are the ones to claim.
 
 ## Writing one
 
