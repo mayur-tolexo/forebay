@@ -37,7 +37,7 @@ edited away, which is the point of keeping these.
 | [0008](0008-access-layer-pnfs.md) | Access layer over pNFS | **Accepted** | 1 | 0007 |
 | [0009](0009-intent-and-policy-model.md) | Intent and policy model | Accepted    | 2 | 0006 |
 | [0010](0010-autonomy-engine.md) | Autonomy engine | Accepted    | 2 | 0009, 0017 |
-| [0011](0011-prefetch-and-dataset-manifests.md) | Prefetch and dataset manifests | Not started | 3 | 0007 |
+| [0011](0011-prefetch-and-dataset-manifests.md) | Prefetch and dataset manifests | Accepted    | 3 | 0007 |
 | [0012](0012-dataset-object-model.md) | Dataset, version, snapshot and clone model | Accepted    | 3 | 0006, 0009 |
 | [0013](0013-checkpoint-path.md) | Checkpoint path | Accepted    | 3 | 0007, 0009 |
 | [0014](0014-kubernetes-integration.md) | Kubernetes integration | **Accepted** | 1 | 0004, 0005 |

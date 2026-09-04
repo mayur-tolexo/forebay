@@ -293,6 +293,11 @@ holder. That is RFC-0005's residual-data problem and RFC-0016 owns the mechanism
   block is found rather than a flag. Owned by this document, which owns that structure. Whether the
   CPU it takes from the dataloader is repaid is a separate question, owned by
   [RFC-0018](0018-benchmark-and-falsification-suite.md).
+- **Whether prefetch may evict**, deferred here by
+  [RFC-0011](0011-prefetch-and-dataset-manifests.md), which says no on reasoning rather than
+  evidence: letting a prediction choose a victim makes a bad prediction able to evict a block about
+  to be read, under exactly the conditions where predictions are least reliable. Owned by this
+  document, which owns eviction.
 - **The block size**, which trades index size against read amplification. Owned by
   [RFC-0018](0018-benchmark-and-falsification-suite.md), because it is a measurement.
 - **Whether the rack tier earns its place at all**, which may remove peer fetch entirely. Owned by
