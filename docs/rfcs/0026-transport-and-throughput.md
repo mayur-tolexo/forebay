@@ -152,3 +152,8 @@ work depends on measurements nobody has taken.
 - Whether GPUDirect Storage over NFS on RDMA works with a metadata server we wrote, or only with the
   configurations its vendor tests.
 - Whether the block path should use NVMe-oF rather than CSI over the general path.
+- Whether traffic between agents is encrypted in flight, deferred here by
+  [RFC-0016](0016-multi-tenancy-qos-and-security.md) because whether it can be afforded depends on
+  which transport is chosen.
+- Whether a bandwidth QoS guarantee can be made across nodes, deferred here by
+  [RFC-0016](0016-multi-tenancy-qos-and-security.md), which makes none.

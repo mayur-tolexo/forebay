@@ -42,7 +42,7 @@ edited away, which is the point of keeping these.
 | [0013](0013-checkpoint-path.md) | Checkpoint path | Accepted    | 3 | 0007, 0009 |
 | [0014](0014-kubernetes-integration.md) | Kubernetes integration | **Accepted** | 1 | 0004, 0005 |
 | [0015](0015-failure-model.md) | Failure model and split brain | Accepted    | 4 | 0005, 0007 |
-| [0016](0016-multi-tenancy-qos-and-security.md) | Multi-tenancy, QoS and security | Not started | 4 | 0005, 0009 |
+| [0016](0016-multi-tenancy-qos-and-security.md) | Multi-tenancy, QoS and security | Accepted    | 4 | 0005, 0009 |
 | [0017](0017-observability.md) | Observability | Accepted       | 2 | 0004 |
 | [0018](0018-benchmark-and-falsification-suite.md) | Benchmark and falsification suite | Accepted | 1 | 0007, 0008 |
 | [0019](0019-upgrades-and-operations.md) | Upgrades and operations | Accepted    | 4 | 0014 |

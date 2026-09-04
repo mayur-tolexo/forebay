@@ -199,6 +199,24 @@ func Open(cfg Config, acct pool.Accounting, now time.Time) (*Agent, Reconciliati
 		a.Close()
 		return nil, rec, reconcileErr
 	}
+
+	// A node that cannot prove a fresh extent reads as zeros must donate none
+	// of its capacity rather than hand one tenant what the last one left.
+	//
+	// After reconciliation, because the probe needs space: a node that crashed
+	// with a full pool would otherwise fail on ENOSPC and refuse to lend
+	// forever, having never reached the reclamation that would have freed the
+	// room. Still before anything can be lent, since nothing holds the agent
+	// until this returns.
+	//
+	// Indirect so a test can drive the refusal. A filesystem that behaves will
+	// not produce a finding on demand, and standing in for one with a
+	// directory the probe cannot be created in stops nothing when the process
+	// is root, which is how the agent runs on a node.
+	if err := verifyPool(cfg.BorrowedDir); err != nil {
+		a.Close()
+		return nil, rec, err
+	}
 	// A journal problem is recovered from rather than fatal, and it is reported
 	// on the Reconciliation rather than as an error, so that a returned error
 	// always means no agent and no lock. A caller writing the obvious thing,

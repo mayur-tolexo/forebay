@@ -30,6 +30,9 @@ one place, and what an operator is promised about consistency, cost and residenc
 - How data residency and sovereignty constraints are expressed and enforced, since some data may not legally leave a region
 - What happens to lineage when a version exists in several places
 - How cost is attributed when one region pulls a dataset that another region paid to store
+- Whether `RPCSEC_GSS` is required on the access path once an export is reachable across a cluster
+  boundary, since RFC-0016's answer relies on network policy and a cluster boundary is where that
+  stops holding
 
 ## Constraints inherited from earlier RFCs
 
