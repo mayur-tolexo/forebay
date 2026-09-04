@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -204,5 +205,61 @@ func TestInClusterNeedsAllOfIt(t *testing.T) {
 	}
 	if got.Token != "a-token" {
 		t.Errorf("token = %q, want the surrounding space gone: a header carrying a newline is rejected", got.Token)
+	}
+}
+
+// TestTheCoreGroupLivesSomewhereElse covers a wart of the Kubernetes API
+// rather than of this client: nodes and pods have no group name and are served
+// from a different root, and a client that built one path for everything would
+// ask for them where they are not.
+func TestTheCoreGroupLivesSomewhereElse(t *testing.T) {
+	var asked string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.Path
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{Host: srv.URL, Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes := Resource{Version: "v1", Plural: "nodes"}
+	if err := c.PatchLabels(context.Background(), nodes, "worker-3", map[string]any{"a": "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if want := "/api/v1/nodes/worker-3"; asked != want {
+		t.Errorf("asked %q, want %q", asked, want)
+	}
+}
+
+// TestALabelIsRemovedByNull matters because a node that stopped holding a
+// dataset has to stop advertising it, and a merge patch takes a label back
+// only with a null.
+func TestALabelIsRemovedByNull(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{Host: srv.URL, Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes := Resource{Version: "v1", Plural: "nodes"}
+	err = c.PatchLabels(context.Background(), nodes, "worker-3", map[string]any{
+		"forebay.io/keep": "most",
+		"forebay.io/drop": nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `"forebay.io/drop":null`; !strings.Contains(string(body), want) {
+		t.Errorf("the patch does not remove the label: %s", body)
+	}
+	if want := `"forebay.io/keep":"most"`; !strings.Contains(string(body), want) {
+		t.Errorf("the patch does not set the label: %s", body)
 	}
 }

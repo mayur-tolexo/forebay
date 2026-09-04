@@ -24,9 +24,12 @@ how much of a dataset a node holds into a stable label value, quantised into thr
 margin around each boundary, so a node whose residency hovers at a threshold does not rewrite its
 labels on every eviction.
 
-The agent reports what it holds, at `/residency`, in the levels a label would carry. Nothing writes a
-label yet: the controller half is not built, and the pre-fill is RFC-0011's prefetch pointed at a
-dataset rather than a stream.
+**Both halves.** The agent reports what it holds at `/residency`, in the levels a label would carry,
+and the controller reads every agent and writes the node labels. What is not built is the pre-fill,
+which is RFC-0011's prefetch pointed at a dataset rather than a stream.
+
+Labelling is off unless an operator asks for it, in its own RBAC file, because patching nodes is the
+widest permission this project asks for.
 
 ## Assumptions
 
@@ -95,7 +98,17 @@ node cannot be given a narrow enough credential it holds none, and asks the cont
 hold the wider view and does not run on a node a tenant's pods share.
 
 So the agent holds no Kubernetes credential for this at all. It reports what it holds, and the
-controller reads that and writes the labels. The hysteresis lives on the agent rather than the
+controller reads that and writes the labels.
+
+The controller finds the agents through the endpoint slices of their service rather than by listing
+pods. A slice already carries the node name beside the address, which is exactly the pair a label
+write needs, so listing pods would be a wider read for a worse answer. An endpoint that is not ready
+is skipped: a node that has said it should not be sent work should not have its residency published
+as though it were healthy.
+
+A pass writes only what changed, and takes back only labels with this project's prefix. Writing every
+node every interval would be precisely the label churn the levels exist to prevent, and taking back
+anything unrecognised would delete labels an operator set by hand. The hysteresis lives on the agent rather than the
 controller, because it is the agent that knows what it last said and a controller restarting would
 otherwise republish everything at whatever the fraction happened to be.
 

@@ -39,16 +39,18 @@ func main() {
 
 func run() error {
 	var (
-		showVersion = flag.Bool("version", false, "print the build identity and exit")
-		apiServer   = flag.String("api-server", "", "API server URL, defaulting to the one this pod was given")
-		token       = flag.String("token", "", "bearer token, defaulting to this pod's own")
-		namespace   = flag.String("namespace", "", "namespace to watch, empty for every one")
-		interval    = flag.Duration("interval", 30*time.Second, "how often datasets are resolved against the store")
-		endpoint    = flag.String("s3-endpoint", "", "scheme and host of the durable backend")
-		bucket      = flag.String("s3-bucket", "", "bucket the backend serves from")
-		region      = flag.String("s3-region", "", "region the backend signs for")
-		knowsRacks  = flag.Bool("fleet-knows-racks", false, "whether topology can name the rack a node is in, which rack tolerance needs and no backend can supply")
-		floor       = flag.String("durability-floor", "", "the least durability every dataset here must require, which can only raise what a user declared and never lower it")
+		showVersion  = flag.Bool("version", false, "print the build identity and exit")
+		apiServer    = flag.String("api-server", "", "API server URL, defaulting to the one this pod was given")
+		token        = flag.String("token", "", "bearer token, defaulting to this pod's own")
+		namespace    = flag.String("namespace", "", "namespace to watch, empty for every one")
+		interval     = flag.Duration("interval", 30*time.Second, "how often datasets are resolved against the store")
+		endpoint     = flag.String("s3-endpoint", "", "scheme and host of the durable backend")
+		bucket       = flag.String("s3-bucket", "", "bucket the backend serves from")
+		region       = flag.String("s3-region", "", "region the backend signs for")
+		knowsRacks   = flag.Bool("fleet-knows-racks", false, "whether topology can name the rack a node is in, which rack tolerance needs and no backend can supply")
+		agentService = flag.String("agent-service", "", "the headless service the node agents answer on. Set it to publish node residency labels, which needs this controller to be able to patch nodes")
+		agentNS      = flag.String("agent-namespace", "", "namespace that service is in")
+		floor        = flag.String("durability-floor", "", "the least durability every dataset here must require, which can only raise what a user declared and never lower it")
 	)
 	flag.Parse()
 
@@ -96,9 +98,33 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Nil unless asked for. Publishing residency needs permission to patch
+	// every node, which is the widest thing this project asks for, so an
+	// operator turns it on rather than finding it on.
+	var residency *residencyPass
+	if *agentService != "" {
+		residency = &residencyPass{
+			client:    client,
+			http:      &http.Client{Timeout: defaultResidencyTimeout},
+			service:   *agentService,
+			namespace: *agentNS,
+		}
+		fmt.Printf("labelling nodes from the agents on %s/%s\n", *agentNS, *agentService)
+	}
+
 	tick := time.NewTicker(*interval)
 	defer tick.Stop()
 	for {
+		if residency != nil {
+			// Separately from the datasets, and neither stops the other: a
+			// cluster whose agents are unreachable should still have its
+			// dataset statuses reconciled.
+			if n, err := residency.run(ctx); err != nil {
+				fmt.Fprintln(os.Stderr, "forebay-controller: labelling nodes:", err)
+			} else if n > 0 {
+				fmt.Printf("labelled %d node(s)\n", n)
+			}
+		}
 		if n, err := reconcile(ctx, client, resource, backend, resolvable); err != nil {
 			// A pass that failed does not end the controller: the API server
 			// being away is a condition it is expected to sit through, and

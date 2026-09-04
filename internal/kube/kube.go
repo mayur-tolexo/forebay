@@ -123,9 +123,16 @@ type Resource struct {
 func (c *Client) path(r Resource, name string) string {
 	var b strings.Builder
 	b.WriteString(c.base)
-	b.WriteString("/apis/")
-	b.WriteString(url.PathEscape(r.Group))
-	b.WriteByte('/')
+	// The core group has no name and lives at a different root, which is a
+	// wart of the API rather than of this client: nodes and pods are there,
+	// and everything this project defines is not.
+	if r.Group == "" {
+		b.WriteString("/api/")
+	} else {
+		b.WriteString("/apis/")
+		b.WriteString(url.PathEscape(r.Group))
+		b.WriteByte('/')
+	}
 	b.WriteString(url.PathEscape(r.Version))
 	if r.Namespace != "" {
 		b.WriteString("/namespaces/")
@@ -187,6 +194,15 @@ func (c *Client) List(ctx context.Context, r Resource, out any) error {
 	return json.Unmarshal(body, out)
 }
 
+// Get reads one object.
+func (c *Client) Get(ctx context.Context, r Resource, name string, out any) error {
+	body, err := c.do(ctx, http.MethodGet, c.path(r, name), nil, "")
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, out)
+}
+
 // PatchStatus merges a status into one object.
 //
 // A merge patch rather than a replace, so a controller writing what it
@@ -198,6 +214,21 @@ func (c *Client) PatchStatus(ctx context.Context, r Resource, name string, statu
 		return fmt.Errorf("kube: encoding the status: %w", err)
 	}
 	_, err = c.do(ctx, http.MethodPatch, c.path(r, name)+"/status", body, "application/merge-patch+json")
+	return err
+}
+
+// PatchLabels merges labels into one object's metadata.
+//
+// A merge patch, like PatchStatus and for the same reason: a controller
+// writing what it observed must not drop a label somebody else set. A nil
+// value removes one, which is what null means in a merge patch and the only
+// way to take a label back without rewriting the whole set.
+func (c *Client) PatchLabels(ctx context.Context, r Resource, name string, labels map[string]any) error {
+	body, err := json.Marshal(map[string]any{"metadata": map[string]any{"labels": labels}})
+	if err != nil {
+		return fmt.Errorf("kube: encoding the labels: %w", err)
+	}
+	_, err = c.do(ctx, http.MethodPatch, c.path(r, name), body, "application/merge-patch+json")
 	return err
 }
 

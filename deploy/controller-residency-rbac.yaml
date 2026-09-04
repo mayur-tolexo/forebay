@@ -1,0 +1,37 @@
+# What publishing node residency costs, kept in its own file so that an
+# operator who does not want it does not apply it.
+#
+# Patching nodes is the widest permission this project asks for, and it is why
+# the agent does not hold it: a node-resident component able to patch node
+# objects is a compromised node able to label every other node, and Kubernetes
+# cannot scope that to one node for a credential that is not the kubelet's.
+# RFC-0016 puts the wider view on the controller, which does not run on a node
+# a tenant's pods share.
+#
+# The controller reads endpoint slices rather than pods. A slice already
+# carries the node name beside the address, so listing pods to find the same
+# pair would be a wider read for a worse answer.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: forebay-controller-residency
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "patch"]
+- apiGroups: ["discovery.k8s.io"]
+  resources: ["endpointslices"]
+  verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: forebay-controller-residency
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: forebay-controller-residency
+subjects:
+- kind: ServiceAccount
+  name: forebay-controller
+  namespace: forebay-system
