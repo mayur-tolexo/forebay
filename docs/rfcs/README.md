@@ -50,7 +50,7 @@ edited away, which is the point of keeping these.
 | [0021](0021-single-copy-multi-protocol.md) | Single-copy multi-protocol access | Draft | 3 | 0012, 0020 |
 | [0022](0022-data-aware-scheduling.md) | Data-aware scheduling and warm start | Not started | 2 | 0003, 0007, 0014 |
 | [0023](0023-lineage-and-reproducibility.md) | Lineage, provenance and immutable versions | Not started | 3 | 0012, 0021 |
-| [0024](0024-efficiency-accounting.md) | Efficiency accounting, GPU hours lost to storage | Not started | 2 | 0017 |
+| [0024](0024-efficiency-accounting.md) | Efficiency accounting, GPU hours lost to storage | Accepted    | 2 | 0017 |
 | [0025](0025-cross-cluster-datasets.md) | Cross-cluster and cross-region datasets | Not started | 4 | 0006, 0021 |
 | [0026](0026-transport-and-throughput.md) | Transport and the high-throughput path | Draft | 2 | 0007, 0008 |
 | [0027](0027-kv-cache-spill.md) | KV cache spill and the inference path | Not started | 4 | 0005, 0007, 0026 |
