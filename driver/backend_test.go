@@ -3,6 +3,7 @@ package driver_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/mayur-tolexo/forebay/driver"
@@ -135,5 +136,155 @@ func TestANegativeRangeIsRefusedBeforeTheDriver(t *testing.T) {
 	}
 	if d.reached[driver.ReadRange] {
 		t.Error("a negative range reached the driver")
+	}
+}
+
+// picky refuses whatever a test says this credential may not do, the way a
+// store refuses a caller whose policy does not allow it.
+type picky struct {
+	driver.Driver
+	deny map[driver.Capability]bool
+	// calls counts what actually reached the driver, which is how a test sees
+	// a capability that stopped being offered.
+	calls map[driver.Capability]int
+}
+
+func (p *picky) note(c driver.Capability) error {
+	if p.calls == nil {
+		p.calls = map[driver.Capability]int{}
+	}
+	p.calls[c]++
+	if p.deny[c] {
+		return fmt.Errorf("%w: policy says no", driver.ErrDenied)
+	}
+	return nil
+}
+
+func (p *picky) Declare() driver.Declaration {
+	return driver.Declaration{Contract: 1, Capabilities: []driver.Capability{
+		driver.ReadRange, driver.ObjectSize, driver.WriteObject, driver.DeleteObject, driver.Snapshot, driver.Clone,
+	}}
+}
+func (p *picky) ReadRange(context.Context, string, int64, int64) ([]byte, error) {
+	return nil, p.note(driver.ReadRange)
+}
+func (p *picky) SizeOf(context.Context, string) (int64, error) { return 0, p.note(driver.ObjectSize) }
+func (p *picky) WriteObject(context.Context, string, []byte) error {
+	return p.note(driver.WriteObject)
+}
+func (p *picky) DeleteObject(context.Context, string) error { return p.note(driver.DeleteObject) }
+func (p *picky) SnapshotObject(context.Context, string) (string, error) {
+	return "", p.note(driver.Snapshot)
+}
+func (p *picky) CloneObject(context.Context, string, string) error { return p.note(driver.Clone) }
+
+// TestACapabilityBelongsToTheCredential is RFC-0016's answer: a driver that
+// reported what the store can do would tell the planner a dataset can be
+// served in a way that fails at the first read.
+func TestACapabilityBelongsToTheCredential(t *testing.T) {
+	d := &picky{deny: map[driver.Capability]bool{driver.Snapshot: true}}
+	b, err := driver.Open(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// Declared, so it is offered until the store says otherwise.
+	if !b.Supports(driver.Snapshot) {
+		t.Fatal("a declared capability was not offered")
+	}
+	if _, err := b.SnapshotObject(ctx, "o"); !errors.Is(err, driver.ErrDenied) {
+		t.Fatalf("the refusal did not reach the caller: %v", err)
+	}
+	// And now it is not offered, so nothing plans against it.
+	if b.Supports(driver.Snapshot) {
+		t.Error("a capability this credential was refused is still offered")
+	}
+	// A second call is refused here rather than reaching the store, which is
+	// the saving: one round trip per capability rather than one per attempt.
+	if _, err := b.SnapshotObject(ctx, "o"); !errors.Is(err, driver.ErrNotSupported) {
+		t.Errorf("a narrowed capability gave %v, want the local refusal", err)
+	}
+	if d.calls[driver.Snapshot] != 1 {
+		t.Errorf("the store was asked %d times about a capability it refused", d.calls[driver.Snapshot])
+	}
+}
+
+// TestOnlyTheRefusedCapabilityNarrows keeps one denial from taking the rest of
+// a backend with it.
+func TestOnlyTheRefusedCapabilityNarrows(t *testing.T) {
+	b, err := driver.Open(&picky{deny: map[driver.Capability]bool{driver.DeleteObject: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	if err := b.DeleteObject(ctx, "o"); !errors.Is(err, driver.ErrDenied) {
+		t.Fatal(err)
+	}
+	for _, c := range []driver.Capability{driver.ObjectSize, driver.WriteObject, driver.Snapshot, driver.Clone} {
+		if !b.Supports(c) {
+			t.Errorf("%s stopped being offered because delete was refused", c)
+		}
+	}
+	if got := b.Denied(); len(got) != 1 || got[0] != driver.DeleteObject {
+		t.Errorf("denied = %v, want only delete", got)
+	}
+}
+
+// TestTwoDenialsAreBothRemembered covers the copy-on-write, where a second
+// narrowing that dropped the first would let a capability come back.
+func TestTwoDenialsAreBothRemembered(t *testing.T) {
+	b, err := driver.Open(&picky{deny: map[driver.Capability]bool{driver.Snapshot: true, driver.Clone: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	b.SnapshotObject(ctx, "o")
+	b.CloneObject(ctx, "a", "b")
+
+	if b.Supports(driver.Snapshot) || b.Supports(driver.Clone) {
+		t.Error("a capability came back after a second was refused")
+	}
+	if got := b.Denied(); len(got) != 2 {
+		t.Errorf("denied = %v, want both", got)
+	}
+}
+
+// TestAnOrdinaryFailureDoesNotNarrow matters because a store that could not
+// answer this time will answer next time, and treating that as a permission
+// would remove a capability the credential has.
+func TestAnOrdinaryFailureDoesNotNarrow(t *testing.T) {
+	b, err := driver.Open(&picky{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.SizeOf(context.Background(), "o"); err != nil {
+		t.Fatalf("an allowed call failed: %v", err)
+	}
+	if !b.Supports(driver.ObjectSize) {
+		t.Error("a capability narrowed on a call that succeeded")
+	}
+	if got := b.Denied(); len(got) != 0 {
+		t.Errorf("denied = %v with nothing refused", got)
+	}
+}
+
+// TestReadRangeIsNeverNarrowed covers the mandatory core. A credential that
+// cannot read is a broken configuration rather than a narrower store, and a
+// backend that withdrew it would be one driver.Open would have refused.
+func TestReadRangeIsNeverNarrowed(t *testing.T) {
+	b, err := driver.Open(&picky{deny: map[driver.Capability]bool{driver.ReadRange: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.ReadRange(context.Background(), "o", 0, 1); !errors.Is(err, driver.ErrDenied) {
+		t.Fatalf("the refusal did not reach the caller: %v", err)
+	}
+	if !b.Supports(driver.ReadRange) {
+		t.Error("the mandatory core was withdrawn")
+	}
+	if got := b.Denied(); len(got) != 0 {
+		t.Errorf("denied = %v, want the core left alone", got)
 	}
 }

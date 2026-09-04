@@ -328,6 +328,16 @@ func checkObject(object string) error {
 	return nil
 }
 
+// denied reports a refusal the credential caused rather than the store being
+// unhappy.
+//
+// Matched on the status as well as the code, since stores disagree about which
+// code they send: what they agree on is 403 for a credential that may not, and
+// a store sending 403 for something else is telling the same lie to everyone.
+func denied(status int, code string) bool {
+	return status == http.StatusForbidden || code == "AccessDenied"
+}
+
 // s3Error is the body S3 returns with a failure.
 type s3Error struct {
 	Code    string `xml:"Code"`
@@ -344,10 +354,18 @@ func errorFor(resp *http.Response) error {
 	// should not be read into memory in full.
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
 	var e s3Error
+	var out error
 	if err := xml.Unmarshal(body, &e); err == nil && e.Code != "" {
-		return fmt.Errorf("s3driver: %s: %s (%s)", resp.Status, e.Code, e.Message)
+		out = fmt.Errorf("s3driver: %s: %s (%s)", resp.Status, e.Code, e.Message)
+	} else {
+		out = fmt.Errorf("s3driver: %s", resp.Status)
 	}
-	return fmt.Errorf("s3driver: %s", resp.Status)
+	// Wrapped rather than formatted in, or errors.Is would never match and the
+	// distinction would exist only in the text a person reads.
+	if denied(resp.StatusCode, e.Code) {
+		return fmt.Errorf("%w: %w", driver.ErrDenied, out)
+	}
+	return out
 }
 
 // sha256Hex is the payload hash a signed request carries.

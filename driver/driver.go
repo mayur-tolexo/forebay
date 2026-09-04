@@ -52,6 +52,12 @@ var (
 	ErrNoReadRange = errors.New("driver: read-range is mandatory")
 	// ErrRange reports a read outside the object.
 	ErrRange = errors.New("driver: range is not within the object")
+	// ErrDenied reports a store that can do this and a credential that may
+	// not. It is a third answer beside "I do not do that" and "I could not do
+	// that just now", and it is the one that does not come right on a retry:
+	// RFC-0016 makes a capability a property of the credential rather than of
+	// the backend, and this is how the difference arrives.
+	ErrDenied = errors.New("driver: the credential is not allowed to do this")
 )
 
 // Declaration is what a configured driver says it can do.

@@ -2,7 +2,10 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
+	"sync/atomic"
 )
 
 // Backend is a driver held to its own declaration.
@@ -14,6 +17,18 @@ import (
 type Backend struct {
 	driver  Driver
 	declare Declaration
+	// denied holds the capabilities this credential turned out not to have.
+	//
+	// RFC-0016 makes a capability a property of the credential rather than of
+	// the backend: a driver reporting what the store can do tells the planner
+	// a dataset can be served in a way that will fail at the first read. The
+	// declaration cannot be probed safely up front, since probing a write
+	// writes, so it is narrowed the first time the store refuses one.
+	//
+	// Replaced whole rather than mutated, because Supports is on the read path
+	// and narrowing happens at most once per capability: a reader takes the
+	// current map and never a lock.
+	denied atomic.Pointer[map[Capability]bool]
 }
 
 // Open holds a driver to what it declares.
@@ -32,8 +47,47 @@ func Open(d Driver) (*Backend, error) {
 // intents against.
 func (b *Backend) Declaration() Declaration { return b.declare }
 
-// Supports answers for one capability.
-func (b *Backend) Supports(c Capability) bool { return b.declare.Supports(c) }
+// Supports answers for one capability, as this credential.
+func (b *Backend) Supports(c Capability) bool {
+	if d := b.denied.Load(); d != nil && (*d)[c] {
+		return false
+	}
+	return b.declare.Supports(c)
+}
+
+// Denied lists what this credential turned out not to be allowed to do.
+//
+// Worth reporting rather than only acting on: a backend that quietly stopped
+// offering snapshots is a dataset whose intent stopped being satisfiable for a
+// reason nobody was told. RFC-0017 owns noticing it.
+func (b *Backend) Denied() []Capability {
+	d := b.denied.Load()
+	if d == nil {
+		return nil
+	}
+	out := make([]Capability, 0, len(*d))
+	for c := range *d {
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+// narrow records that this credential may not do something, and returns the
+// error unchanged so a caller sees what the store said.
+func (b *Backend) narrow(c Capability, err error) error {
+	if err == nil || !errors.Is(err, ErrDenied) {
+		return err
+	}
+	next := map[Capability]bool{c: true}
+	if cur := b.denied.Load(); cur != nil {
+		for k := range *cur {
+			next[k] = true
+		}
+	}
+	b.denied.Store(&next)
+	return err
+}
 
 // refuse reports a capability this backend does not have.
 func refuse(c Capability) error {
@@ -42,6 +96,12 @@ func refuse(c Capability) error {
 
 // ReadRange reads a byte range. Always available: it is the mandatory core,
 // and Open refused any declaration lacking it.
+//
+// Alone among the operations it does not narrow on a refusal. A backend that
+// declared the core and then withdrew it would be one Open would have refused,
+// and a credential that cannot read is a broken configuration rather than a
+// narrower store: it surfaces as the error it is, every time, instead of
+// becoming a backend that quietly claims to do nothing.
 func (b *Backend) ReadRange(ctx context.Context, object string, offset, length int64) ([]byte, error) {
 	if offset < 0 || length < 0 {
 		return nil, fmt.Errorf("%w: offset %d length %d", ErrRange, offset, length)
@@ -54,7 +114,8 @@ func (b *Backend) SizeOf(ctx context.Context, object string) (int64, error) {
 	if !b.Supports(ObjectSize) {
 		return 0, refuse(ObjectSize)
 	}
-	return b.driver.SizeOf(ctx, object)
+	out, err := b.driver.SizeOf(ctx, object)
+	return out, b.narrow(ObjectSize, err)
 }
 
 // WriteObject creates an immutable object, if this backend writes at all.
@@ -62,7 +123,7 @@ func (b *Backend) WriteObject(ctx context.Context, object string, data []byte) e
 	if !b.Supports(WriteObject) {
 		return refuse(WriteObject)
 	}
-	return b.driver.WriteObject(ctx, object, data)
+	return b.narrow(WriteObject, b.driver.WriteObject(ctx, object, data))
 }
 
 // DeleteObject removes one.
@@ -70,7 +131,7 @@ func (b *Backend) DeleteObject(ctx context.Context, object string) error {
 	if !b.Supports(DeleteObject) {
 		return refuse(DeleteObject)
 	}
-	return b.driver.DeleteObject(ctx, object)
+	return b.narrow(DeleteObject, b.driver.DeleteObject(ctx, object))
 }
 
 // SnapshotObject captures a point in time the backend manages.
@@ -78,7 +139,8 @@ func (b *Backend) SnapshotObject(ctx context.Context, object string) (string, er
 	if !b.Supports(Snapshot) {
 		return "", refuse(Snapshot)
 	}
-	return b.driver.SnapshotObject(ctx, object)
+	out, err := b.driver.SnapshotObject(ctx, object)
+	return out, b.narrow(Snapshot, err)
 }
 
 // CloneObject makes a writable copy that shares storage rather than copying.
@@ -86,5 +148,5 @@ func (b *Backend) CloneObject(ctx context.Context, from, to string) error {
 	if !b.Supports(Clone) {
 		return refuse(Clone)
 	}
-	return b.driver.CloneObject(ctx, from, to)
+	return b.narrow(Clone, b.driver.CloneObject(ctx, from, to))
 }

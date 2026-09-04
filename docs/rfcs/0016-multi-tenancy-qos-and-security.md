@@ -38,7 +38,18 @@ a quota: that lease belongs to the operator rather than to any tenant the quota 
 The durability floor is built and reachable: `internal/intent` applies it, and the controller takes
 it from a flag and records on the dataset when a floor raised what a user declared.
 
-Per-credential capabilities and the access-path decision are designed here and not written.
+Per-credential capabilities are built. A store that refuses a call because the credential may not
+make it is a third answer beside "I do not do that" and "I could not just now", and it is the one no
+retry fixes: the driver reports it as a denial and the backend stops offering that capability. The
+core is exempt — a credential that cannot read is a broken configuration rather than a narrower
+store, and it surfaces as the error it is every time instead of becoming a backend that quietly
+claims to do nothing.
+
+The declaration is narrowed on refusal rather than probed up front, because probing a write writes
+and probing a delete deletes. What that costs is one round trip per capability, the first time each
+is used, and nothing after.
+
+The access-path decision is designed here and not written.
 
 ## Assumptions
 

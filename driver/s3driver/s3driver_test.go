@@ -226,3 +226,93 @@ func TestBadObjectNamesAreRefused(t *testing.T) {
 		t.Errorf("a refused name still reached the store %d times", fake.requests)
 	}
 }
+
+// refusing answers every request the way a store refuses a credential whose
+// policy does not allow the call.
+func refusing(t *testing.T, status int, code string) *Driver {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		if code != "" {
+			fmt.Fprintf(w, `<Error><Code>%s</Code><Message>policy says no</Message></Error>`, code)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	d, err := New(Config{
+		Endpoint: srv.URL, Bucket: "bucket", Region: "us-east-1",
+		AccessKey: "key", SecretKey: "secret", HTTPClient: srv.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// TestAForbiddenAnswerIsADenial is what makes a capability belong to the
+// credential rather than to the store: without this the refusal is an error
+// like any other, and a backend keeps offering something it will never do.
+func TestAForbiddenAnswerIsADenial(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		status int
+		code   string
+	}{
+		{"a bare 403", http.StatusForbidden, ""},
+		{"403 with the usual code", http.StatusForbidden, "AccessDenied"},
+	} {
+		// Asking for a size is a HEAD, which has no body, so the status is the
+		// only thing there is to go on. That is why the status is matched at
+		// all rather than only the code.
+		d := refusing(t, c.status, c.code)
+		if _, err := d.SizeOf(context.Background(), "o"); !errors.Is(err, driver.ErrDenied) {
+			t.Errorf("%s gave %v, want a denial", c.name, err)
+		}
+	}
+
+	// A read has a body, so a store that says what it means in one is
+	// understood even when it chose a status nobody would guess from.
+	d := refusing(t, http.StatusBadRequest, "AccessDenied")
+	if _, err := d.ReadRange(context.Background(), "o", 0, 1); !errors.Is(err, driver.ErrDenied) {
+		t.Errorf("a coded refusal in a body gave %v, want a denial", err)
+	}
+}
+
+// TestAStoreHavingABadDayIsNotADenial matters because a call that will come
+// right on a retry must not remove a capability the credential has.
+func TestAStoreHavingABadDayIsNotADenial(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		status int
+		code   string
+	}{
+		{"a server error", http.StatusInternalServerError, "InternalError"},
+		{"an object that is not there", http.StatusNotFound, "NoSuchKey"},
+		{"a bad request", http.StatusBadRequest, "InvalidArgument"},
+	} {
+		d := refusing(t, c.status, c.code)
+		_, err := d.ReadRange(context.Background(), "o", 0, 1)
+		if err == nil {
+			t.Fatalf("%s succeeded", c.name)
+		}
+		if errors.Is(err, driver.ErrDenied) {
+			t.Errorf("%s was reported as a denial: %v", c.name, err)
+		}
+	}
+}
+
+// TestADenialStillSaysWhatTheStoreSaid keeps the wrapping from swallowing the
+// message, which is the difference between a fixable answer and "403".
+func TestADenialStillSaysWhatTheStoreSaid(t *testing.T) {
+	// A read rather than a size, since a HEAD carries no body to say it in.
+	d := refusing(t, http.StatusForbidden, "AccessDenied")
+	_, err := d.ReadRange(context.Background(), "o", 0, 1)
+	if err == nil {
+		t.Fatal("the call succeeded")
+	}
+	for _, want := range []string{"AccessDenied", "policy says no"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not carry %q: %v", want, err)
+		}
+	}
+}
