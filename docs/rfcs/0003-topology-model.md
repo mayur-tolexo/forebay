@@ -91,6 +91,7 @@ and pools on one can lend what that one holds.
 | An unknown never satisfying a requirement, in both rack questions | Built |
 | Accelerator identification by vendor rather than class | Built |
 | NUMA, disks, and RDMA presence discovered from sysfs | Built |
+| Whether an RDMA port is actually up, which RFC-0026 needs and presence does not answer | Built |
 | Rack accepted as a declaration, and only as one | Built |
 | Distinguishing local devices from network ones | Built |
 | Region, zone and row | **Not built.** Nothing places by them yet |

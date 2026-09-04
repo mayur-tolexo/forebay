@@ -3,6 +3,7 @@ package topology
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -627,5 +628,82 @@ func TestAPathThatCannotBeReachedIsNotAnAnswer(t *testing.T) {
 	_, err = SameFilesystem(t.TempDir(), absent)
 	if err == nil || !strings.Contains(err.Error(), absent) {
 		t.Errorf("the second path being unreachable is not named: %v", err)
+	}
+}
+
+// fabric builds a sysfs root holding one InfiniBand device whose ports report
+// the given states. A port with an empty state has no state file at all, which
+// is the kernel not saying rather than saying down.
+func fabric(t *testing.T, states ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "sys", "class"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i, state := range states {
+		port := filepath.Join(root, "sys", "class", "infiniband", "mlx5_0", "ports", strconv.Itoa(i+1))
+		if err := os.MkdirAll(port, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if state == "" {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(port, "state"), []byte(state+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+// TestAFabricThatIsPresentAndDownIsNotAFabric is the distinction RFC-0026
+// turns on: a congested or misconfigured fabric fails as hangs rather than as
+// slow transfers, so a transport chosen on presence alone is chosen into
+// exactly that.
+func TestAFabricThatIsPresentAndDownIsNotAFabric(t *testing.T) {
+	down := Discover(fabric(t, "1: DOWN"))
+	if present, ok := down.RDMA.Known(); !ok || !present {
+		t.Fatalf("RDMA presence = %v/%v, want a known true", present, ok)
+	}
+	active, ok := down.RDMAActive.Known()
+	if !ok {
+		t.Fatal("the link state is unknown, want a known answer from a port that said DOWN")
+	}
+	if active {
+		t.Error("a fabric whose only port is down reported an active link")
+	}
+}
+
+// TestOneActivePortIsEnough matters because a node with several ports needs
+// only one of them up to have a usable fabric.
+func TestOneActivePortIsEnough(t *testing.T) {
+	active, ok := Discover(fabric(t, "1: DOWN", "4: ACTIVE")).RDMAActive.Known()
+	if !ok || !active {
+		t.Errorf("link state = %v/%v with one port active, want a known true", active, ok)
+	}
+}
+
+// TestAKernelThatWillNotSayIsNotADeadFabric keeps a device whose ports expose
+// no state from being reported as down, which would blame a fabric for a
+// kernel that did not answer.
+func TestAKernelThatWillNotSayIsNotADeadFabric(t *testing.T) {
+	if _, ok := Discover(fabric(t, "")).RDMAActive.Known(); ok {
+		t.Error("a device whose port has no state file answered a link state")
+	}
+}
+
+// TestNoFabricIsNoLink covers the ordinary node: absence is an answer, not a
+// gap, so a node with no InfiniBand class definitively has no link up.
+func TestNoFabricIsNoLink(t *testing.T) {
+	active, ok := Discover(gpuNode).RDMAActive.Known()
+	if !ok {
+		t.Fatal("link state is unknown on a node with no infiniband class")
+	}
+	if active {
+		t.Error("a node with no fabric reported an active link")
+	}
+
+	// And a root with nothing to look at still answers neither way.
+	if _, ok := Discover(filepath.Join("testdata", "no-such-root")).RDMAActive.Known(); ok {
+		t.Error("link state answered from a root with no sysfs")
 	}
 }

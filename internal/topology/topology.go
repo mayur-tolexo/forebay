@@ -88,6 +88,12 @@ type Node struct {
 	// RDMA reports whether the kernel exposes an InfiniBand class holding a
 	// device. Absent is a fact; unreadable is not.
 	RDMA Fact[bool]
+	// RDMAActive reports whether any of those devices has a port that is
+	// actually up. Presence and health are different questions: a fabric that
+	// is present and down fails in ways that look like hangs rather than slow
+	// transfers, so a transport chosen on presence alone would be chosen into
+	// exactly that.
+	RDMAActive Fact[bool]
 }
 
 // Discover reads what the machine says about itself.
@@ -103,6 +109,7 @@ func Discover(root string) Node {
 		Accelerators: discoverAccelerators(root),
 		Disks:        discoverDisks(root),
 		RDMA:         discoverRDMA(root),
+		RDMAActive:   discoverRDMAActive(root),
 	}
 }
 
@@ -376,6 +383,57 @@ func discoverRDMA(root string) Fact[bool] {
 		return UnknownValue[bool]()
 	}
 	return DiscoveredValue(len(entries) > 0)
+}
+
+// discoverRDMAActive reports whether any InfiniBand port is up.
+//
+// Present and healthy are not the same answer, and RFC-0026 turns on the
+// difference: a congested or misconfigured fabric fails as hangs and apparent
+// corruption rather than as slow transfers, so detection that stopped at
+// presence would select the transport that fails worst.
+//
+// A device whose ports cannot be read is unknown rather than inactive, for the
+// same reason presence is: a node where nothing could look is not a node
+// without a working fabric.
+func discoverRDMAActive(root string) Fact[bool] {
+	present, ok := discoverRDMA(root).Known()
+	if !ok {
+		return UnknownValue[bool]()
+	}
+	if !present {
+		// Nothing there, so nothing up, which is an answer rather than a gap.
+		return DiscoveredValue(false)
+	}
+
+	devices, err := os.ReadDir(filepath.Join(root, "sys/class/infiniband"))
+	if err != nil {
+		return UnknownValue[bool]()
+	}
+	var looked bool
+	for _, d := range devices {
+		ports, err := os.ReadDir(filepath.Join(root, "sys/class/infiniband", d.Name(), "ports"))
+		if err != nil {
+			continue
+		}
+		for _, port := range ports {
+			state := readTrimmed(filepath.Join(root, "sys/class/infiniband", d.Name(), "ports", port.Name(), "state"))
+			if state == "" {
+				continue
+			}
+			looked = true
+			// Reported as "4: ACTIVE", so the word is what is matched rather
+			// than the number, which is an internal enumeration.
+			if strings.Contains(state, "ACTIVE") {
+				return DiscoveredValue(true)
+			}
+		}
+	}
+	if !looked {
+		// Devices exist and none of them would say. Answering inactive would
+		// blame a fabric for a kernel that did not expose its state.
+		return UnknownValue[bool]()
+	}
+	return DiscoveredValue(false)
 }
 
 // readTrimmed reads a sysfs file, returning empty on any failure.

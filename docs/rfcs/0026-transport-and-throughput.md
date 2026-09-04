@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Draft |
+| **Status** | Accepted |
 | **Phase** | 2 |
 | **Depends on** | 0007, 0008 |
 
@@ -19,6 +19,25 @@ project has avoided. Anything proposed here has to be weighed against reintroduc
 
 This RFC separates three questions that get conflated whenever protocols are discussed, and answers
 them differently.
+
+## What of this is built
+
+**Fabric detection, and only the half of it that was missing.** RFC-0003 already discovered whether a
+node exposes an InfiniBand device. This adds whether any of its ports is actually up, because the
+failure modes section below turns on presence and health being different questions, and detection
+that stopped at presence would select the transport that fails worst.
+
+Nothing else here is built and most of it should not be until RFC-0018 has said which of the three
+bottlenecks binds. That is the document's position rather than a gap in it.
+
+## Assumptions
+
+| Assumption | Basis | Risk if wrong |
+| --- | --- | --- |
+| Not writing a client is the largest cost this project has avoided | Constraint from RFC-0001, and the reason the in-kernel path is chosen at every branch below | The project is more timid than it needs to be, and a purpose-built protocol was available all along |
+| A fast transport is reachable without a client, because Linux implements RPC-over-RDMA in-kernel and it composes with pNFS | Reasoned, from the specifications and from the kernel's own support, and untested by this project on any hardware | The standards path does not deliver the throughput it promises, and the bar below for replacing pNFS is met sooner than expected |
+| A dataloader's cost is dominated by round trips rather than by bytes, at the shard counts these workloads use | Reasoned, from a thousand shards per step per rank against per-request latency, and unmeasured | Batching is solving the wrong problem and prefetch buys nothing, which RFC-0011 would show first |
+| A present RDMA fabric is not necessarily a working one | Reasoned, from how RoCE degrades without correctly configured flow control: sharply, as hangs rather than as slowness | Detection selects a transport into its worst failure mode, which is why this is the part that got built |
 
 ## Three separate questions
 
@@ -119,6 +138,15 @@ Recorded so that the bar is explicit rather than argued case by case. All three 
 Nobody has measured any of this. Until someone does, a new protocol is speculation with a large
 maintenance bill attached.
 
+## Complexity
+
+Small so far, because almost nothing here is built. What the document adds is a decision procedure
+rather than a mechanism.
+
+What it makes harder later is the thing it intends to: a purpose-built protocol now has three
+conditions to meet before it can be proposed, and meeting them requires measurements rather than
+argument.
+
 ## Alternatives considered
 
 | Alternative | Trade-off | Why not |
@@ -144,16 +172,34 @@ or reclamation could be honoured on one path and not the other.
 All predicted. Nothing here has been measured, and the whole point of the RFC is that the ordering of
 work depends on measurements nobody has taken.
 
+## Security and tenancy
+
+A transport choice is a tenancy question, because in-flight encryption depends on it. RDMA's
+encryption story is offload-dependent and not uniformly available, and TLS over TCP costs throughput
+on the path that exists to be fast. This document does not decide it, and says so in the open
+questions rather than leaving a reader to assume traffic between agents is protected.
+
+A batched sideband is a second door to the same data and needs the same authorisation as the first.
+It shares the fast tier's invalidation path, which is stated in the failure modes above, and it must
+share its authorisation too or it becomes a way around RFC-0016's answers.
+
 ## Open questions
 
-- Which of the three bottlenecks actually binds on target hardware. This is the question, and
-  RFC-0018 should answer it before any of this is built.
-- Whether prefetch alone closes the round-trip gap for realistic dataloader patterns.
-- Whether GPUDirect Storage over NFS on RDMA works with a metadata server we wrote, or only with the
-  configurations its vendor tests.
-- Whether the block path should use NVMe-oF rather than CSI over the general path.
-- Whether traffic between agents is encrypted in flight, deferred here by
-  [RFC-0016](0016-multi-tenancy-qos-and-security.md) because whether it can be afforded depends on
-  which transport is chosen.
-- Whether a bandwidth QoS guarantee can be made across nodes, deferred here by
-  [RFC-0016](0016-multi-tenancy-qos-and-security.md), which makes none.
+- **Which of the three bottlenecks actually binds on target hardware.** This is the question, and it
+  orders everything else in this document. Owned by
+  [RFC-0018](0018-benchmark-and-falsification-suite.md), which owns what this project measures.
+- **Whether prefetch alone closes the round-trip gap** for realistic dataloader patterns, which
+  decides whether a batched sideband is needed at all. Owned by
+  [RFC-0018](0018-benchmark-and-falsification-suite.md).
+- **Whether GPUDirect Storage over NFS on RDMA works with a metadata server we wrote**, or only with
+  the configurations its vendor tests. Owned by
+  [RFC-0018](0018-benchmark-and-falsification-suite.md), and it needs hardware this project does not
+  have, which is the access problem that document already records.
+- **Whether the block path should use NVMe-oF rather than CSI over the general path.** Owned by this
+  document, which owns transport, and answerable once a block path exists to route.
+- **Whether traffic between agents is encrypted in flight**, deferred here by
+  [RFC-0016](0016-multi-tenancy-qos-and-security.md). Owned by this document, because whether it can
+  be afforded depends on which transport is chosen and that is the first question above.
+- **Whether a bandwidth QoS guarantee can be made across nodes**, deferred here by
+  [RFC-0016](0016-multi-tenancy-qos-and-security.md), which makes none. Owned by this document, and
+  it should not be attempted before the first question is answered.

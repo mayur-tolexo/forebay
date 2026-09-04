@@ -595,6 +595,18 @@ func reportTopology(n topology.Node) {
 	rdma := "unknown"
 	if present, ok := n.RDMA.Known(); ok {
 		rdma = strconv.FormatBool(present)
+		// Present and up are different answers, and an operator reading this
+		// to decide whether a fast transport is available needs the second.
+		if present {
+			switch active, known := n.RDMAActive.Known(); {
+			case !known:
+				rdma += " (link state unknown)"
+			case active:
+				rdma += " (link up)"
+			default:
+				rdma += " (no port up)"
+			}
+		}
 	}
 	fmt.Printf("topology: rack %s, NUMA nodes %s, RDMA %s\n", rack, numa, rdma)
 
