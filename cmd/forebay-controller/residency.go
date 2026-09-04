@@ -41,12 +41,17 @@ type residencyPass struct {
 	namespace string
 }
 
-// run reconciles every node's labels with what its agent says it holds.
+// run reconciles every node's labels with what its agent says it holds, and
+// reports how many it had to write.
+//
+// Written rather than reconciled, because the design is that a pass writes
+// only what changed, and a count that rose every interval regardless would say
+// the opposite to the only person who can see it.
 //
 // One node failing does not stop the rest. A cluster where one agent is
 // unreachable should still have correct labels everywhere else, and stopping
 // would make the first broken node hide every other node's state.
-func (p residencyPass) run(ctx context.Context) (labelled int, err error) {
+func (p residencyPass) run(ctx context.Context) (written int, err error) {
 	agents, err := kube.Agents(ctx, p.client, p.namespace, p.service)
 	if err != nil {
 		return 0, fmt.Errorf("finding agents: %w", err)
@@ -54,24 +59,27 @@ func (p residencyPass) run(ctx context.Context) (labelled int, err error) {
 
 	var failed []error
 	for _, a := range agents {
-		if err := p.one(ctx, a); err != nil {
+		wrote, err := p.one(ctx, a)
+		if err != nil {
 			failed = append(failed, fmt.Errorf("%s: %w", a.Node, err))
 			continue
 		}
-		labelled++
+		if wrote {
+			written++
+		}
 	}
-	return labelled, joinAll(failed)
+	return written, joinAll(failed)
 }
 
-// one reconciles a single node.
-func (p residencyPass) one(ctx context.Context, a kube.Agent) error {
+// one reconciles a single node, reporting whether it had to write.
+func (p residencyPass) one(ctx context.Context, a kube.Agent) (bool, error) {
 	want, err := p.wanted(ctx, a)
 	if err != nil {
-		return err
+		return false, err
 	}
 	node, err := p.node(ctx, a.Node)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	patch := diff(node.Metadata.Labels, want)
@@ -79,9 +87,9 @@ func (p residencyPass) one(ctx context.Context, a kube.Agent) error {
 		// Nothing written when nothing changed, which is the point of the
 		// hysteresis upstream: a pass per interval that patched every node
 		// every time would be the label churn the levels exist to avoid.
-		return nil
+		return false, nil
 	}
-	return p.client.PatchLabels(ctx, kube.NodeResource, a.Node, patch)
+	return true, p.client.PatchLabels(ctx, kube.NodeResource, a.Node, patch)
 }
 
 // wanted reads an agent's report and turns it into the labels its node should

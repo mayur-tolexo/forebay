@@ -122,7 +122,7 @@ func run() error {
 			if n, err := residency.run(ctx); err != nil {
 				fmt.Fprintln(os.Stderr, "forebay-controller: labelling nodes:", err)
 			} else if n > 0 {
-				fmt.Printf("labelled %d node(s)\n", n)
+				fmt.Printf("relabelled %d node(s)\n", n)
 			}
 		}
 		if n, err := reconcile(ctx, client, resource, backend, resolvable); err != nil {

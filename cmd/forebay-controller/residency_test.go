@@ -261,3 +261,32 @@ func TestDiffOnlyTouchesOurOwnLabels(t *testing.T) {
 		t.Error("an unchanged set produced a patch")
 	}
 }
+
+// TestAQuietPassReportsNothingWritten matters because the count is the only
+// thing an operator sees. A pass that reported a write every interval while
+// writing nothing would say the opposite of what the design does, and the
+// hysteresis would look like it had failed.
+func TestAQuietPassReportsNothingWritten(t *testing.T) {
+	c := newCluster()
+	c.nodes["worker-3"] = map[string]string{"forebay.io/resident-aaa": "most"}
+	agent := agentSaying(t, `[{"level":"most","label":"forebay.io/resident-aaa"}]`)
+	p := passOver(t, c, agent, "worker-3", true)
+
+	n, err := p.run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("a pass that wrote nothing reported %d writes", n)
+	}
+
+	// And a pass that does have something to say counts it.
+	c.nodes["worker-3"] = map[string]string{"forebay.io/resident-aaa": "some"}
+	n, err = p.run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("a pass that raised a level reported %d writes", n)
+	}
+}
