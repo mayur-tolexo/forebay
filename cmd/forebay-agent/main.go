@@ -52,6 +52,7 @@ func run() error {
 		rack        = flag.String("rack", "", "this node's rack, which cannot be discovered and must be declared")
 		mountinfo   = flag.String("mountinfo", "/proc/self/mountinfo", "mount table used to find the device under the pools")
 		drain       = flag.Bool("drain", false, "return what this node lent and exit, so it can be upgraded. Exits non-zero if something is still held, since a rolling upgrade should stop rather than read a log line")
+		autonomy    = flag.Bool("autonomy", true, "let the node adapt what it may adapt, which today is its post-reclaim cooldown. Turning it off holds the configured values and stops nothing the node promised: it still reclaims and still expires")
 		liveness    = flag.Bool("liveness", false, "check whether the agent owning the pool is still making progress, and exit non-zero if not")
 		staleAfter  = flag.Duration("stale-after", 60*time.Second, "how long without progress means the agent is wedged")
 		watch       = flag.Bool("watch", false, "stay running, keeping free space above the headroom target")
@@ -107,6 +108,7 @@ func run() error {
 	}
 	leaseCfg := lease.DefaultConfig()
 	leaseCfg.ReclaimWithin = *reclaim
+	leaseCfg.Autonomy = *autonomy
 
 	cfg := agent.Config{
 		BorrowedDir: *borrowed,

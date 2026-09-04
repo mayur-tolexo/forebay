@@ -168,6 +168,16 @@ type Config struct {
 	// storage one.
 	ChurnWindow time.Duration
 	ChurnBudget int
+	// Autonomy lets the node adapt the values it is allowed to adapt, which
+	// today is the post-reclaim cooldown. It never lets the node move a bound:
+	// the churn budget stays exactly as configured, because an engine that
+	// could raise its own limit when it started hitting it is the failure
+	// operators are right to fear.
+	//
+	// It does not gate reclamation or expiry. Those are promises rather than
+	// discretion, and a switch that stopped them would turn off the safety
+	// property instead of the intelligence.
+	Autonomy bool
 	// Quota bounds what any one tenant may hold on this node.
 	Quota Quota
 }
@@ -221,6 +231,7 @@ func DefaultConfig() Config {
 		ReclaimWithin:      30 * time.Second,
 		GuaranteedFraction: 0.25,
 		MinTerm:            30 * time.Second,
+		Autonomy:           true,
 		ChurnWindow:        10 * time.Minute,
 		ChurnBudget:        6,
 	}
@@ -392,7 +403,16 @@ func (m *Manager) Accept(l Lease, now time.Time) error {
 		return fmt.Errorf("%w: %d reclaims in %s", ErrChurning, m.cfg.ChurnBudget, m.cfg.ChurnWindow)
 	}
 	if in, until := m.inCooldown(now); in {
-		return fmt.Errorf("%w: %s remaining", ErrCooldown, until)
+		// The arithmetic rather than the conclusion: a refusal is invisible,
+		// and a node briefly backing off looks exactly like one that has been
+		// thrashing for an hour unless it says which it is.
+		d, n := m.cooldownFor(now)
+		if d > m.cfg.MinTerm {
+			return fmt.Errorf("%w: %s remaining of %s, backed off from %s over %d reclaims in %s",
+				ErrCooldown, until.Round(time.Millisecond), d, m.cfg.MinTerm, n, m.cfg.ChurnWindow)
+		}
+		return fmt.Errorf("%w: %s remaining of %s, which has not backed off",
+			ErrCooldown, until.Round(time.Millisecond), d)
 	}
 	// An elastic lease promises capacity back within a bounded time. A config
 	// that never set one would quietly make that promise meaningless.
@@ -657,6 +677,8 @@ func (m *Manager) churning(now time.Time) bool {
 // retention is how long reclamation history has to be kept. Both the churn
 // budget and the cooldown read that history, so keeping only the churn window
 // would let a short window silently discard the record the cooldown needs.
+// An adaptive cooldown never exceeds the churn window, so the longer of the two
+// still covers it and needs no third term.
 func (m *Manager) retention() time.Duration {
 	if m.cfg.MinTerm > m.cfg.ChurnWindow {
 		return m.cfg.MinTerm
@@ -685,12 +707,56 @@ func (m *Manager) prune(now time.Time) {
 
 // inCooldown reports whether a reclamation is recent enough that lending again
 // would risk oscillation, and how long remains.
+// cooldownFor returns how long the node declines grants after its last
+// reclaim, which grows while reclaims keep happening.
+//
+// A constant here is a guess about somebody else's cluster: how long it takes
+// for the condition that caused a reclaim to pass is a property of the
+// workload. Being refused a grant costs a cache miss, which is the cheap side
+// of RFC-0010's split, so this is allowed to respond rather than be told.
+//
+// Bounded by the churn window, because past it the churn budget stops the node
+// accepting capacity anyway, and a cooldown longer than that is authority the
+// node does not need in order to do its job. The decay needs no mechanism: the
+// multiplier counts reclaims inside the window, so a quiet window removes them.
+//
+// The caller holds m.mu.
+func (m *Manager) cooldownFor(now time.Time) (d time.Duration, n int) {
+	base := m.cfg.MinTerm
+	if base <= 0 {
+		return 0, 0
+	}
+	cutoff := now.Add(-m.cfg.ChurnWindow)
+	for _, t := range m.reclaims {
+		if t.After(cutoff) {
+			n++
+		}
+	}
+	// Disengaged autonomy holds the configured value rather than stopping the
+	// cooldown. A kill switch that removed the bound would be removing a
+	// safeguard, which is the opposite of what an operator reaches for it for.
+	if n <= 1 || !m.cfg.Autonomy {
+		return base, n
+	}
+	d = base
+	for i := 1; i < n && d < m.cfg.ChurnWindow; i++ {
+		d *= 2
+	}
+	if m.cfg.ChurnWindow > 0 && d > m.cfg.ChurnWindow {
+		d = m.cfg.ChurnWindow
+	}
+	return d, n
+}
+
+// inCooldown reports whether the node is still declining grants, and for how
+// much longer.
 func (m *Manager) inCooldown(now time.Time) (bool, time.Duration) {
 	if m.cfg.MinTerm <= 0 || len(m.reclaims) == 0 {
 		return false, 0
 	}
 	last := m.reclaims[len(m.reclaims)-1]
-	if until := last.Add(m.cfg.MinTerm).Sub(now); until > 0 {
+	d, _ := m.cooldownFor(now)
+	if until := last.Add(d).Sub(now); until > 0 {
 		return true, until
 	}
 	return false, 0
