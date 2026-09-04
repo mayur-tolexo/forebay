@@ -21,13 +21,21 @@ Five other RFCs defer a question here. This document has to answer them rather t
 
 ## What of this is built
 
-**The residual-data guarantee, and nothing else in this document.** `internal/agent` verifies before
+**The residual-data guarantee, the quota and the intent floor.** `internal/agent` verifies before
 the node lends anything that a freshly reserved extent reads as zeros, and refuses to lend if it does
 not. That is the answer RFC-0019 and RFC-0005 were waiting on, and it is the one part of tenancy that
 cannot be added later without a window in which the vulnerability was live.
 
-Quota, the intent floor, per-credential capabilities and the access-path decision are designed here
-and not written. They are additions to paths that exist. The guarantee is not.
+Quota is built in `internal/lease`, at the only door a grant comes through: it bounds what one tenant
+may hold and what of the guaranteed share it may reserve, journals the tenant so a restart does not
+forget it, and refuses an unnamed tenant outright once a quota is set. It bounds nothing today
+because the only grant in the system is the node lending the fast tier to itself, which is exempt;
+it takes effect when a control-plane grant path exists.
+
+The durability floor is built and reachable: `internal/intent` applies it, and the controller takes
+it from a flag and records on the dataset when a floor raised what a user declared.
+
+Per-credential capabilities and the access-path decision are designed here and not written.
 
 ## Assumptions
 
@@ -37,7 +45,7 @@ and not written. They are additions to paths that exist. The guarantee is not.
 | A tenant's data in the tier is regenerable and already at rest in a durable store the tenant is authorised against | Constraint from RFC-0001, and the reason node-local encryption is refused below | Forebay holds the only copy of something, and a threat model built on "it is a cache" is wrong |
 | The node is the only authority on its own capacity | Constraint from RFC-0004 | A capacity guarantee needs a global admission decision, and QoS becomes a distributed problem rather than a local one |
 | A shared NVMe leaks throughput timing between tenants no matter what the filesystem does | Reasoned, from every published result on shared-device side channels | The limitation stated below is understated, and the tier is worse than this document admits |
-| An administrator strengthening a user's request is a safe operation and weakening it is not | Reasoned, from what the intent vocabulary means: every word in it is a requirement, so raising one can only refuse more | The floor becomes a way to quietly serve a user less than they asked for, which is the failure a declarative interface is meant to prevent |
+| An administrator strengthening a user's durability is safe, and raising their latency or cost is not | Reasoned, from what the words mean: durability is a requirement on the backend, while latency and cost authorise Forebay to spend borrowed capacity | Either the floor becomes a way to serve a user less than they asked for, or it becomes a way to spend on their behalf without asking |
 
 ## Design
 
@@ -121,15 +129,21 @@ move cost onto someone who cannot decline it.
 
 ### The intent floor may strengthen a request and never weaken it
 
-Every word in the intent vocabulary is a requirement, so raising one can only cause more requests to
-be refused, never cause a request to be served with less than it asked for. That asymmetry is what
-makes a floor safe: an administrator setting `durable` for a namespace cannot turn a user's `durable`
-into `regenerable`, because the floor is applied as a maximum against each word's ordinal and a user
-who asks for more keeps it.
+A floor carries durability and nothing else. Durability is a requirement on the backend, so raising
+it can only cause more requests to be refused, never cause one to be served with less than it asked
+for: an administrator setting `replicated` for a namespace cannot turn a user's `rack-tolerant` into
+`replicated`, because the floor is applied as a maximum against the ordinal and a user who asked for
+more keeps it.
 
-An administrator cannot set a ceiling. A ceiling would let one silently serve a user less than they
-declared, which is the exact failure a declarative interface exists to prevent, and a tenant who must
-be limited is limited by quota and by refusal, both of which are visible.
+Latency and cost are not floorable, and the reason is that they are not requirements. Both words
+authorise Forebay to spend borrowed capacity — `cached` asks for the fast tier, `balanced` permits
+paying for it — so an administrator raising either would commit a user to spending the user had
+declined. A namespace-wide rule that quietly moves datasets into paid capacity is a different thing
+from a safety requirement, and calling both of them a floor would hide that.
+
+An administrator cannot set a ceiling either. A ceiling would let one silently serve a user less than
+they declared, which is the exact failure a declarative interface exists to prevent, and a tenant who
+must be limited is limited by quota and by refusal, both of which are visible.
 
 ### Identity, and what a compromised agent reaches
 

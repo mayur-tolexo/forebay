@@ -48,6 +48,7 @@ func run() error {
 		bucket      = flag.String("s3-bucket", "", "bucket the backend serves from")
 		region      = flag.String("s3-region", "", "region the backend signs for")
 		knowsRacks  = flag.Bool("fleet-knows-racks", false, "whether topology can name the rack a node is in, which rack tolerance needs and no backend can supply")
+		floor       = flag.String("durability-floor", "", "the least durability every dataset here must require, which can only raise what a user declared and never lower it")
 	)
 	flag.Parse()
 
@@ -74,6 +75,13 @@ func run() error {
 	resolvable := kube.Resolvable{
 		Backend: backend,
 		Fleet:   intent.Fleet{KnowsRacks: *knowsRacks},
+		Floor:   intent.Floor{Durability: intent.Durability(*floor)},
+	}
+	// Refused at startup, since a floor naming a durability that does not
+	// exist would raise nothing and leave an administrator believing a
+	// requirement was in force.
+	if err := resolvable.Floor.Validate(); err != nil {
+		return err
 	}
 
 	resource := kube.DatasetResource

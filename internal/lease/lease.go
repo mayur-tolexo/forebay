@@ -94,6 +94,14 @@ func (c Class) Valid() bool {
 type Lease struct {
 	// ID identifies the lease for reclamation and journalling.
 	ID string
+	// Tenant is who holds this capacity, and is what a quota is counted
+	// against. It is journalled, because a node that forgot it across a
+	// restart would let one tenant exceed its quota by waiting for one.
+	//
+	// A journal written before this field existed replays leases with no
+	// tenant. They hold real capacity, which the pool arithmetic still counts,
+	// but they count against nobody's quota until they expire.
+	Tenant string
 	// Class fixes how fast this capacity can be taken back.
 	Class Class
 	// Size is the capacity lent.
@@ -120,6 +128,9 @@ var (
 	ErrBadClass     = errors.New("lease: unknown class")
 	ErrBadTerm      = errors.New("lease: term must be positive")
 	ErrGuaranteeCap = errors.New("lease: guaranteed capacity would exceed its cap")
+	ErrTenantQuota  = errors.New("lease: tenant would exceed its quota")
+	ErrNoTenant     = errors.New("lease: a quota is set, so a lease must name its tenant")
+	ErrBadQuota     = errors.New("lease: quota is not a bound")
 	ErrChurning     = errors.New("lease: node is churning, not accepting grants")
 	ErrCooldown     = errors.New("lease: node is within its post-reclaim cooldown")
 	// ErrNotRestored is a grant arriving before the journal has been replayed.
@@ -157,6 +168,49 @@ type Config struct {
 	// storage one.
 	ChurnWindow time.Duration
 	ChurnBudget int
+	// Quota bounds what any one tenant may hold on this node.
+	Quota Quota
+}
+
+// NodeTenant holds capacity the node lent to itself, which is the fast tier.
+//
+// No quota bounds it: the tier is one lease the agent sizes from its own
+// configuration, and bounding it would be an operator's limit applied to the
+// operator. The colon is what makes the name safe to reserve, since a
+// Kubernetes namespace is a DNS label and cannot contain one.
+//
+// It is an exemption, so a grant path that took a tenant name from off the
+// node must refuse this one. Nothing does today: the agent's own lease is the
+// only grant there is.
+const NodeTenant = "system:node"
+
+// Quota bounds one tenant's share of a node, which matters because a node is
+// shared and the pool arithmetic alone only stops the node overcommitting, not
+// one tenant taking all of it.
+type Quota struct {
+	// Borrowed is the most capacity one tenant may hold, of any class. Zero
+	// means unbounded, which is what a node serving one tenant wants.
+	Borrowed pool.Bytes
+	// Guaranteed is the most of the node's guaranteed share one tenant may
+	// reserve for checkpoint staging. It is bounded separately and more
+	// tightly, because guaranteed capacity denies itself to everyone else by
+	// construction: a tenant holding the whole guaranteed share would deny
+	// staging to every other tenant on the node without exceeding Borrowed and
+	// without doing anything the node would call an error.
+	Guaranteed pool.Bytes
+}
+
+// Bounded reports whether this quota limits anything.
+func (q Quota) Bounded() bool { return q.Borrowed > 0 || q.Guaranteed > 0 }
+
+// Validate refuses a quota whose guaranteed ceiling is not the scarcer one,
+// since a guaranteed ceiling above the borrowed one bounds nothing.
+func (q Quota) Validate() error {
+	if q.Borrowed > 0 && q.Guaranteed > q.Borrowed {
+		return fmt.Errorf("%w: a guaranteed ceiling of %s above a borrowed ceiling of %s bounds nothing",
+			ErrBadQuota, q.Guaranteed, q.Borrowed)
+	}
+	return nil
 }
 
 // DefaultConfig is a starting point, not a tuned one. The values are
@@ -347,6 +401,9 @@ func (m *Manager) Accept(l Lease, now time.Time) error {
 			return fmt.Errorf("%w: ReclaimWithin is %s", ErrNoDeadline, m.cfg.ReclaimWithin)
 		}
 	}
+	if err := m.withinQuota(l); err != nil {
+		return err
+	}
 	if l.Class == Guaranteed {
 		limit := pool.Bytes(float64(m.acct.Capacity) * m.cfg.GuaranteedFraction)
 		if m.guaranteedTotal()+l.Size > limit {
@@ -484,6 +541,46 @@ func (m *Manager) Reclaim(need pool.Bytes, now time.Time) Result {
 		}
 	}
 	return res
+}
+
+// withinQuota refuses a grant that would put one tenant over its share.
+//
+// An unnamed tenant is refused outright once a quota is set, because a caller
+// that omitted the name would otherwise bypass the bound entirely, and every
+// unnamed lease would be counted against the same empty tenant.
+//
+// The caller holds m.mu.
+func (m *Manager) withinQuota(l Lease) error {
+	q := m.cfg.Quota
+	if !q.Bounded() {
+		return nil
+	}
+	if l.Tenant == NodeTenant {
+		return nil
+	}
+	if l.Tenant == "" {
+		return ErrNoTenant
+	}
+
+	var borrowed, guaranteed pool.Bytes
+	for _, held := range m.leases {
+		if held.Tenant != l.Tenant {
+			continue
+		}
+		borrowed += held.Size
+		if held.Class == Guaranteed {
+			guaranteed += held.Size
+		}
+	}
+	if q.Borrowed > 0 && borrowed+l.Size > q.Borrowed {
+		return fmt.Errorf("%w: %s holds %s and asked for %s against a ceiling of %s",
+			ErrTenantQuota, l.Tenant, borrowed, l.Size, q.Borrowed)
+	}
+	if l.Class == Guaranteed && q.Guaranteed > 0 && guaranteed+l.Size > q.Guaranteed {
+		return fmt.Errorf("%w: %s has %s guaranteed and asked for %s against a ceiling of %s",
+			ErrTenantQuota, l.Tenant, guaranteed, l.Size, q.Guaranteed)
+	}
+	return nil
 }
 
 // releaseLocked returns a lease's capacity and then forgets the lease.

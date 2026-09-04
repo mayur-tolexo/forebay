@@ -118,7 +118,10 @@ func (c Config) Validate() error {
 	if b == j || within(b, j) {
 		return fmt.Errorf("%w: the journal is inside %s, which startup reaps", ErrNestedPools, b)
 	}
-	return nil
+	// Refused here rather than at the first grant, so a quota that bounds
+	// nothing is a startup failure an operator sees rather than a limit they
+	// believe is in force.
+	return c.Lease.Quota.Validate()
 }
 
 // within reports whether child is inside parent.

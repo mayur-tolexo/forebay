@@ -61,6 +61,12 @@ type DatasetStatus struct {
 	// to honour it, not what the user asked for.
 	Satisfiable   bool   `json:"satisfiable"`
 	Unsatisfiable string `json:"unsatisfiable,omitempty"`
+	// RaisedTo names the durability an administrator's floor imposed, and is
+	// empty when the user's own declaration already met it. A floor that
+	// changed what a dataset requires without saying so would be the silent
+	// weakening a declarative interface exists to prevent, running the other
+	// way.
+	RaisedTo string `json:"raisedTo,omitempty"`
 	// ObservedGeneration is the spec this describes.
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
@@ -84,6 +90,9 @@ var ErrNoObject = errors.New("kube: dataset names no object")
 type Resolvable struct {
 	Backend *driver.Backend
 	Fleet   intent.Fleet
+	// Floor is what an administrator requires of every dataset here. It can
+	// only raise what a user declared.
+	Floor intent.Floor
 }
 
 // Resolve asks the store about one dataset and returns what to record.
@@ -111,7 +120,15 @@ func Resolve(ctx context.Context, store Sizer, d Dataset) (DatasetStatus, error)
 // answer different questions and an object being absent says nothing about
 // whether the intent attached to it could be honoured.
 func ResolveIntent(d Dataset, r Resolvable, status *DatasetStatus) {
-	if err := intent.Resolve(d.Spec.Intent, r.Backend, r.Fleet); err != nil {
+	// Resolved against what will actually be enforced, not against what was
+	// asked for, or a dataset raised to a durability the backend cannot offer
+	// would be recorded as satisfiable and fail later.
+	effective := r.Floor.Apply(d.Spec.Intent)
+	status.RaisedTo = ""
+	if effective.Durability != d.Spec.Intent.WithDefaults().Durability {
+		status.RaisedTo = string(effective.Durability)
+	}
+	if err := intent.Resolve(effective, r.Backend, r.Fleet); err != nil {
 		status.Satisfiable, status.Unsatisfiable = false, err.Error()
 		return
 	}

@@ -40,6 +40,7 @@ type Journal interface {
 // "30m0s" rather than two integers they have to decode.
 type record struct {
 	ID        string    `json:"id"`
+	Tenant    string    `json:"tenant,omitempty"`
 	Class     string    `json:"class"`
 	SizeBytes int64     `json:"size_bytes"`
 	GrantedAt time.Time `json:"granted_at"`
@@ -81,6 +82,7 @@ func (j *FileJournal) Save(leases []Lease) error {
 	for _, l := range leases {
 		f.Leases = append(f.Leases, record{
 			ID:        l.ID,
+			Tenant:    l.Tenant,
 			Class:     l.Class.String(),
 			SizeBytes: int64(l.Size),
 			GrantedAt: l.GrantedAt,
@@ -171,6 +173,7 @@ func (j *FileJournal) Load() ([]Lease, error) {
 		}
 		out = append(out, Lease{
 			ID:        r.ID,
+			Tenant:    r.Tenant,
 			Class:     c,
 			Size:      pool.Bytes(r.SizeBytes),
 			GrantedAt: r.GrantedAt,

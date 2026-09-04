@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/mayur-tolexo/forebay/driver"
+	"github.com/mayur-tolexo/forebay/internal/intent"
 )
 
 // store answers about objects a test decided on.
@@ -92,5 +95,71 @@ func TestChangedWritesOnlyWhatIsNew(t *testing.T) {
 		if !Changed(&was, now) {
 			t.Errorf("a difference was called unchanged: %+v against %+v", was, now)
 		}
+	}
+}
+
+// replicating declares a store that keeps more than one copy and says so,
+// which is what a durability above the store's own asks of a backend.
+type replicating struct{}
+
+func (replicating) Declare() driver.Declaration {
+	return driver.Declaration{Contract: 1, Capabilities: []driver.Capability{driver.ReadRange, driver.Replicate}}
+}
+func (replicating) ReadRange(context.Context, string, int64, int64) ([]byte, error) { return nil, nil }
+func (replicating) SizeOf(context.Context, string) (int64, error)                   { return 0, nil }
+func (replicating) WriteObject(context.Context, string, []byte) error               { return nil }
+func (replicating) DeleteObject(context.Context, string) error                      { return nil }
+func (replicating) SnapshotObject(context.Context, string) (string, error)          { return "", nil }
+func (replicating) CloneObject(context.Context, string, string) error               { return nil }
+
+func replicatingBackend(t *testing.T) *driver.Backend {
+	t.Helper()
+	b, err := driver.Open(replicating{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// TestAFloorRaisesADatasetAndSaysSo covers the administrator's floor. A floor
+// that changed what a dataset requires without recording it would be the
+// silent weakening a declarative interface exists to prevent, running the
+// other way.
+func TestAFloorRaisesADatasetAndSaysSo(t *testing.T) {
+	r := Resolvable{Backend: replicatingBackend(t), Floor: intent.Floor{Durability: intent.DurabilityReplicated}}
+
+	var status DatasetStatus
+	ResolveIntent(Dataset{}, r, &status)
+	if !status.Satisfiable {
+		t.Fatalf("a dataset raised to a durability the backend offers was unsatisfiable: %s", status.Unsatisfiable)
+	}
+	if status.RaisedTo != string(intent.DurabilityReplicated) {
+		t.Errorf("RaisedTo = %q, want the durability the floor imposed", status.RaisedTo)
+	}
+
+	// A user who already asked for it was not raised, and must not be told
+	// they were.
+	d := Dataset{Spec: DatasetSpec{Intent: intent.Intent{Durability: intent.DurabilityReplicated}}}
+	ResolveIntent(d, r, &status)
+	if status.RaisedTo != "" {
+		t.Errorf("RaisedTo = %q for a user who declared it themselves", status.RaisedTo)
+	}
+}
+
+// TestAFloorIsResolvedAgainstWhatWillBeEnforced matters because resolving the
+// user's own declaration would record a dataset as satisfiable when the
+// durability actually imposed is one the backend cannot offer.
+func TestAFloorIsResolvedAgainstWhatWillBeEnforced(t *testing.T) {
+	// A backend that replicates but cannot say which rack a node is in.
+	r := Resolvable{
+		Backend: replicatingBackend(t),
+		Fleet:   intent.Fleet{KnowsRacks: false},
+		Floor:   intent.Floor{Durability: intent.DurabilityRackTolerant},
+	}
+
+	var status DatasetStatus
+	ResolveIntent(Dataset{}, r, &status)
+	if status.Satisfiable {
+		t.Error("a dataset raised past what this fleet can offer was recorded as satisfiable")
 	}
 }

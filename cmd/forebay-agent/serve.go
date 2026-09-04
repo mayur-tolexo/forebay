@@ -77,7 +77,7 @@ func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
 		return nil, fmt.Errorf("releasing the tier a previous run left: %w", err)
 	}
 	if err := a.Grant(lease.Lease{
-		ID: selfLease, Class: lease.Elastic, Size: opts.TierBytes,
+		ID: selfLease, Tenant: lease.NodeTenant, Class: lease.Elastic, Size: opts.TierBytes,
 		GrantedAt: now, Term: 365 * 24 * time.Hour,
 	}, now); err != nil {
 		tier.Close()
