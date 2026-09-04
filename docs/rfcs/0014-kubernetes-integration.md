@@ -293,6 +293,10 @@ control plane's own credentials become the weak point, which is
   borrowed pool holds, and no Kubernetes volume type makes that promise. No RFC owns it: it is a
   question about what to offer users rather than about how, and it should be answered by asking
   people who run these jobs.
+- **How a run is identified**, deferred here by
+  [RFC-0023](0023-lineage-and-reproducibility.md), which needs a rerun of the same job to be a
+  different run and cannot trust the job to name itself. Owned by this document, which owns what
+  this project can see of a workload.
 - **How a job declares the datasets it will read**, deferred here by
   [RFC-0022](0022-data-aware-scheduling.md), which needs it to arrive with the pod and does not fix
   its form. Owned by this document, which owns what this project puts in a cluster.

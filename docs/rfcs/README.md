@@ -49,7 +49,7 @@ edited away, which is the point of keeping these.
 | [0020](0020-no-copy-policy.md) | The no-copy policy | Accepted    | 1 | 0002, 0006, 0007 |
 | [0021](0021-single-copy-multi-protocol.md) | Single-copy multi-protocol access | Accepted    | 3 | 0012, 0020 |
 | [0022](0022-data-aware-scheduling.md) | Data-aware scheduling and warm start | Accepted    | 2 | 0003, 0007, 0014 |
-| [0023](0023-lineage-and-reproducibility.md) | Lineage, provenance and immutable versions | Not started | 3 | 0012, 0021 |
+| [0023](0023-lineage-and-reproducibility.md) | Lineage, provenance and immutable versions | Accepted    | 3 | 0012, 0021 |
 | [0024](0024-efficiency-accounting.md) | Efficiency accounting, GPU hours lost to storage | Accepted    | 2 | 0017 |
 | [0025](0025-cross-cluster-datasets.md) | Cross-cluster and cross-region datasets | Not started | 4 | 0006, 0021 |
 | [0026](0026-transport-and-throughput.md) | Transport and the high-throughput path | Accepted    | 2 | 0007, 0008 |
