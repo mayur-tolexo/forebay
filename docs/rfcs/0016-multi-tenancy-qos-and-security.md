@@ -27,6 +27,11 @@ bug.
   experiments need
 - How reclaimed capacity is guaranteed to carry nothing into its next holder, and what that costs in reclamation time
 - Where QoS is enforced, and whether a guarantee can be made without a global admission decision
+- Quota: how much borrowed capacity one tenant may hold, and how much of a node's guaranteed share
+  they may reserve for checkpoint staging, since guaranteed capacity denies itself to everyone else
+  by construction and a tenant cloning another's version can keep bytes alive that its owner deleted
+- Who may set a tenant's intent floor, which decides whether an administrator can strengthen a
+  request a user made and never weaken it
 - Encryption at rest on borrowed and donated capacity, and in flight between agents
 - Identity for nodes, agents and tenants, and what a compromised node agent can reach
 - Whether a node-restricted credential is enough for the Kubernetes adapter, which needs only the
