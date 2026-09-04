@@ -293,6 +293,9 @@ control plane's own credentials become the weak point, which is
   borrowed pool holds, and no Kubernetes volume type makes that promise. No RFC owns it: it is a
   question about what to offer users rather than about how, and it should be answered by asking
   people who run these jobs.
+- **How a job declares the datasets it will read**, deferred here by
+  [RFC-0022](0022-data-aware-scheduling.md), which needs it to arrive with the pod and does not fix
+  its form. Owned by this document, which owns what this project puts in a cluster.
 - **Whether a node-restricted credential is sufficient for the adapter**, or whether the CSI
   driver's own permissions widen it again. Owned by
   [RFC-0016](0016-multi-tenancy-qos-and-security.md).
