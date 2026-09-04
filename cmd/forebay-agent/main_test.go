@@ -1681,3 +1681,72 @@ func TestTheLeaseEndpointNeedsItsToken(t *testing.T) {
 		t.Errorf("capacity answered %d to the right token, want 200", got)
 	}
 }
+
+// TestAQuotaStillLetsTheNodeLendItsOwnTier is the interaction that would
+// otherwise stop a node serving the moment an operator set a quota: the tier
+// is a lease the agent grants itself, and it belongs to the operator rather
+// than to any tenant the quota is meant to bound.
+func TestAQuotaStillLetsTheNodeLendItsOwnTier(t *testing.T) {
+	dir := t.TempDir()
+	backend := filepath.Join(dir, "backend")
+	if err := os.Mkdir(backend, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backend, "obj"), make([]byte, 1<<20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := lease.DefaultConfig()
+	// A ceiling far below what the tier needs, so a tier counted against it
+	// would be refused.
+	cfg.Quota = lease.Quota{Borrowed: 1 << 20, Guaranteed: 1 << 20}
+	a, _, err := agent.Open(agent.Config{
+		BorrowedDir: filepath.Join(dir, "borrowed"),
+		JournalPath: filepath.Join(dir, "state", "leases.json"),
+		Lease:       cfg,
+	}, pool.Accounting{Capacity: testCapacity}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("fb%d", time.Now().UnixNano()))
+	defer os.Remove(sock)
+	sv, err := serveReads(a, servingOptions{
+		Socket: sock, Backend: backendOptions{Dir: backend},
+		TierBytes: 8 << 20, BlockBytes: 1 << 20, FirstReads: 8,
+	})
+	if err != nil {
+		t.Fatalf("a node with a quota could not lend itself a tier: %v", err)
+	}
+	defer sv.stop()
+
+	// And a tenant is still bounded by it.
+	err = a.Grant(lease.Lease{
+		ID: "red-1", Tenant: "red", Class: lease.Elastic, Size: 4 << 20, Term: time.Hour,
+	}, time.Now())
+	if !errors.Is(err, lease.ErrTenantQuota) {
+		t.Errorf("a tenant over the ceiling gave %v, want the quota refusal", err)
+	}
+}
+
+// TestAQuotaThatBoundsNothingStopsTheAgent keeps a node from running with a
+// limit an operator believes is in force and which can never be reached.
+func TestAQuotaThatBoundsNothingStopsTheAgent(t *testing.T) {
+	dir := t.TempDir()
+	cfg := lease.DefaultConfig()
+	// A guaranteed ceiling above the borrowed one bounds nothing.
+	cfg.Quota = lease.Quota{Borrowed: 1 << 20, Guaranteed: 4 << 20}
+
+	_, _, err := agent.Open(agent.Config{
+		BorrowedDir: filepath.Join(dir, "borrowed"),
+		JournalPath: filepath.Join(dir, "state", "leases.json"),
+		Lease:       cfg,
+	}, pool.Accounting{Capacity: testCapacity}, time.Now())
+	if err == nil {
+		t.Fatal("a node started with a quota that bounds nothing")
+	}
+	if !errors.Is(err, lease.ErrBadQuota) {
+		t.Errorf("the refusal was %v, want it to name the quota", err)
+	}
+}

@@ -50,6 +50,8 @@ func run() error {
 		capacity       = flag.Int64("capacity-bytes", 0, "total capacity of the device")
 		reserved       = flag.Int64("reserved-bytes", 0, "capacity held for everything that is not Forebay, measured when not given")
 		reclaim        = flag.Duration("reclaim-within", 30*time.Second, "how long an elastic lease may take to return capacity")
+		tenantCeiling  = flag.Int64("tenant-borrowed-bytes", 0, "the most capacity one tenant may hold on this node, of any class. Zero is unbounded, which is what a node serving one tenant wants")
+		stagingCeiling = flag.Int64("tenant-guaranteed-bytes", 0, "the most of this node's guaranteed share one tenant may reserve for checkpoint staging. Bounded separately and more tightly, since guaranteed capacity denies itself to everyone else by construction")
 		sysroot        = flag.String("sysroot", "/", "filesystem root to discover hardware from")
 		rack           = flag.String("rack", "", "this node's rack, which cannot be discovered and must be declared")
 		mountinfo      = flag.String("mountinfo", "/proc/self/mountinfo", "mount table used to find the device under the pools")
@@ -118,6 +120,10 @@ func run() error {
 	leaseCfg := lease.DefaultConfig()
 	leaseCfg.ReclaimWithin = *reclaim
 	leaseCfg.Autonomy = *autonomy
+	leaseCfg.Quota = lease.Quota{
+		Borrowed:   pool.Bytes(*tenantCeiling),
+		Guaranteed: pool.Bytes(*stagingCeiling),
+	}
 
 	cfg := agent.Config{
 		BorrowedDir: *borrowed,

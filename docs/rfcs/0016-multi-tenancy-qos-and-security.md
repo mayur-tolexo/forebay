@@ -28,9 +28,12 @@ cannot be added later without a window in which the vulnerability was live.
 
 Quota is built in `internal/lease`, at the only door a grant comes through: it bounds what one tenant
 may hold and what of the guaranteed share it may reserve, journals the tenant so a restart does not
-forget it, and refuses an unnamed tenant outright once a quota is set. It bounds nothing today
-because the only grant in the system is the node lending the fast tier to itself, which is exempt;
-it takes effect when a control-plane grant path exists.
+forget it, and refuses an unnamed tenant outright once a quota is set. `forebay-agent` takes both
+ceilings as flags, and a control plane's proposals now carry a tenant, so it bounds something rather
+than waiting for a grant path that did not exist.
+
+The node's own fast tier stays exempt, which is what keeps a node serving the moment an operator sets
+a quota: that lease belongs to the operator rather than to any tenant the quota is meant to bound.
 
 The durability floor is built and reachable: `internal/intent` applies it, and the controller takes
 it from a flag and records on the dataset when a floor raised what a user declared.
