@@ -9,7 +9,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,9 +90,81 @@ func Check(f Fixture) []error {
 
 	var found []error
 	for _, check := range []func(*driver.Backend, *session) []error{
-		declaration, ranges, sizes, refusals, declared,
+		declaration, ranges, sizes, refusals, declared, listing,
 	} {
 		found = append(found, check(b, s)...)
+	}
+	return found
+}
+
+// listing checks what a driver that declares it must answer alike, whether it
+// is a filesystem with real directories or a store that has none.
+//
+// The shape is the point. A namespace built on one backend has to work on the
+// other, so both report a level: names directly under a prefix, directories
+// among them, and nothing from further down.
+func listing(b *driver.Backend, s *session) []error {
+	ctx := context.Background()
+	if !b.Supports(driver.ListObjects) {
+		// Refused rather than empty. An export that cannot tell "no
+		// listing here" from "nothing here" shows a client an empty
+		// directory for a dataset that exists.
+		if _, err := b.List(ctx, "", "", 10); !errors.Is(err, driver.ErrNotSupported) {
+			return []error{fmt.Errorf("listing is not declared and List gave %v, want a refusal", err)}
+		}
+		return nil
+	}
+
+	var found []error
+	// A limit is required: a prefix may hold millions, and a caller that
+	// meant everything has to say how much of it at a time.
+	if _, err := b.List(ctx, "", "", 0); err == nil {
+		found = append(found, errors.New("a listing of zero names was accepted"))
+	}
+
+	// The fixture is somewhere, so the root has at least one name in it.
+	root, err := b.List(ctx, "", "", 1000)
+	if err != nil {
+		return append(found, fmt.Errorf("listing the root: %w", err))
+	}
+	if len(root) == 0 {
+		return append(found, errors.New("the root lists nothing, though the fixture object is in it"))
+	}
+	for _, e := range root {
+		if e.Name == "" {
+			found = append(found, errors.New("a listing carried a name that is empty"))
+		}
+		if strings.Contains(e.Name, "/") {
+			found = append(found, fmt.Errorf("%q is more than one level, so a listing returned what is beneath it", e.Name))
+		}
+	}
+	if !sort.SliceIsSorted(root, func(i, j int) bool { return root[i].Name < root[j].Name }) {
+		found = append(found, errors.New("a listing is not in name order, so paging on the last name seen would skip or repeat"))
+	}
+
+	// Paging: asking for one, then asking again after it, must not repeat.
+	first, err := b.List(ctx, "", "", 1)
+	if err != nil {
+		return append(found, fmt.Errorf("listing one name: %w", err))
+	}
+	if len(first) != 1 {
+		found = append(found, fmt.Errorf("a limit of one returned %d names", len(first)))
+	} else {
+		next, err := b.List(ctx, "", first[0].Name, 1000)
+		if err != nil {
+			found = append(found, fmt.Errorf("listing after %q: %w", first[0].Name, err))
+		}
+		for _, e := range next {
+			if e.Name <= first[0].Name {
+				found = append(found, fmt.Errorf("listing after %q returned %q, which is not after it", first[0].Name, e.Name))
+			}
+		}
+	}
+
+	// A prefix nothing is under is an empty level rather than an error:
+	// there is nothing in an object store for it to be missing.
+	if _, err := b.List(ctx, s.scratch(9000)+"-nowhere", "", 10); err != nil {
+		found = append(found, fmt.Errorf("listing a prefix nothing is under: %w", err))
 	}
 	return found
 }

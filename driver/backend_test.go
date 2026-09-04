@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/mayur-tolexo/forebay/driver"
@@ -286,5 +288,171 @@ func TestReadRangeIsNeverNarrowed(t *testing.T) {
 	}
 	if got := b.Denied(); len(got) != 0 {
 		t.Errorf("denied = %v, want the core left alone", got)
+	}
+}
+
+// listing is a driver that holds keys and derives levels the way an object
+// store does, so a test can drive the backend without either real driver.
+type listing struct {
+	picky
+	keys map[string]int64
+}
+
+func (l *listing) Declare() driver.Declaration {
+	return driver.Declaration{Contract: 1, Capabilities: []driver.Capability{
+		driver.ReadRange, driver.ListObjects,
+	}}
+}
+
+func (l *listing) List(_ context.Context, prefix, after string, limit int) ([]driver.Entry, error) {
+	full := prefix
+	if full != "" && !strings.HasSuffix(full, "/") {
+		full += "/"
+	}
+	seen := map[string]driver.Entry{}
+	for k, size := range l.keys {
+		if !strings.HasPrefix(k, full) {
+			continue
+		}
+		rest := strings.TrimPrefix(k, full)
+		if i := strings.Index(rest, "/"); i >= 0 {
+			seen[rest[:i]] = driver.Entry{Name: rest[:i], Dir: true}
+			continue
+		}
+		seen[rest] = driver.Entry{Name: rest, Bytes: size}
+	}
+	out := make([]driver.Entry, 0, len(seen))
+	for _, e := range seen {
+		if e.Name > after {
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// TestADeclaredListingMustBeImplemented is the one lie Open can catch for
+// free, and catching it means a namespace never half-works: an export would
+// otherwise list nothing and give no reason.
+func TestADeclaredListingMustBeImplemented(t *testing.T) {
+	// picky declares everything and implements no Lister.
+	claimant := &picky{}
+	decl := claimant.Declare()
+	decl.Capabilities = append(decl.Capabilities, driver.ListObjects)
+
+	if _, err := driver.Open(&declaring{picky: *claimant, decl: decl}); err == nil {
+		t.Error("a driver declaring listing without implementing it was opened")
+	}
+}
+
+// declaring is a driver whose declaration a test chooses.
+type declaring struct {
+	picky
+	decl driver.Declaration
+}
+
+func (d *declaring) Declare() driver.Declaration { return d.decl }
+
+// TestALevelIsOneLevel is the shape both drivers have to answer alike: a
+// filesystem has directories and an object store derives them, and a namespace
+// built on one has to work on the other.
+func TestALevelIsOneLevel(t *testing.T) {
+	b, err := driver.Open(&listing{keys: map[string]int64{
+		"imagenet/v17/shard-0": 10,
+		"imagenet/v17/shard-1": 20,
+		"imagenet/v18/shard-0": 30,
+		"captions/v3/shard-0":  40,
+		"loose-object":         50,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	root, err := b.List(ctx, "", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []driver.Entry{
+		{Name: "captions", Dir: true},
+		{Name: "imagenet", Dir: true},
+		{Name: "loose-object", Bytes: 50},
+	}
+	if len(root) != len(want) {
+		t.Fatalf("the root lists %+v, want three names", root)
+	}
+	for i := range want {
+		if root[i] != want[i] {
+			t.Errorf("root[%d] = %+v, want %+v", i, root[i], want[i])
+		}
+	}
+
+	// One level down, and nothing from further down it.
+	versions, err := b.List(ctx, "imagenet", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 2 || !versions[0].Dir || versions[0].Name != "v17" {
+		t.Errorf("imagenet lists %+v, want its two versions as directories", versions)
+	}
+}
+
+// TestAListingPagesWithoutRepeating matters because a caller pages on the last
+// name it saw, and a listing that returned it again would loop.
+func TestAListingPagesWithoutRepeating(t *testing.T) {
+	b, err := driver.Open(&listing{keys: map[string]int64{
+		"a": 1, "b": 2, "c": 3, "d": 4,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	var seen []string
+	after := ""
+	for i := 0; i < 10; i++ {
+		page, err := b.List(ctx, "", after, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, e := range page {
+			seen = append(seen, e.Name)
+		}
+		after = page[len(page)-1].Name
+	}
+	if got := strings.Join(seen, ""); got != "abcd" {
+		t.Errorf("paging saw %q, want each name once in order", got)
+	}
+}
+
+// TestListingIsRefusedWhenNotDeclared keeps an export from telling a client a
+// dataset is empty when the truth is that this backend cannot say.
+func TestListingIsRefusedWhenNotDeclared(t *testing.T) {
+	b, err := driver.Open(&picky{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.List(context.Background(), "", "", 10); !errors.Is(err, driver.ErrNotSupported) {
+		t.Errorf("listing an undeclared backend gave %v", err)
+	}
+}
+
+// TestAListingNeedsALimit covers the caller that meant everything: a prefix
+// may hold millions, and unbounded is not a size.
+func TestAListingNeedsALimit(t *testing.T) {
+	b, err := driver.Open(&listing{keys: map[string]int64{"a": 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, limit := range []int{0, -1} {
+		if _, err := b.List(context.Background(), "", "", limit); err == nil {
+			t.Errorf("a listing of %d names was accepted", limit)
+		}
 	}
 }

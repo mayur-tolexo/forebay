@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mayur-tolexo/forebay/driver"
@@ -45,8 +46,59 @@ func (d *Driver) Declare() driver.Declaration {
 		Contract: 1,
 		Capabilities: []driver.Capability{
 			driver.ReadRange, driver.ObjectSize, driver.WriteObject, driver.DeleteObject,
+			driver.ListObjects,
 		},
 	}
+}
+
+// List returns one level under a prefix, in name order.
+//
+// A directory here is a directory, which is the easy case: the store this
+// serves is a filesystem, so the level a caller asked for is one readdir. An
+// object store has no directories and has to derive them, and both have to
+// answer the same shape or a namespace built on one would not work on the
+// other.
+func (d *Driver) List(ctx context.Context, prefix, after string, limit int) ([]driver.Entry, error) {
+	dir := d.root
+	if prefix != "" {
+		p, err := d.path(prefix)
+		if err != nil {
+			return nil, err
+		}
+		dir = p
+	}
+	names, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// A prefix nothing is under is an empty level rather than
+			// an error: in an object store there is nothing there to
+			// be missing, and the two have to answer alike.
+			return nil, nil
+		}
+		return nil, fmt.Errorf("filedriver: listing %s: %w", prefix, err)
+	}
+
+	// Sorted, because a caller pages with the last name it saw and an order
+	// that changed between calls would skip or repeat.
+	sort.Slice(names, func(i, j int) bool { return names[i].Name() < names[j].Name() })
+
+	out := make([]driver.Entry, 0, limit)
+	for _, e := range names {
+		if e.Name() <= after {
+			continue
+		}
+		if len(out) == limit {
+			break
+		}
+		entry := driver.Entry{Name: e.Name(), Dir: e.IsDir()}
+		if !entry.Dir {
+			if info, err := e.Info(); err == nil {
+				entry.Bytes = info.Size()
+			}
+		}
+		out = append(out, entry)
+	}
+	return out, ctx.Err()
 }
 
 // SizeOf reports how many bytes an object holds.

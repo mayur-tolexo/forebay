@@ -15,7 +15,10 @@ import (
 // the driver sees it, so an accidental implementation cannot be reached and a
 // deliberate one cannot be sold as the real capability.
 type Backend struct {
-	driver  Driver
+	driver Driver
+	// lister is set when the driver both declares and implements listing.
+	// Held rather than asserted per call, since the answer cannot change.
+	lister  Lister
 	declare Declaration
 	// denied holds the capabilities this credential turned out not to have.
 	//
@@ -40,7 +43,20 @@ func Open(d Driver) (*Backend, error) {
 	if err := decl.Validate(); err != nil {
 		return nil, err
 	}
-	return &Backend{driver: d, declare: decl}, nil
+	b := &Backend{driver: d, declare: decl}
+	if decl.Supports(ListObjects) {
+		lister, ok := d.(Lister)
+		if !ok {
+			// Declared and not implemented is the one lie this can
+			// catch for free, and catching it here means a namespace
+			// never half-works: an export would otherwise list
+			// nothing and give no reason.
+			return nil, fmt.Errorf("%w: declares %s and does not implement Lister",
+				ErrNotSupported, ListObjects)
+		}
+		b.lister = lister
+	}
+	return b, nil
 }
 
 // Declaration is what this backend claims, for a control plane to resolve
@@ -107,6 +123,23 @@ func (b *Backend) ReadRange(ctx context.Context, object string, offset, length i
 		return nil, fmt.Errorf("%w: offset %d length %d", ErrRange, offset, length)
 	}
 	return b.driver.ReadRange(ctx, object, offset, length)
+}
+
+// List returns one level of names under a prefix, if this backend can
+// enumerate at all.
+//
+// A limit of zero or less is refused rather than treated as unbounded: a
+// prefix may hold millions, and a caller that meant everything has to say how
+// much of it at a time.
+func (b *Backend) List(ctx context.Context, prefix, after string, limit int) ([]Entry, error) {
+	if !b.Supports(ListObjects) || b.lister == nil {
+		return nil, refuse(ListObjects)
+	}
+	if limit <= 0 {
+		return nil, fmt.Errorf("%w: a listing of %d names is not one", ErrNotSupported, limit)
+	}
+	out, err := b.lister.List(ctx, prefix, after, limit)
+	return out, b.narrow(ListObjects, err)
 }
 
 // SizeOf reports how many bytes an object holds, if this backend can say.

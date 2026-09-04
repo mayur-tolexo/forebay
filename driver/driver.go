@@ -41,7 +41,46 @@ const (
 	Compresses        Capability = "compresses"
 	CompressOnRequest Capability = "compress-on-request"
 	TopologyHint      Capability = "topology-hint"
+	// ListObjects enumerates what a backend holds under a prefix.
+	//
+	// Separate from the mandatory core because most stores can and some
+	// cannot, and a namespace is the one thing that cannot be built without
+	// it: RFC-0008's FSAL serves an empty directory on a backend that does
+	// not declare this, since inventing entries is worse than showing none.
+	ListObjects Capability = "list-objects"
 )
+
+// Entry is one name under a prefix.
+//
+// A prefix that has objects beneath it is reported as a directory, because
+// that is what a directory is in a store that has none: nothing was created to
+// make it exist and nothing needs deleting to remove it.
+type Entry struct {
+	// Name is relative to the prefix asked for, and never contains a
+	// separator: a listing returns one level, and a caller that wants the
+	// next asks again.
+	Name string
+	// Dir says objects exist beneath this name rather than at it.
+	Dir bool
+	// Bytes is the object's size, and is meaningless for a directory.
+	Bytes int64
+}
+
+// Lister is implemented by a driver that declares ListObjects.
+//
+// An interface rather than a method on Driver, so that a driver which cannot
+// enumerate does not carry one that returns an error. A driver declaring the
+// capability without implementing this is refused by Open, which is the same
+// enforcement the mandatory core gets rather than a second kind of trust.
+type Lister interface {
+	// List returns one level under prefix, in name order, starting after
+	// the name given and stopping at limit.
+	//
+	// Paged because a bucket is not a directory and a prefix may hold
+	// millions: a caller that asked for everything would be asking for
+	// however much somebody put there.
+	List(ctx context.Context, prefix, after string, limit int) ([]Entry, error)
+}
 
 var (
 	// ErrNotSupported is a refusal: the backend does not do this. Callers must

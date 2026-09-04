@@ -22,6 +22,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,8 +112,100 @@ func (d *Driver) Declare() driver.Declaration {
 		Contract: 1,
 		Capabilities: []driver.Capability{
 			driver.ReadRange, driver.ObjectSize, driver.WriteObject, driver.DeleteObject,
+			driver.ListObjects,
 		},
 	}
+}
+
+// listResult is as much of ListObjectsV2's answer as a level needs.
+type listResult struct {
+	Contents []struct {
+		Key  string `xml:"Key"`
+		Size int64  `xml:"Size"`
+	} `xml:"Contents"`
+	CommonPrefixes []struct {
+		Prefix string `xml:"Prefix"`
+	} `xml:"CommonPrefixes"`
+}
+
+// List returns one level under a prefix, in name order.
+//
+// An object store has no directories, so the level is derived: a delimiter
+// makes the store report everything sharing a prefix as one common prefix,
+// which is what a directory is here. Asking without one would return every
+// object beneath, which for a dataset is every shard rather than every version.
+func (d *Driver) List(ctx context.Context, prefix, after string, limit int) ([]driver.Entry, error) {
+	// A prefix is a directory, so it ends in the separator: without it
+	// "v1" would also match "v17".
+	full := prefix
+	if full != "" && !strings.HasSuffix(full, "/") {
+		full += "/"
+	}
+
+	q := url.Values{}
+	q.Set("list-type", "2")
+	q.Set("delimiter", "/")
+	q.Set("max-keys", strconv.Itoa(limit))
+	if full != "" {
+		q.Set("prefix", full)
+	}
+	if after != "" {
+		q.Set("start-after", full+after)
+	}
+
+	u := *d.endpoint
+	u.Path = "/" + d.bucket
+	u.RawQuery = q.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("s3driver: %w", err)
+	}
+	resp, err := d.do(req, emptyPayload)
+	if err != nil {
+		return nil, err
+	}
+	defer drain(resp)
+	if err := errorFor(resp); err != nil {
+		return nil, err
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, fmt.Errorf("s3driver: reading the listing: %w", err)
+	}
+	var out listResult
+	if err := xml.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("s3driver: reading the listing: %w", err)
+	}
+
+	entries := make([]driver.Entry, 0, len(out.Contents)+len(out.CommonPrefixes))
+	for _, p := range out.CommonPrefixes {
+		name := strings.TrimSuffix(strings.TrimPrefix(p.Prefix, full), "/")
+		if name != "" {
+			entries = append(entries, driver.Entry{Name: name, Dir: true})
+		}
+	}
+	for _, c := range out.Contents {
+		name := strings.TrimPrefix(c.Key, full)
+		// The prefix itself comes back as a key when something created a
+		// zero-length marker for it. It is not a name under the level.
+		//
+		// Nothing checks for a separator in the name: with a delimiter
+		// set a store returns those as common prefixes, and one that did
+		// not would be failing the conformance suite's own rule that a
+		// listing returns one level. Guarding here would hide that.
+		if name == "" {
+			continue
+		}
+		entries = append(entries, driver.Entry{Name: name, Bytes: c.Size})
+	}
+	// Sorted together, because the store returns prefixes and keys in two
+	// lists and a caller paging on the last name it saw needs one order.
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+	if len(entries) > limit {
+		entries = entries[:limit]
+	}
+	return entries, nil
 }
 
 // ReadRange reads length bytes from offset.

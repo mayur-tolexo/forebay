@@ -722,7 +722,7 @@ func TestAServerConfigThatWaitsForNothingIsRefused(t *testing.T) {
 // slowBackend takes a moment per read, which is what a remote store is and
 // what a local temporary directory is not.
 type slowBackend struct {
-	driver.Driver
+	wrapping
 	each time.Duration
 }
 
@@ -744,7 +744,7 @@ func TestTimeSpentWaitingIsNotTakenFromTimeToAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	back, err := driver.Open(&slowBackend{Driver: fd, each: 2 * time.Millisecond})
+	back, err := driver.Open(&slowBackend{wrapping: wrapping{fd}, each: 2 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}

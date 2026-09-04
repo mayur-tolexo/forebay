@@ -98,6 +98,28 @@ technologies can be made to do in general.
 | `compresses` | Stored data is compressed by the backend, whether or not anyone asked | yes | yes |
 | `compress-on-request` | Forebay can ask the backend to compress a given object | yes | no |
 | `topology-hint` | Placement can be influenced, such as by failure domain | yes | no |
+| `list-objects` | Enumerate one level of names under a prefix | yes | yes |
+
+`list-objects` was added because a namespace cannot be built without it. RFC-0008's FSAL serves a
+directory, and a backend that cannot be enumerated leaves it serving an empty one: a dataloader
+opening shards it already names works, and `ls` shows nothing. That is a worse answer than the
+listing, and a better one than inventing entries.
+
+It returns one level rather than everything beneath a prefix, because those differ by orders of
+magnitude for a dataset: the versions of one are a handful and the shards under them are not. A
+filesystem has directories and an object store derives them from a delimiter, and both answer the
+same shape, or a namespace built on one would not work on the other.
+
+It is paged, and a listing with no limit is refused. A prefix may hold millions, and a caller that
+meant all of them has to say how much at a time.
+
+Unlike every other operation it is an optional interface rather than a method every driver carries,
+so a driver that cannot enumerate does not implement one that returns an error. A driver declaring
+it without implementing it is refused when the backend is opened, which is the same enforcement the
+mandatory core gets rather than a second kind of trust. The cost is that a wrapper around a driver
+has to forward it: passing the declaration through while dropping the interface makes the wrapper a
+driver that lies, and four wrappers in this repository did exactly that before the check caught
+them.
 
 The two compression capabilities are separate because RFC-0020 needs different answers from each. A
 backend that compresses transparently, with no control surface, is common: an object store may store

@@ -37,7 +37,7 @@ func serveWith(t *testing.T, object string, content []byte, cfg dataserver.Confi
 	if err != nil {
 		t.Fatal(err)
 	}
-	var d driver.Driver = &slow{Driver: fd, delay: delay}
+	var d driver.Driver = &slow{wrapping: wrapping{fd}, delay: delay}
 	back, err := driver.Open(d)
 	if err != nil {
 		t.Fatal(err)
@@ -452,10 +452,29 @@ func TestACancelledReadStopsEvenWhenEverythingIsResident(t *testing.T) {
 	}
 }
 
+// wrapping is what every decorator here embeds.
+//
+// A wrapper that forwards a driver's declaration has to forward what it
+// declares. Embedding the Driver interface alone does not: the optional ones
+// are not on it, so the wrapper claims a capability it does not implement and
+// driver.Open refuses it. One base rather than a method on each, since three
+// wrappers dropped it the same way and a fourth would too.
+type wrapping struct {
+	driver.Driver
+}
+
+func (w wrapping) List(ctx context.Context, prefix, after string, limit int) ([]driver.Entry, error) {
+	lister, ok := w.Driver.(driver.Lister)
+	if !ok {
+		return nil, fmt.Errorf("the wrapped driver cannot list")
+	}
+	return lister.List(ctx, prefix, after, limit)
+}
+
 // counting wraps a driver and counts round trips, optionally hiding that it
 // can say how large an object is.
 type counting struct {
-	driver.Driver
+	wrapping
 	hideSize bool
 	calls    int
 }
@@ -499,7 +518,7 @@ func countingServer(t *testing.T, object string, content []byte, hideSize bool) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := &counting{Driver: fd, hideSize: hideSize}
+	c := &counting{wrapping: wrapping{fd}, hideSize: hideSize}
 	back, err := driver.Open(c)
 	if err != nil {
 		t.Fatal(err)
@@ -693,7 +712,7 @@ func TestAReadWithBadArgumentsIsRefused(t *testing.T) {
 // failing refuses every read after the first n, which is a backend going away
 // mid-request rather than an object ending.
 type failing struct {
-	driver.Driver
+	wrapping
 	afterReads int
 	reads      int
 	failSize   bool
@@ -725,7 +744,7 @@ func failingServer(t *testing.T, content []byte, afterReads int, failSize bool) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	back, err := driver.Open(&failing{Driver: fd, afterReads: afterReads, failSize: failSize})
+	back, err := driver.Open(&failing{wrapping: wrapping{fd}, afterReads: afterReads, failSize: failSize})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -774,7 +793,7 @@ func TestABackendFailureIsReportedRatherThanAbsorbed(t *testing.T) {
 // because the scoreboard's whole question is which side is faster and an
 // in-memory fake answers it by accident.
 type slow struct {
-	driver.Driver
+	wrapping
 	delay time.Duration
 }
 
@@ -1017,21 +1036,27 @@ func TestAResidentBlockIsNotFetchedAgain(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	waitFor(t, "the reader to be got ahead of", func() bool { return srv.Stats().Prefetched > 0 })
-
 	// The blocks prefetch placed are the resident ones: a block read once on
 	// demand is not admitted, and nothing predicts backwards, so the early
 	// indices of the walk are still absent.
-	var held []int64
-	for i := int64(1); i < 6; i++ {
-		k := fasttier.Key{Tenant: "t1", Block: fasttier.BlockRef{Backend: "store", Object: object, Index: i}}
-		if tier.Resident(k) {
-			held = append(held, i)
+	//
+	// Waited for by the count this test needs rather than by the first
+	// prefetch to land. Those are different moments, and asserting on one
+	// while waiting for the other is why this was flaky.
+	resident := func() []int64 {
+		var out []int64
+		for i := int64(1); i < 6; i++ {
+			k := fasttier.Key{Tenant: "t1", Block: fasttier.BlockRef{Backend: "store", Object: object, Index: i}}
+			if tier.Resident(k) {
+				out = append(out, i)
+			}
 		}
+		return out
 	}
-	if len(held) < 3 {
-		t.Fatalf("only %d blocks were got ahead of, so a second walk proves nothing", len(held))
-	}
+	waitFor(t, "three blocks ahead of the reader to be resident", func() bool {
+		return len(resident()) >= 3
+	})
+	held := resident()
 
 	// Walking them again predicts blocks already held. A fetch of one would
 	// come back, find the tier already has it, and be counted as dropped, so

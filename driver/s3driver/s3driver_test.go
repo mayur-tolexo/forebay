@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -25,6 +26,49 @@ type fakeS3 struct {
 	requests int
 }
 
+// list answers ListObjectsV2 the way a store does: keys under the prefix, and
+// everything sharing the next separator collapsed into one common prefix.
+//
+// Modelled rather than stubbed, because the delimiter is the whole of how a
+// level is derived in a store with no directories, and a fake that returned
+// every key would let a driver that forgot the delimiter pass.
+func (f *fakeS3) list(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	prefix := q.Get("prefix")
+	after := q.Get("start-after")
+	// Honoured rather than assumed. A store without a delimiter returns
+	// every key beneath the prefix and no common prefixes at all, and a fake
+	// that collapsed anyway would let a driver that forgot to ask pass.
+	delimiter := q.Get("delimiter")
+
+	var keys []string
+	for k := range f.objects {
+		if strings.HasPrefix(k, prefix) && k > after {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	var body strings.Builder
+	seen := map[string]bool{}
+	body.WriteString(`<ListBucketResult>`)
+	for _, k := range keys {
+		rest := strings.TrimPrefix(k, prefix)
+		if i := strings.Index(rest, delimiter); delimiter != "" && i >= 0 {
+			p := prefix + rest[:i+1]
+			if !seen[p] {
+				seen[p] = true
+				fmt.Fprintf(&body, `<CommonPrefixes><Prefix>%s</Prefix></CommonPrefixes>`, p)
+			}
+			continue
+		}
+		fmt.Fprintf(&body, `<Contents><Key>%s</Key><Size>%d</Size></Contents>`,
+			k, len(f.objects[k]))
+	}
+	body.WriteString(`</ListBucketResult>`)
+	w.Write([]byte(body.String()))
+}
+
 func (f *fakeS3) handler(t *testing.T) http.Handler {
 	t.Helper()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +77,13 @@ func (f *fakeS3) handler(t *testing.T) http.Handler {
 			t.Errorf("unsigned %s %s", r.Method, r.URL.Path)
 		}
 		key := strings.TrimPrefix(r.URL.Path, "/bucket/")
+
+		// A listing is a GET on the bucket rather than on an object, which
+		// is the one request whose path is not a key.
+		if r.Method == http.MethodGet && r.URL.Query().Get("list-type") == "2" {
+			f.list(w, r)
+			return
+		}
 
 		switch r.Method {
 		case http.MethodPut:
@@ -314,5 +365,125 @@ func TestADenialStillSaysWhatTheStoreSaid(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error does not carry %q: %v", want, err)
 		}
+	}
+}
+
+// TestALevelIsDerivedFromKeys is what the delimiter is for. A store has no
+// directories, so a version is a common prefix rather than a thing, and a
+// driver that asked without one would return every shard of every version
+// where a client asked for the versions.
+func TestALevelIsDerivedFromKeys(t *testing.T) {
+	d, _ := newFake(t, map[string][]byte{
+		"imagenet/v17/shard-0": []byte("aa"),
+		"imagenet/v17/shard-1": []byte("bbb"),
+		"imagenet/v18/shard-0": []byte("cccc"),
+		"captions/v3/shard-0":  []byte("d"),
+		"loose":                []byte("ee"),
+	})
+	b, err := driver.Open(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	root, err := b.List(ctx, "", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []driver.Entry{
+		{Name: "captions", Dir: true},
+		{Name: "imagenet", Dir: true},
+		{Name: "loose", Bytes: 2},
+	}
+	if len(root) != len(want) {
+		t.Fatalf("the root lists %+v, want three names", root)
+	}
+	for i := range want {
+		if root[i] != want[i] {
+			t.Errorf("root[%d] = %+v, want %+v", i, root[i], want[i])
+		}
+	}
+
+	// One level down: the versions, and none of the shards under them.
+	versions, err := b.List(ctx, "imagenet", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("imagenet lists %+v, want its two versions", versions)
+	}
+	for _, v := range versions {
+		if !v.Dir {
+			t.Errorf("%q is not reported as a directory", v.Name)
+		}
+		if strings.Contains(v.Name, "/") {
+			t.Errorf("%q is more than one level", v.Name)
+		}
+	}
+
+	// And the leaves, with their sizes, which is what getattrs needs.
+	shards, err := b.List(ctx, "imagenet/v17", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shards) != 2 || shards[0].Name != "shard-0" || shards[0].Bytes != 2 {
+		t.Errorf("imagenet/v17 lists %+v, want its two shards with sizes", shards)
+	}
+	if shards[0].Dir {
+		t.Error("a shard is reported as a directory")
+	}
+}
+
+// TestAPrefixIsNotMatchedByHalfAName covers the separator: without it "v1"
+// would also match "v17", and a client would be shown another version's shards.
+func TestAPrefixIsNotMatchedByHalfAName(t *testing.T) {
+	d, _ := newFake(t, map[string][]byte{
+		"ds/v1/shard":  []byte("a"),
+		"ds/v17/shard": []byte("b"),
+	})
+	b, err := driver.Open(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := b.List(context.Background(), "ds/v1", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Name != "shard" {
+		t.Errorf("ds/v1 lists %+v, want only its own shard", got)
+	}
+}
+
+// TestPagingInsideAPrefixDoesNotRepeat covers what start-after has to carry.
+// A store pages on the whole key, so sending the bare name would start after
+// something in another level, or after nothing at all, and the same page would
+// come back for ever.
+func TestPagingInsideAPrefixDoesNotRepeat(t *testing.T) {
+	d, _ := newFake(t, map[string][]byte{
+		"ds/v1/a": []byte("1"),
+		"ds/v1/b": []byte("2"),
+		"ds/v1/c": []byte("3"),
+	})
+	b, err := driver.Open(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	var seen []string
+	after := ""
+	for i := 0; i < 10; i++ {
+		page, err := b.List(ctx, "ds/v1", after, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		seen = append(seen, page[0].Name)
+		after = page[0].Name
+	}
+	if got := strings.Join(seen, ""); got != "abc" {
+		t.Errorf("paging inside a prefix saw %q, want each name once", got)
 	}
 }
