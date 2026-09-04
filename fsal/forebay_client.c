@@ -14,6 +14,11 @@
 #define FOREBAY_MAGIC 0x46425259u /* "FBRY" */
 #define FOREBAY_VERSION 1
 #define FOREBAY_OP_READ 1
+/* Asking how large an object is. An NFS server answers getattrs before a
+ * client reads anything, and it cannot invent a size: a wrong one is a
+ * truncated file or a read past the end.
+ */
+#define FOREBAY_OP_STAT 2
 #define REQUEST_HEADER 26
 #define REPLY_HEADER 14
 #define MAX_NAME 1024
@@ -204,9 +209,16 @@ static enum forebay_status fail(struct forebay_conn *c)
 	return FOREBAY_FAILED;
 }
 
-enum forebay_status forebay_read(struct forebay_conn *c, const char *tenant,
-				 const char *object, int64_t offset,
-				 int64_t length, void *buf, int64_t *got)
+/* exchange sends one request and reads its reply, whichever question it asks.
+ *
+ * One function, because the two questions differ only in the operation byte
+ * and what the reply carries. Two would be two places to get the framing
+ * wrong, and this is already the protocol's second implementation.
+ */
+static enum forebay_status exchange(struct forebay_conn *c, uint8_t op,
+				    const char *tenant, const char *object,
+				    int64_t offset, int64_t length,
+				    void *buf, int64_t *got)
 {
 	uint8_t head[REQUEST_HEADER];
 	uint8_t reply[REPLY_HEADER];
@@ -227,7 +239,7 @@ enum forebay_status forebay_read(struct forebay_conn *c, const char *tenant,
 
 	put_u32(head, FOREBAY_MAGIC);
 	head[4] = FOREBAY_VERSION;
-	head[5] = FOREBAY_OP_READ;
+	head[5] = op;
 	put_u16(head + 6, (uint16_t)tlen);
 	put_u16(head + 8, (uint16_t)olen);
 	put_u64(head + 10, (uint64_t)offset);
@@ -271,4 +283,39 @@ enum forebay_status forebay_read(struct forebay_conn *c, const char *tenant,
 	default:
 		return FOREBAY_FAILED;
 	}
+}
+
+enum forebay_status forebay_read(struct forebay_conn *c, const char *tenant,
+				 const char *object, int64_t offset,
+				 int64_t length, void *buf, int64_t *got)
+{
+	return exchange(c, FOREBAY_OP_READ, tenant, object, offset, length,
+			buf, got);
+}
+
+enum forebay_status forebay_size(struct forebay_conn *c, const char *tenant,
+				 const char *object, int64_t *size)
+{
+	uint8_t body[8];
+	int64_t got = 0;
+	enum forebay_status st;
+
+	if (size == NULL)
+		return FOREBAY_REFUSED;
+	/* The size comes back as the reply's bytes rather than as a header
+	 * field, so the frame every implementation reads carries nothing this
+	 * one question needs.
+	 */
+	st = exchange(c, FOREBAY_OP_STAT, tenant, object, 0, (int64_t)sizeof(body),
+		      body, &got);
+	if (st != FOREBAY_OK)
+		return st;
+	if (got != (int64_t)sizeof(body))
+		/* A size that is not eight bytes is a far side that does not
+		 * speak this, and inventing one from a short answer is how a
+		 * file gets truncated.
+		 */
+		return fail(c);
+	*size = (int64_t)get_u64(body);
+	return FOREBAY_OK;
 }

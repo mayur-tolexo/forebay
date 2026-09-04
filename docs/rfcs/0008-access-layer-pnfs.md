@@ -101,6 +101,16 @@ is one somebody writes twice. One request, one reply, a fixed header, no negotia
 is not this protocol closes the connection rather than being answered, since by then the framing is
 already lost and a reply would land inside whatever the far side thinks it is reading.
 
+It carries two questions rather than one. An NFS server answers getattrs before a client will read
+anything, and it cannot invent a size: too small truncates the file and too large sends the client
+reading past the end. The size is asked of the backend rather than of the tier, because a size the
+tier could answer is a size for the blocks it happens to hold.
+
+A size comes back as the reply's bytes rather than as a field in the header, so the frame every
+implementation reads carries nothing that one question needs, and the operation was added without
+bumping the version: it changes no existing frame's meaning, and a reader that does not know an
+operation refuses it by name rather than misreading it as one it does know.
+
 What it carries that a plain byte channel would not is the difference between a read past the end of
 an object and a backend that could not answer. An NFS server owes a client different errors for
 those two, and cannot tell them apart from a failed read, so the status is on the wire and a

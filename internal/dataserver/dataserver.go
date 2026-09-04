@@ -267,6 +267,29 @@ func (s *Server) ReadRange(ctx context.Context, tenant, object string, offset, l
 	return out, nil
 }
 
+// SizeOf reports how large an object is, which an NFS server has to answer
+// before a client will read anything.
+//
+// Asked of the backend rather than of the tier, because a size the tier could
+// answer is a size for the blocks it happens to hold rather than for the
+// object, and a getattrs answered from a partial cache is a truncated file.
+func (s *Server) SizeOf(ctx context.Context, tenant, object string) (int64, error) {
+	switch {
+	case tenant == "":
+		return 0, fmt.Errorf("%w: no tenant, and objects are not shared between them", ErrRefused)
+	case object == "":
+		return 0, fmt.Errorf("%w: no object", ErrRefused)
+	}
+	size, err := s.backend.SizeOf(ctx, object)
+	if err != nil {
+		return 0, err
+	}
+	if size < 0 {
+		return 0, fmt.Errorf("%w: %s reported %d bytes", ErrRefused, object, size)
+	}
+	return size, nil
+}
+
 // blockAt returns one block, from the tier if it is there and from the backend
 // if it is not.
 //

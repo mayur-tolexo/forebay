@@ -47,6 +47,15 @@ enum forebay_status forebay_read(struct forebay_conn *c, const char *tenant,
 				 const char *object, int64_t offset,
 				 int64_t length, void *buf, int64_t *got);
 
+/* forebay_size asks how large an object is, writing it to *size.
+ *
+ * An NFS server has to answer getattrs before a client will read anything,
+ * and it cannot invent a size: too small truncates the file and too large
+ * sends the client reading past the end.
+ */
+enum forebay_status forebay_size(struct forebay_conn *c, const char *tenant,
+				 const char *object, int64_t *size);
+
 /* forebay_broken reports whether the conversation is over. */
 int forebay_broken(const struct forebay_conn *c);
 

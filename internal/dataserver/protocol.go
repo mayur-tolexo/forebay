@@ -23,6 +23,14 @@ const (
 	version = 1
 
 	opReadRange = 1
+	// opStat asks how large an object is. An NFS server has to answer
+	// getattrs before a client will read anything, and it cannot invent a
+	// size: a wrong one is a truncated file or a read past the end.
+	//
+	// Added without bumping the version, because it changes no existing
+	// frame's meaning and a reader that does not know an operation refuses it
+	// by name rather than misreading it as one it does know.
+	opStat = 2
 )
 
 // Status is what the far side made of a request.
@@ -67,8 +75,12 @@ func (s Status) String() string {
 // opened the socket.
 const maxName = 1024
 
-// request is a read of one object.
+// request is one question about an object: a read, or how large it is.
 type request struct {
+	// Op is which question. Offset and Length are read by opReadRange and
+	// ignored by opStat, which is why they are not a separate frame: one
+	// shape is one thing to get right in each implementation.
+	Op     byte
 	Tenant string
 	Object string
 	Offset int64
@@ -87,7 +99,13 @@ func (r request) encode(w io.Writer) error {
 	buf := make([]byte, requestHeader, requestHeader+len(r.Tenant)+len(r.Object))
 	binary.BigEndian.PutUint32(buf[0:], magic)
 	buf[4] = version
-	buf[5] = opReadRange
+	op := r.Op
+	if op == 0 {
+		// A zero-valued request is a read, which is what every caller before
+		// stat existed meant by one.
+		op = opReadRange
+	}
+	buf[5] = op
 	binary.BigEndian.PutUint16(buf[6:], uint16(len(r.Tenant)))
 	binary.BigEndian.PutUint16(buf[8:], uint16(len(r.Object)))
 	binary.BigEndian.PutUint64(buf[10:], uint64(r.Offset))
@@ -110,8 +128,9 @@ func decodeRequest(r io.Reader) (request, error) {
 	if got := head[4]; got != version {
 		return request{}, fmt.Errorf("dataserver: protocol version %d is not %d", got, version)
 	}
-	if got := head[5]; got != opReadRange {
-		return request{}, fmt.Errorf("dataserver: operation %d is not one this speaks", got)
+	op := head[5]
+	if op != opReadRange && op != opStat {
+		return request{}, fmt.Errorf("dataserver: operation %d is not one this speaks", op)
 	}
 	tenantLen := int(binary.BigEndian.Uint16(head[6:]))
 	objectLen := int(binary.BigEndian.Uint16(head[8:]))
@@ -123,6 +142,7 @@ func decodeRequest(r io.Reader) (request, error) {
 		return request{}, err
 	}
 	return request{
+		Op:     op,
 		Tenant: string(names[:tenantLen]),
 		Object: string(names[tenantLen:]),
 		Offset: int64(binary.BigEndian.Uint64(head[10:])),

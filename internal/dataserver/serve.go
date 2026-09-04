@@ -2,6 +2,7 @@ package dataserver
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -128,6 +129,24 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 // A malformed frame closes the connection rather than being answered. The
 // stream's framing is already lost by then, so a reply would land in the
 // middle of whatever the far side thinks it is reading.
+// answer serves one request, whichever question it asked.
+//
+// A size comes back as bytes in the same reply frame rather than as a field in
+// the header. The header is read by every frame and this is read by one, so
+// putting it there would make every implementation carry a field it ignores.
+func (s *Server) answer(ctx context.Context, req request) ([]byte, error) {
+	if req.Op == opStat {
+		size, err := s.SizeOf(ctx, req.Tenant, req.Object)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]byte, 8)
+		binary.BigEndian.PutUint64(out, uint64(size))
+		return out, nil
+	}
+	return s.ReadRange(ctx, req.Tenant, req.Object, req.Offset, req.Length)
+}
+
 func (s *Server) converse(ctx context.Context, conn net.Conn) {
 	for {
 		// Waiting for a request is bounded on its own, because a caller that
@@ -150,7 +169,7 @@ func (s *Server) converse(ctx context.Context, conn net.Conn) {
 		if err := conn.SetDeadline(time.Now().Add(s.exchange)); err != nil {
 			return
 		}
-		data, err := s.ReadRange(ctx, req.Tenant, req.Object, req.Offset, req.Length)
+		data, err := s.answer(ctx, req)
 		if err := encodeReply(conn, statusFor(err), data); err != nil {
 			return
 		}

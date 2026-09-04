@@ -109,6 +109,25 @@ int main(int argc, char **argv)
 	printf("%-52s %016llx\n", "checksum of the whole object",
 	       (unsigned long long)sum);
 
+	/* The size the far side reports is what an NFS server puts in getattrs,
+	 * so it has to be the object's and not a number this side worked out.
+	 */
+	{
+		int64_t reported = -1;
+
+		st = forebay_size(c, "t1", object, &reported);
+		expect("the object's size comes back", st == FOREBAY_OK);
+		expect("and it is the size the caller was told",
+		       reported == size);
+
+		st = forebay_size(c, "", object, &reported);
+		expect("a size with no tenant is refused", st == FOREBAY_REFUSED);
+
+		st = forebay_size(c, "t1", "no-such-object", &reported);
+		expect("an object that is not there has no size",
+		       st == FOREBAY_FAILED);
+	}
+
 	st = forebay_read(c, "t1", object, size + (1 << 20), 4096, buf, &got);
 	expect("a read past the end is a range error", st == FOREBAY_RANGE);
 

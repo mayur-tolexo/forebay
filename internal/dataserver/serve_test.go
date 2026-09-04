@@ -819,3 +819,94 @@ func TestServeReturnsWhenItsListenerBreaks(t *testing.T) {
 		t.Fatal("Serve did not return after its listener was closed")
 	}
 }
+
+// TestAClientCanAskHowLargeAnObjectIs is what a standalone FSAL needs before
+// anything else: an NFS server answers getattrs before a client will read, and
+// it cannot invent a size — a wrong one is a truncated file or a read past the
+// end.
+func TestAClientCanAskHowLargeAnObjectIs(t *testing.T) {
+	const object = "shard"
+	content := pattern(3*blockSize + 77)
+	srv, _ := serve(t, object, content)
+	c := connect(t, srv)
+
+	got, err := c.SizeOf("t1", object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(len(content)); got != want {
+		t.Errorf("size = %d, want %d", got, want)
+	}
+}
+
+// TestASizeIsTheObjectsAndNotTheTiersMatters because a size answered from
+// whatever blocks happen to be cached is a truncated file.
+func TestASizeIsTheObjectsAndNotTheTiers(t *testing.T) {
+	const object = "shard"
+	content := pattern(8 * blockSize)
+	srv, _ := serve(t, object, content)
+	c := connect(t, srv)
+
+	// One block resident, seven not.
+	for i := 0; i < 2; i++ {
+		if _, err := c.ReadRange("t1", object, 0, blockSize); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := c.SizeOf("t1", object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(len(content)); got != want {
+		t.Errorf("size = %d with one block cached, want the object's %d", got, want)
+	}
+}
+
+// TestAskingAboutNothingIsRefused covers the two the far side can answer
+// without asking the store.
+func TestAskingAboutNothingIsRefused(t *testing.T) {
+	srv, _ := serve(t, "shard", pattern(blockSize))
+	c := connect(t, srv)
+
+	if _, err := c.SizeOf("", "shard"); err == nil {
+		t.Error("a size with no tenant was answered")
+	}
+	if _, err := c.SizeOf("t1", ""); err == nil {
+		t.Error("a size with no object was answered")
+	}
+}
+
+// TestAnObjectThatIsNotThereHasNoSize keeps an NFS server from reporting a
+// file that does not exist as an empty one.
+func TestAnObjectThatIsNotThereHasNoSize(t *testing.T) {
+	srv, _ := serve(t, "shard", pattern(blockSize))
+	c := connect(t, srv)
+
+	if _, err := c.SizeOf("t1", "absent"); err == nil {
+		t.Error("an object the store does not have was given a size")
+	}
+}
+
+// TestOneConnectionAnswersBothQuestions matters because an FSAL holds one
+// connection and asks both: a size that left the stream misaligned would break
+// the read after it.
+func TestOneConnectionAnswersBothQuestions(t *testing.T) {
+	const object = "shard"
+	content := pattern(4 * blockSize)
+	srv, _ := serve(t, object, content)
+	c := connect(t, srv)
+
+	for i := 0; i < 3; i++ {
+		if _, err := c.SizeOf("t1", object); err != nil {
+			t.Fatalf("size %d: %v", i, err)
+		}
+		got, err := c.ReadRange("t1", object, int64(i)*blockSize, blockSize)
+		if err != nil {
+			t.Fatalf("read %d: %v", i, err)
+		}
+		want := content[i*blockSize : (i+1)*blockSize]
+		if !bytes.Equal(got, want) {
+			t.Fatalf("read %d returned the wrong bytes after a size", i)
+		}
+	}
+}

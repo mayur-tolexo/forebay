@@ -1,6 +1,7 @@
 package dataserver
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -82,6 +83,29 @@ func (c *Client) ReadRange(tenant, object string, offset, length int64) ([]byte,
 	if length > c.max {
 		return nil, fmt.Errorf("dataserver: %d bytes is more than the %d this client accepts", length, c.max)
 	}
+	return c.exchangeOne(request{
+		Op: opReadRange, Tenant: tenant, Object: object, Offset: offset, Length: length,
+	})
+}
+
+// SizeOf asks how large an object is, which an NFS server in front of this has
+// to answer before a client will read anything.
+func (c *Client) SizeOf(tenant, object string) (int64, error) {
+	body, err := c.exchangeOne(request{Op: opStat, Tenant: tenant, Object: object})
+	if err != nil {
+		return 0, err
+	}
+	if len(body) != 8 {
+		// A size that is not eight bytes is a far side that does not speak
+		// this, and inventing one from a short answer is how a file gets
+		// truncated.
+		return 0, c.fail(fmt.Errorf("dataserver: a size came back as %d bytes", len(body)))
+	}
+	return int64(binary.BigEndian.Uint64(body)), nil
+}
+
+// exchangeOne sends one request and reads its reply.
+func (c *Client) exchangeOne(req request) ([]byte, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.broken != nil {
@@ -94,7 +118,6 @@ func (c *Client) ReadRange(tenant, object string, offset, length int64) ([]byte,
 	if err := c.conn.SetDeadline(time.Now().Add(c.exchange)); err != nil {
 		return nil, c.fail(fmt.Errorf("dataserver: setting the exchange deadline: %w", err))
 	}
-	req := request{Tenant: tenant, Object: object, Offset: offset, Length: length}
 	if err := req.encode(c.conn); err != nil {
 		// A request written in part leaves the server reading a frame that
 		// will never finish, so this conversation is over either way.
