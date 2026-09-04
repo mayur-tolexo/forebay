@@ -913,16 +913,22 @@ func TestASequentialReaderIsGotAheadOf(t *testing.T) {
 		}
 	}
 
-	waitFor(t, "a block the reader has not reached to be resident", func() bool {
-		return srv.Stats().Prefetched > 0
-	})
-
-	// The block ahead of the reader is there, and putting it there did not
-	// count as a read anybody made.
-	ahead := fasttier.Key{Tenant: "t1", Block: fasttier.BlockRef{Backend: "store", Object: object, Index: 5}}
-	if !tier.Resident(ahead) {
-		t.Error("the block after the reader is not resident, though something was prefetched")
+	// Any block past the reader will do, and naming one would be a race on
+	// which of the predictions the worker happened to fetch first.
+	resident := func(index int64) bool {
+		return tier.Resident(fasttier.Key{
+			Tenant: "t1",
+			Block:  fasttier.BlockRef{Backend: "store", Object: object, Index: index},
+		})
 	}
+	waitFor(t, "a block the reader has not reached to be resident", func() bool {
+		for i := int64(4); i < 12; i++ {
+			if resident(i) {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 // TestPrefetchIsOffUnlessAsked matters because RFC-0011's depth and accuracy
@@ -1163,11 +1169,37 @@ func TestSpeculativeBytesAreNotReportedAsDelivered(t *testing.T) {
 	settleFor(100 * time.Millisecond)
 
 	// Four blocks were asked for, so four blocks' worth was delivered however
-	// many were fetched ahead.
-	want := fmt.Sprintf(`forebay_read_bytes_total{source="backend"} %d`, 4*blockSize)
-	if got := exposed(t, reg); !strings.Contains(got, want) {
-		t.Errorf("delivered bytes include speculative fetches, want %s:\n%s", want, got)
+	// many were fetched ahead. Which side delivered each one is a race with
+	// the prefetcher and is not what this is about, so the two are summed:
+	// what must not move is the total.
+	got := exposed(t, reg)
+	delivered := deliveredBytes(t, got)
+	if want := int64(4 * blockSize); delivered != want {
+		t.Errorf("delivered %d bytes for four blocks, want %d: speculative fetches are being counted\n%s",
+			delivered, want, got)
 	}
+	// And more than that was fetched, or the test proves nothing.
+	if srv.Stats().Prefetched == 0 {
+		t.Fatal("nothing was prefetched, so nothing could have been miscounted")
+	}
+}
+
+// deliveredBytes sums the delivered counter across both sources, since which
+// one served a given block is a race with the prefetcher.
+func deliveredBytes(t *testing.T, exposition string) int64 {
+	t.Helper()
+	var total int64
+	for _, line := range strings.Split(exposition, "\n") {
+		if !strings.HasPrefix(line, "forebay_read_bytes_total{") {
+			continue
+		}
+		var n float64
+		if _, err := fmt.Sscanf(line[strings.LastIndex(line, " ")+1:], "%g", &n); err != nil {
+			t.Fatalf("reading %q: %v", line, err)
+		}
+		total += int64(n)
+	}
+	return total
 }
 
 // TestReadinessIsFedByTheSameNumberItReports keeps a node from being judged

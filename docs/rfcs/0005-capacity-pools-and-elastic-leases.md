@@ -42,8 +42,8 @@ nobody has written.
 | The reclaim deadline | **Stated, validated and now timed, but not enforced.** An elastic grant is refused if no deadline is configured, and a reclaim that overruns is returned as an error rather than logged. Honouring it end to end still means invalidating readers, which is the data path, so what is timed is the half that exists |
 | Invalidate before unlink | Built. An extent is renamed out of reach before it is unlinked, and the rename is atomic, so an interrupted reclaim leaves a name no lease claims |
 | Reconciling the journal against the device, and unlinking orphans | Built. Both directions: an extent no lease accounts for is unlinked, and a lease whose extent is gone is dropped |
-| Any interface to a control plane | **Not built.** Accepting a grant is a local call, not a request. Nothing proposes grants over a network and nothing publishes the accounting back |
-| Publishing pool accounting, so the control plane's view is a cache of the node's | **Not built** |
+| Any interface to a control plane | **Built.** `internal/leaseapi` is the wire: a control plane proposes a lease over HTTP and the node answers with what it decided, including which kind of no. Guarded by a token the operator sets, and not served at all without one |
+| Publishing pool accounting, so the control plane's view is a cache of the node's | **Built**, and the answer carries when it was measured, so a planner reads an age rather than a number that looks exact |
 
 ## Assumptions
 
@@ -109,6 +109,26 @@ Everything awkward about distributed leases becomes tractable once authority sit
 
 The cost is that the control plane's view of fleet capacity is always a slightly stale cache, and
 capacity reporting has to say so rather than presenting it as exact.
+
+### What a proposal looks like on the wire
+
+The inversion above is what the protocol has to preserve, so it is shaped around being refused.
+
+A refusal is an answer rather than an error. The control plane asked a question the node is the
+authority on, and "no, this node is in its post-reclaim cooldown" is the node working. Each refusal
+names its kind, because a planner does opposite things with them: it looks elsewhere for no capacity,
+it waits for a node that is backing off, and it fixes the proposal for a malformed one. A node that
+could not be reached answers the same way, since a caller has to do something with that too and
+making one an error and the other a value puts the two on different paths through every caller.
+
+A proposal is idempotent on its identifier. A control plane that timed out and asked again is told
+the lease is already held rather than that it is a duplicate, or a retry that worked would look like
+a failure and the lease would be abandoned on a node that is holding it. Releasing one the node does
+not have is done, for the same reason: the caller wanted it gone and it is gone.
+
+The endpoint is guarded by a token and is not served at all without one. A node whose capacity
+anything on the network can claim is a node anything can fill, and the disk it fills belongs to the
+workload rather than to Forebay.
 
 ### Lease classes
 

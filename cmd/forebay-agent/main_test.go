@@ -1551,3 +1551,133 @@ func TestTheReportIsOrdered(t *testing.T) {
 		}
 	}
 }
+
+// TestNoTokenFileIsNoLeaseEndpoint covers the default. A lease endpoint that
+// granted disk to anything which could reach the port would hand a node's
+// capacity to the first thing on the network to ask, so an operator has to
+// set a token before one is served at all.
+func TestNoTokenFileIsNoLeaseEndpoint(t *testing.T) {
+	got, err := leaseToken("")
+	if err != nil {
+		t.Fatalf("no token file is not an error: %v", err)
+	}
+	if got != "" {
+		t.Errorf("a token appeared from nowhere: %q", got)
+	}
+}
+
+// TestAnEmptyTokenFileIsRefused matters because it is an operator who meant to
+// set one. Treating it as absent would serve the endpoint open, which is the
+// opposite of what they asked for.
+func TestAnEmptyTokenFileIsRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	for _, body := range []string{"", "\n", "   \n\t"} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := leaseToken(path); err == nil {
+			t.Errorf("a token file holding %q was accepted", body)
+		}
+	}
+}
+
+// TestATokenIsTrimmed covers the newline a file written by an operator or
+// mounted from a secret carries, which would otherwise be part of the token
+// and would refuse every control plane that sent the token without it.
+func TestATokenIsTrimmed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := leaseToken(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "s3cret" {
+		t.Errorf("token = %q, want it trimmed", got)
+	}
+}
+
+// TestAnUnreadableTokenFileStopsTheAgent keeps a node from starting with a
+// lease endpoint nobody can reach and nobody notices is unreachable.
+func TestAnUnreadableTokenFileStopsTheAgent(t *testing.T) {
+	if _, err := leaseToken(filepath.Join(t.TempDir(), "absent")); err == nil {
+		t.Error("a token file that is not there was accepted")
+	}
+}
+
+// agentFor builds an agent over a temporary pool for the endpoint tests.
+func agentFor(t *testing.T) *agent.Agent {
+	t.Helper()
+	root := t.TempDir()
+	a, _, err := agent.Open(agent.Config{
+		BorrowedDir: filepath.Join(root, "borrowed"),
+		JournalPath: filepath.Join(root, "state", "leases.json"),
+		Lease:       lease.DefaultConfig(),
+	}, pool.Accounting{Capacity: testCapacity}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { a.Close() })
+	return a
+}
+
+// askFor makes one request against a served address.
+func askFor(t *testing.T, addr, path, token string) int {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, "http://"+addr+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("asking %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode
+}
+
+// TestTheLeaseEndpointIsNotServedWithoutAToken is the default, and it is the
+// one that matters: a node whose capacity anything on the network can claim is
+// a node anything can fill, and the disk it fills belongs to the workload.
+func TestTheLeaseEndpointIsNotServedWithoutAToken(t *testing.T) {
+	reg := metrics.New()
+	if err := metrics.Node(reg); err != nil {
+		t.Fatal(err)
+	}
+	stop, addr, err := serveMetrics("127.0.0.1:0", reg, nil, nil, agentFor(t), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	if got := askFor(t, addr, "/capacity", ""); got != http.StatusNotFound {
+		t.Errorf("capacity answered %d with no token configured, want 404", got)
+	}
+	if got := askFor(t, addr, "/metrics", ""); got != http.StatusOK {
+		t.Errorf("metrics answered %d, and a scrape needs no token", got)
+	}
+}
+
+// TestTheLeaseEndpointNeedsItsToken covers the guard once the endpoint exists.
+func TestTheLeaseEndpointNeedsItsToken(t *testing.T) {
+	const token = "s3cret"
+	stop, addr, err := serveMetrics("127.0.0.1:0", metrics.New(), nil, nil, agentFor(t), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	if got := askFor(t, addr, "/capacity", ""); got != http.StatusUnauthorized {
+		t.Errorf("capacity answered %d without a token, want 401", got)
+	}
+	if got := askFor(t, addr, "/capacity", "wrong"); got != http.StatusUnauthorized {
+		t.Errorf("capacity answered %d to the wrong token, want 401", got)
+	}
+	if got := askFor(t, addr, "/capacity", token); got != http.StatusOK {
+		t.Errorf("capacity answered %d to the right token, want 200", got)
+	}
+}

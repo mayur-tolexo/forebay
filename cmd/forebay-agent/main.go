@@ -24,6 +24,7 @@ import (
 	"github.com/mayur-tolexo/forebay/internal/agent"
 	"github.com/mayur-tolexo/forebay/internal/kubelet"
 	"github.com/mayur-tolexo/forebay/internal/lease"
+	"github.com/mayur-tolexo/forebay/internal/leaseapi"
 	"github.com/mayur-tolexo/forebay/internal/metrics"
 	"github.com/mayur-tolexo/forebay/internal/pool"
 	"github.com/mayur-tolexo/forebay/internal/prefetch"
@@ -43,43 +44,44 @@ func main() {
 // Close releases the node lock on every path.
 func run() error {
 	var (
-		showVersion = flag.Bool("version", false, "print the build identity and exit")
-		borrowed    = flag.String("borrowed-dir", "", "directory holding capacity lent revocably")
-		journal     = flag.String("journal", "", "path to the lease journal")
-		capacity    = flag.Int64("capacity-bytes", 0, "total capacity of the device")
-		reserved    = flag.Int64("reserved-bytes", 0, "capacity held for everything that is not Forebay, measured when not given")
-		reclaim     = flag.Duration("reclaim-within", 30*time.Second, "how long an elastic lease may take to return capacity")
-		sysroot     = flag.String("sysroot", "/", "filesystem root to discover hardware from")
-		rack        = flag.String("rack", "", "this node's rack, which cannot be discovered and must be declared")
-		mountinfo   = flag.String("mountinfo", "/proc/self/mountinfo", "mount table used to find the device under the pools")
-		drain       = flag.Bool("drain", false, "return what this node lent and exit, so it can be upgraded. Exits non-zero if something is still held, since a rolling upgrade should stop rather than read a log line")
-		autonomy    = flag.Bool("autonomy", true, "let the node adapt what it may adapt, which today is its post-reclaim cooldown. Turning it off holds the configured values and stops nothing the node promised: it still reclaims and still expires")
-		readySlow   = flag.Duration("ready-slow", 2*time.Second, "a read at or over this makes the node report itself not ready, since a node that is slow rather than dead keeps taking work nobody else can see it failing")
-		readyWell   = flag.Duration("ready-recovered", 500*time.Millisecond, "reads must come back under this before the node reports itself ready again. Two bounds rather than one, or a marginal node flaps between ready and not")
-		readyWindow = flag.Duration("ready-window", 30*time.Second, "how far back readiness looks")
-		liveness    = flag.Bool("liveness", false, "check whether the agent owning the pool is still making progress, and exit non-zero if not")
-		staleAfter  = flag.Duration("stale-after", 60*time.Second, "how long without progress means the agent is wedged")
-		watch       = flag.Bool("watch", false, "stay running, keeping free space above the headroom target")
-		headroom    = flag.Int64("headroom-bytes", 0, "free space the agent keeps on top of what is committed, as a fixed size")
-		headroomFor = flag.Duration("headroom-for", 0, "how long the node may be behind, which the agent turns into bytes against the rate the workload is writing at. The measured form: a size set while a drive is fast is wrong once its cache is spent")
-		minHeadroom = flag.Int64("headroom-min-bytes", 0, "the floor under the floor, required with --headroom-for, since a node writing nothing would otherwise keep nothing free")
-		interval    = flag.Duration("watch-interval", 10*time.Second, "how often free space is polled")
-		kubeletHost = flag.String("kubelet-host", "", "this node's address, to read pods bound to it. Without one the watch is reactive")
-		kubeletPort = flag.Int("kubelet-port", 10250, "the kubelet's port")
-		tokenFile   = flag.String("kubelet-token-file", "", "service account token for the kubelet, defaulting to the pod's own")
-		kubeletRoot = flag.String("kubelet-root", "/var/lib/kubelet", "the kubelet's directory, used to check pods are charged against the filesystem the pools are on")
-		metricsAddr = flag.String("metrics-addr", "", "address to serve metrics on, which is an operator surface and carries tenant names, so it binds where only a scrape reaches it")
-		serveSocket = flag.String("serve-socket", "", "path to listen on for reads, which is how something that speaks a storage protocol asks this agent for bytes")
-		backendDir  = flag.String("backend-dir", "", "directory the durable backend serves objects from, read through the file driver")
-		s3Endpoint  = flag.String("backend-s3-endpoint", "", "scheme and host of an S3-compatible durable backend, instead of --backend-dir. Credentials come from "+accessKeyEnv+" and "+secretKeyEnv)
-		s3Bucket    = flag.String("backend-s3-bucket", "", "bucket the S3 backend serves objects from")
-		s3Region    = flag.String("backend-s3-region", "", "region the S3 backend signs for, defaulting to us-east-1")
-		tierBytes   = flag.Int64("tier-bytes", 0, "capacity to hold the fast tier, granted to this agent by itself in the absence of a control plane")
-		blockBytes  = flag.Int64("tier-block-bytes", 1<<20, "the unit the fast tier is keyed in")
-		firstReads  = flag.Int("tier-first-reads", 1<<16, "how many first reads are remembered, which decides whether admission on the second read fires at all")
-		doPrefetch  = flag.Bool("prefetch", false, "predict what a reader will ask for next and fetch it ahead. Off by default, since the numbers below are guesses and a wrong prediction spends bandwidth on a node whose bandwidth feeds an accelerator")
-		pfDepth     = flag.Int("prefetch-depth", prefetch.DefaultConfig().Depth, "how many blocks ahead of a confirmed reader to fetch")
-		pfFloor     = flag.Float64("prefetch-accuracy", prefetch.DefaultConfig().MinAccuracy, "the share of recent predictions that must have been read for a stream to keep being predicted")
+		showVersion    = flag.Bool("version", false, "print the build identity and exit")
+		borrowed       = flag.String("borrowed-dir", "", "directory holding capacity lent revocably")
+		journal        = flag.String("journal", "", "path to the lease journal")
+		capacity       = flag.Int64("capacity-bytes", 0, "total capacity of the device")
+		reserved       = flag.Int64("reserved-bytes", 0, "capacity held for everything that is not Forebay, measured when not given")
+		reclaim        = flag.Duration("reclaim-within", 30*time.Second, "how long an elastic lease may take to return capacity")
+		sysroot        = flag.String("sysroot", "/", "filesystem root to discover hardware from")
+		rack           = flag.String("rack", "", "this node's rack, which cannot be discovered and must be declared")
+		mountinfo      = flag.String("mountinfo", "/proc/self/mountinfo", "mount table used to find the device under the pools")
+		drain          = flag.Bool("drain", false, "return what this node lent and exit, so it can be upgraded. Exits non-zero if something is still held, since a rolling upgrade should stop rather than read a log line")
+		autonomy       = flag.Bool("autonomy", true, "let the node adapt what it may adapt, which today is its post-reclaim cooldown. Turning it off holds the configured values and stops nothing the node promised: it still reclaims and still expires")
+		readySlow      = flag.Duration("ready-slow", 2*time.Second, "a read at or over this makes the node report itself not ready, since a node that is slow rather than dead keeps taking work nobody else can see it failing")
+		readyWell      = flag.Duration("ready-recovered", 500*time.Millisecond, "reads must come back under this before the node reports itself ready again. Two bounds rather than one, or a marginal node flaps between ready and not")
+		readyWindow    = flag.Duration("ready-window", 30*time.Second, "how far back readiness looks")
+		liveness       = flag.Bool("liveness", false, "check whether the agent owning the pool is still making progress, and exit non-zero if not")
+		staleAfter     = flag.Duration("stale-after", 60*time.Second, "how long without progress means the agent is wedged")
+		watch          = flag.Bool("watch", false, "stay running, keeping free space above the headroom target")
+		headroom       = flag.Int64("headroom-bytes", 0, "free space the agent keeps on top of what is committed, as a fixed size")
+		headroomFor    = flag.Duration("headroom-for", 0, "how long the node may be behind, which the agent turns into bytes against the rate the workload is writing at. The measured form: a size set while a drive is fast is wrong once its cache is spent")
+		minHeadroom    = flag.Int64("headroom-min-bytes", 0, "the floor under the floor, required with --headroom-for, since a node writing nothing would otherwise keep nothing free")
+		interval       = flag.Duration("watch-interval", 10*time.Second, "how often free space is polled")
+		kubeletHost    = flag.String("kubelet-host", "", "this node's address, to read pods bound to it. Without one the watch is reactive")
+		kubeletPort    = flag.Int("kubelet-port", 10250, "the kubelet's port")
+		tokenFile      = flag.String("kubelet-token-file", "", "service account token for the kubelet, defaulting to the pod's own")
+		kubeletRoot    = flag.String("kubelet-root", "/var/lib/kubelet", "the kubelet's directory, used to check pods are charged against the filesystem the pools are on")
+		metricsAddr    = flag.String("metrics-addr", "", "address to serve metrics on, which is an operator surface and carries tenant names, so it binds where only a scrape reaches it")
+		leaseTokenFile = flag.String("lease-token-file", "", "file holding the token a control plane must present to propose or release a lease. Without one the lease endpoints are not served at all, since a node whose capacity anyone on the network can claim is a node anyone can fill")
+		serveSocket    = flag.String("serve-socket", "", "path to listen on for reads, which is how something that speaks a storage protocol asks this agent for bytes")
+		backendDir     = flag.String("backend-dir", "", "directory the durable backend serves objects from, read through the file driver")
+		s3Endpoint     = flag.String("backend-s3-endpoint", "", "scheme and host of an S3-compatible durable backend, instead of --backend-dir. Credentials come from "+accessKeyEnv+" and "+secretKeyEnv)
+		s3Bucket       = flag.String("backend-s3-bucket", "", "bucket the S3 backend serves objects from")
+		s3Region       = flag.String("backend-s3-region", "", "region the S3 backend signs for, defaulting to us-east-1")
+		tierBytes      = flag.Int64("tier-bytes", 0, "capacity to hold the fast tier, granted to this agent by itself in the absence of a control plane")
+		blockBytes     = flag.Int64("tier-block-bytes", 1<<20, "the unit the fast tier is keyed in")
+		firstReads     = flag.Int("tier-first-reads", 1<<16, "how many first reads are remembered, which decides whether admission on the second read fires at all")
+		doPrefetch     = flag.Bool("prefetch", false, "predict what a reader will ask for next and fetch it ahead. Off by default, since the numbers below are guesses and a wrong prediction spends bandwidth on a node whose bandwidth feeds an accelerator")
+		pfDepth        = flag.Int("prefetch-depth", prefetch.DefaultConfig().Depth, "how many blocks ahead of a confirmed reader to fetch")
+		pfFloor        = flag.Float64("prefetch-accuracy", prefetch.DefaultConfig().MinAccuracy, "the share of recent predictions that must have been read for a stream to keep being predicted")
 	)
 	flag.Parse()
 
@@ -286,8 +288,15 @@ func run() error {
 		BorrowedDir: cfg.BorrowedDir,
 		Pools:       borrowedFS,
 	})
+	// Read before anything is served, so a node configured with a token file
+	// it cannot read refuses to start rather than serving a lease endpoint
+	// nobody can reach and nobody notices is unreachable.
+	token, err := leaseToken(*leaseTokenFile)
+	if err != nil {
+		return err
+	}
 	if *metricsAddr != "" {
-		stopMetrics, err := serveMetrics(*metricsAddr, reg, ready, reads)
+		stopMetrics, _, err := serveMetrics(*metricsAddr, reg, ready, reads, a, token)
 		if err != nil {
 			return err
 		}
@@ -675,10 +684,32 @@ func movingTarget(cfg agent.WatchConfig, t agent.Tick) string {
 // Out of the IO path entirely: a read does not consult it and does not stop
 // when it stops, which is why a failure here is reported and does not end the
 // agent.
-func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness, reads *serving) (func(), error) {
+// leaseToken reads the token a control plane must present, trimming the
+// newline a file written by an operator or mounted from a secret carries.
+func leaseToken(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading the lease token: %w", err)
+	}
+	token := strings.TrimSpace(string(body))
+	if token == "" {
+		// Refused rather than treated as absent. An empty token file is an
+		// operator who meant to set one, and serving the endpoint open would
+		// be the opposite of what they asked for.
+		return "", fmt.Errorf("the lease token in %s is empty", path)
+	}
+	return token, nil
+}
+
+// serveMetrics returns where it is listening as well as how to stop it. A
+// caller that asked for port zero cannot otherwise find out.
+func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness, reads *serving, a *agent.Agent, token string) (func(), string, error) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
-		return nil, fmt.Errorf("serving metrics on %s: %w", addr, err)
+		return nil, "", fmt.Errorf("serving metrics on %s: %w", addr, err)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", reg.Handler())
@@ -700,6 +731,14 @@ func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness, 
 	if reads != nil {
 		mux.Handle("/residency", residencyHandler(reads.residency))
 	}
+	// Served only when a token is set. A lease endpoint that granted disk to
+	// anything that could reach the port would hand a node's capacity to the
+	// first thing on the network to ask.
+	if token != "" {
+		mux.Handle("/leases", leaseapi.Handler(a, token))
+		mux.Handle("/leases/", leaseapi.Handler(a, token))
+		mux.Handle("/capacity", leaseapi.Handler(a, token))
+	}
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := srv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -710,7 +749,12 @@ func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness, 
 	if reads != nil {
 		fmt.Printf("reporting residency on %s/residency, which a controller turns into node labels\n", l.Addr())
 	}
-	return func() { srv.Close() }, nil
+	if token == "" {
+		fmt.Fprintln(os.Stderr, "not accepting leases: pass --lease-token-file for a control plane to propose them")
+	} else {
+		fmt.Printf("accepting lease proposals on %s/leases\n", l.Addr())
+	}
+	return func() { srv.Close() }, l.Addr().String(), nil
 }
 
 // prefetchConfig turns the flags into a configuration, or into nothing.
