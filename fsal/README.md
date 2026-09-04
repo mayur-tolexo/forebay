@@ -11,6 +11,32 @@ speaks, and enough of an FSAL to show a client reading through it.
 | `forebay_client.h`, `forebay_client.c` | The protocol's second implementation. One request, one reply, fixed header, no negotiation |
 | `forebay_client_check.c` | Checks this client against a running agent, without an NFS server in the way |
 | `mem_forebay.c`, `mem_forebay.h` | The read hook, and a spike: the namespace is the memory FSAL's, the bytes are Forebay's |
+| `forebay_path.c`, `forebay_path.h` | The namespace mapping: a path under the export becomes an object key. Needs nothing but libc, so it is checked here and against the Go side |
+| `forebay_source.c`, `forebay_source.h` | One connection to an agent, dialled when needed and again when it breaks, with a window so an agent that is down is not a connect storm |
+| `forebay_fsal.c` | The FSAL itself, whose namespace is Forebay's rather than borrowed |
+
+## Building the FSAL
+
+It needs NFS-Ganesha's headers, which are not vendored here, and a `config.h`
+that Ganesha's own cmake generates. Configuring is enough — Ganesha does not
+have to be built:
+
+```
+cmake -S <ganesha>/src -B <ganesha>/src/build
+make module GANESHA_SRC=<ganesha>
+make module-symbols GANESHA_SRC=<ganesha>
+```
+
+The second target is the one worth running. RFC-0008 found that Ganesha's
+flexfiles helpers are public in the headers and absent from its export list, so
+an FSAL that calls them compiles and links nowhere. This one calls none of
+them, and that target is what keeps it that way:
+
+```
+every symbol this needs is one Ganesha exports
+```
+
+Built against V5-stable, where all thirty-five symbols it needs are exported.
 
 ## Proving the client on its own
 

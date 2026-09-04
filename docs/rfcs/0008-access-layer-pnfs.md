@@ -154,8 +154,30 @@ RFC-0018.
 
 ## What of this is built
 
-**The read path, and nothing that speaks NFS.** No metadata server exists and no data server answers
-an NFS client.
+**The read path, and an FSAL whose namespace is Forebay's.** No metadata server exists in the pNFS
+sense: this is a plain NFS server reading through the agent, which is the configuration a stock
+client mounts today.
+
+`fsal/forebay_fsal.c` is an NFS-Ganesha FSAL rather than a hook in somebody else's. It compiles and
+links against V5-stable, and every one of the thirty-five symbols it needs is one Ganesha exports —
+which is the check the pNFS spike failed, and it passes here because this calls none of the
+flexfiles helpers.
+
+Two things it does not do, and says so rather than pretending. It cannot list a directory: the
+driver contract in RFC-0006 has read-range, object-size, write, delete, snapshot and clone, and no
+list, so Forebay cannot enumerate a backend at all. A dataloader opening shards it already names
+works; `ls` shows an empty directory. And it is read-only, because RFC-0021 makes a published
+version immutable to every path Forebay controls and an FSAL that accepted a write would be the one
+place that was not true.
+
+Without listing, a lookup decides: a name the agent can give a size for is a file, and anything else
+is offered as a directory a client may walk through. That is not a guess about what exists, it is
+the only shape a namespace with no listing can have, and refusing instead would make every path
+unreachable including the ones that are there.
+
+The parts that need no Ganesha header are kept out of the module and checked here: the path mapping,
+which the Go side cross-checks so the two views cannot silently disagree, and the connection holder,
+whose behaviour with no agent to talk to is the state a node is in while the agent is starting.
 
 `internal/dataserver` answers a byte range of an object: from the fast tier where the blocks are
 resident, and from the durable backend through the driver contract where they are not. It is the
