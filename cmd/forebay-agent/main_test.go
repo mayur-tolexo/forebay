@@ -1102,3 +1102,135 @@ func TestAShortfallIsPublished(t *testing.T) {
 func TestRecordWithoutARegistryIsSafe(t *testing.T) {
 	record(nil, agent.Tick{Reclaimed: 1, Shortfall: 1})
 }
+
+// openAgent builds an agent over a temporary pool, with the journal outside it
+// since startup reaps the pool.
+func openAgent(t *testing.T, capacity pool.Bytes) *agent.Agent {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, "borrowed")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a, _, err := agent.Open(agent.Config{
+		BorrowedDir: dir,
+		JournalPath: filepath.Join(root, "leases.json"),
+		Lease:       lease.Config{ReclaimWithin: time.Second, GuaranteedFraction: 0.5},
+	}, pool.Accounting{Capacity: capacity}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { a.Close() })
+	return a
+}
+
+// TestDrainReturnsWhatCanBeReturned covers the ordinary upgrade: a node lent
+// reclaimable capacity and gets all of it back without waiting for terms.
+func TestDrainReturnsWhatCanBeReturned(t *testing.T) {
+	a := openAgent(t, 8<<20)
+	now := time.Now()
+	for i, c := range []lease.Class{lease.Opportunistic, lease.Elastic} {
+		id := fmt.Sprintf("l-%d", i)
+		if err := a.Grant(lease.Lease{ID: id, Class: c, Size: 1 << 20, Term: time.Hour}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := drainNode(a, now); err != nil {
+		t.Fatalf("draining a node holding only reclaimable capacity: %v", err)
+	}
+	if got := a.Accounting().Borrowed; got != 0 {
+		t.Errorf("%s was still lent after a drain", got)
+	}
+}
+
+// TestDrainWillNotTakeACheckpoint is the interlock between this and RFC-0013.
+// A drain that took a guaranteed lease would destroy a job's progress, one
+// node at a time, while reporting success.
+func TestDrainWillNotTakeACheckpoint(t *testing.T) {
+	a := openAgent(t, 8<<20)
+	now := time.Now()
+	if err := a.Grant(lease.Lease{ID: "staging", Class: lease.Guaranteed, Size: 1 << 20, Term: time.Hour}, now); err != nil {
+		t.Fatal(err)
+	}
+	err := drainNode(a, now)
+	if err == nil {
+		t.Fatal("a drain took a guaranteed lease and reported success")
+	}
+	for _, want := range []string{"only copy", "drain again"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+	if got := a.Accounting().Borrowed; got == 0 {
+		t.Error("the checkpoint's capacity was returned anyway")
+	}
+}
+
+// TestDrainingAnEmptyNodeSucceeds keeps a rolling upgrade from stopping at a
+// node that had lent nothing.
+func TestDrainingAnEmptyNodeSucceeds(t *testing.T) {
+	if err := drainNode(openAgent(t, 8<<20), time.Now()); err != nil {
+		t.Errorf("draining a node that lent nothing failed: %v", err)
+	}
+}
+
+// TestStillHeldDoesNotBlameACheckpointForAFault matters because the two reasons
+// call for opposite things: waiting is right for staging and wrong for a lease
+// the ladder should have taken, which an operator would otherwise wait on
+// forever.
+func TestStillHeldDoesNotBlameACheckpointForAFault(t *testing.T) {
+	err := stillHeld([]lease.Lease{
+		{ID: "stuck", Class: lease.Elastic, Size: 2 << 20},
+		{ID: "staging", Class: lease.Guaranteed, Size: 1 << 20},
+	})
+	if err == nil {
+		t.Fatal("a lease the ladder should have taken was reported as a clean drain")
+	}
+	if !strings.Contains(err.Error(), "should have been able to take") {
+		t.Errorf("a stuck lease was reported as a checkpoint to wait on: %v", err)
+	}
+
+	if err := stillHeld(nil); err != nil {
+		t.Errorf("a node holding nothing was reported as still held: %v", err)
+	}
+	if err := stillHeld([]lease.Lease{{Class: lease.Guaranteed, Size: 1 << 20}}); err == nil ||
+		!strings.Contains(err.Error(), "only copy") {
+		t.Errorf("staging alone was not named as staging: %v", err)
+	}
+}
+
+// TestDrainOutcome covers every way a drain can end, including the two an
+// agent cannot be driven into from a command line.
+func TestDrainOutcome(t *testing.T) {
+	clean := agent.Reclamation{}
+	staging := []lease.Lease{{ID: "ckpt", Class: lease.Guaranteed, Size: 1 << 20}}
+
+	if err := drainOutcome(clean, nil, nil); err != nil {
+		t.Errorf("a node that returned everything was not drained: %v", err)
+	}
+
+	// A deadline missed is a promise broken, not capacity kept: the node did
+	// drain, and failing it here would stop a rollout that should continue.
+	if err := drainOutcome(clean, fmt.Errorf("x: %w", agent.ErrDeadlineMissed), nil); err != nil {
+		t.Errorf("a slow but complete drain was reported as a failure: %v", err)
+	}
+
+	// An extent that could not be unlinked is capacity that did not come back,
+	// whatever the accounting says.
+	if err := drainOutcome(clean, errors.New("could not unlink"), nil); err == nil {
+		t.Error("extents that could not be unlinked were reported as a clean drain")
+	}
+
+	// Reclaim stopping part way leaves leases held for a reason that is not a
+	// checkpoint, so it must not be reported as one.
+	part := agent.Reclamation{Result: lease.Result{Err: errors.New("accounting")}}
+	err := drainOutcome(part, nil, staging)
+	if err == nil || !strings.Contains(err.Error(), "stopped part way") {
+		t.Errorf("a reclaim that stopped part way was reported as %v", err)
+	}
+
+	if err := drainOutcome(clean, nil, staging); err == nil ||
+		!strings.Contains(err.Error(), "only copy") {
+		t.Errorf("held staging was reported as %v", err)
+	}
+}

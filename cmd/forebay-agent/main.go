@@ -51,6 +51,7 @@ func run() error {
 		sysroot     = flag.String("sysroot", "/", "filesystem root to discover hardware from")
 		rack        = flag.String("rack", "", "this node's rack, which cannot be discovered and must be declared")
 		mountinfo   = flag.String("mountinfo", "/proc/self/mountinfo", "mount table used to find the device under the pools")
+		drain       = flag.Bool("drain", false, "return what this node lent and exit, so it can be upgraded. Exits non-zero if something is still held, since a rolling upgrade should stop rather than read a log line")
 		liveness    = flag.Bool("liveness", false, "check whether the agent owning the pool is still making progress, and exit non-zero if not")
 		staleAfter  = flag.Duration("stale-after", 60*time.Second, "how long without progress means the agent is wedged")
 		watch       = flag.Bool("watch", false, "stay running, keeping free space above the headroom target")
@@ -214,6 +215,10 @@ func run() error {
 		// is the difference between a caveat and a lie.
 		fmt.Fprintln(os.Stderr, "warning: this build cannot reserve blocks, so borrowed capacity is not really held")
 	}
+	if *drain {
+		return drainNode(a, time.Now())
+	}
+
 	var reads *serving
 	if *serveSocket == "" {
 		fmt.Fprintln(os.Stderr, "not serving: pass --serve-socket and a backend to answer reads")
@@ -677,4 +682,65 @@ func record(reg *metrics.Registry, t agent.Tick) {
 	if t.Shortfall > 0 {
 		_ = reg.Add(metrics.ReclaimShortfall, nil, float64(t.Shortfall))
 	}
+}
+
+// drainNode returns what this node lent, so it can be upgraded.
+//
+// An upgrade is a crash whose moment the operator chose, and everything a
+// restart needs already exists. What drain adds is not waiting for terms to
+// expire, which are hours, when somebody is patching a security hole.
+func drainNode(a *agent.Agent, now time.Time) error {
+	before := a.Accounting().Borrowed
+	if before == 0 {
+		fmt.Println("nothing lent, so nothing to return")
+		return nil
+	}
+
+	rec, err := a.ReclaimCapacity(before, now)
+	fmt.Printf("returned %s of %s in %s\n", rec.Result.Reclaimed, before, rec.Elapsed.Round(time.Millisecond))
+	return drainOutcome(rec, err, a.Leases())
+}
+
+// drainOutcome decides whether a node is drained, kept apart from the draining
+// so every way it can end is reachable in a test rather than only the two an
+// agent can be driven into.
+func drainOutcome(rec agent.Reclamation, err error, remaining []lease.Lease) error {
+	// A missed deadline is a promise the node broke rather than capacity it
+	// kept, and the drain itself still happened. Anything else stopped it.
+	if err != nil && !errors.Is(err, agent.ErrDeadlineMissed) {
+		return fmt.Errorf("draining: %w", err)
+	}
+	if rec.Result.Err != nil {
+		return fmt.Errorf("draining stopped part way: %w", rec.Result.Err)
+	}
+	return stillHeld(remaining)
+}
+
+// stillHeld says what a drain could not return, and separates the two reasons,
+// because they call for opposite things from an operator.
+//
+// A guaranteed lease is checkpoint staging, whose bytes are the only copy of
+// themselves until they are durable: a drain that took one would destroy a
+// job's progress while reporting success, so the wait is the right answer.
+// Anything else is a lease the ladder was supposed to take, which is a fault
+// and must not be reported as a checkpoint the operator would wait on forever.
+func stillHeld(remaining []lease.Lease) error {
+	var staging, stuck pool.Bytes
+	for _, l := range remaining {
+		if l.Class == lease.Guaranteed {
+			staging += l.Size
+			continue
+		}
+		stuck += l.Size
+	}
+	switch {
+	case stuck > 0:
+		return fmt.Errorf("still holding %s the drain should have been able to take, and %s of checkpoint staging", stuck, staging)
+	case staging > 0:
+		// Non-zero, and in the words an operator needs: the rollout has to stop,
+		// and the reason is a promise this node made rather than a fault.
+		return fmt.Errorf("still holding %s of checkpoint staging, whose bytes are the only copy of themselves. "+
+			"Wait for it to become durable and drain again", staging)
+	}
+	return nil
 }

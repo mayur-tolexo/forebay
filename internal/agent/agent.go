@@ -307,6 +307,10 @@ func (a *Agent) releasing(leaseIDs []string) {
 // Accounting reports the node's current capacity split.
 func (a *Agent) Accounting() pool.Accounting { return a.leases.Accounting() }
 
+// Leases reports what the node is still holding, so a caller that could not
+// take something back can say what it was rather than guess at why.
+func (a *Agent) Leases() []lease.Lease { return a.leases.Leases() }
+
 // ExtentPath is where a lease's capacity lives on disk.
 //
 // Identifiers arrive from the control plane and become paths here, so one that
