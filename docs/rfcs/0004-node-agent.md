@@ -396,7 +396,7 @@ against the workload it hosts and RFC-0016 should say so plainly.
   watch already polls is not an autonomy loop, and putting it there would make a floor the node needs
   every second depend on a component that does not exist. What remains open is the margin: nine runs
   in ten sat at or under the rate times the interval and the tenth reached six times it, so the
-  multiplier over that product is a judgement this document has not yet made.
+  multiplier over that product is owned by this document and has not been chosen.
 - **Whether `hostNetwork` is worth its cost**, which is a measurement rather than an opinion. Owned
   by [RFC-0018](0018-benchmark-and-falsification-suite.md).
 - **Whether the pressure watch can be driven from the kubelet directly** rather than from the API

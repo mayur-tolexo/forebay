@@ -170,13 +170,86 @@ func headerField(src, name string) string {
 }
 
 var (
-	bulletPattern = regexp.MustCompile(`(?ms)^- (.+?)(?:\n- |\n\n|\z)`)
+
 	// Deliberately narrow. Every alternative here can only be an ownership
 	// claim, never ordinary prose. An earlier version accepted the bare words
 	// "this document", which matched a question that explicitly said nobody
 	// owned it, in the check whose whole purpose is catching that.
 	ownerPattern = regexp.MustCompile(`(?i)owned by|owns it\b|owns this\b|owns both\b|owns the \w|has to measure|no rfc owns|no other rfc owns`)
 )
+
+// openQuestions returns every bullet under the open questions heading, one
+// string each with its wrapping collapsed.
+//
+// Scanned by line rather than matched. A pattern that stops at the "\n- "
+// starting the next bullet also consumes it, which leaves the scan past that
+// bullet's own start and skips it: half the questions went unexamined, and
+// unnoticed because the skipped half happened to be the ones that would have
+// passed. Splitting on the same separator has the opposite fault, taking
+// bullets from whatever section comes next, so the list ends where a blank
+// line ends it.
+func openQuestions(body string) []string {
+	parts := strings.Split(body, "## Open questions")
+	if len(parts) < 2 {
+		return nil
+	}
+	var out, cur []string
+	flush := func() {
+		if len(cur) > 0 {
+			out = append(out, strings.Join(cur, " "))
+			cur = nil
+		}
+	}
+	for _, line := range strings.Split(parts[len(parts)-1], "\n") {
+		switch {
+		case strings.HasPrefix(line, "- "):
+			flush()
+			cur = append(cur, strings.TrimSpace(strings.TrimPrefix(line, "- ")))
+		case strings.TrimSpace(line) == "":
+			flush()
+			// The blank line before the first bullet is not the end of a list
+			// that has not started.
+			if len(out) > 0 {
+				return out
+			}
+		case len(cur) > 0:
+			cur = append(cur, strings.TrimSpace(line))
+		}
+	}
+	flush()
+	return out
+}
+
+// TestOpenQuestionsFindsEveryBullet covers the reader rather than the rule.
+// The pattern it replaced examined every second question, so a document could
+// fail this check and pass, which is worse than not checking at all.
+func TestOpenQuestionsFindsEveryBullet(t *testing.T) {
+	body := "## Open questions\n\n" +
+		"- first, which wraps\n  onto another line\n" +
+		"- second\n" +
+		"- third\n" +
+		"- fourth\n\n" +
+		"## Something else\n\n- not a question\n"
+
+	got := openQuestions(body)
+	if len(got) != 4 {
+		t.Fatalf("found %d questions, want 4: %q", len(got), got)
+	}
+	if got[0] != "first, which wraps onto another line" {
+		t.Errorf("first = %q, want its wrapping collapsed", got[0])
+	}
+	if got[3] != "fourth" {
+		t.Errorf("fourth = %q", got[3])
+	}
+	for _, q := range got {
+		if strings.Contains(q, "not a question") {
+			t.Errorf("a bullet from the next section was taken: %q", q)
+		}
+	}
+	if n := len(openQuestions("no heading here")); n != 0 {
+		t.Errorf("a document with no open questions gave %d", n)
+	}
+}
 
 func TestAcceptedRFCsOwnEveryOpenQuestion(t *testing.T) {
 	// RFC-0000 requires an open question in an accepted RFC to name an owner,
@@ -187,9 +260,7 @@ func TestAcceptedRFCsOwnEveryOpenQuestion(t *testing.T) {
 			continue
 		}
 		checked++
-		parts := strings.Split(r.body, "## Open questions")
-		for _, m := range bulletPattern.FindAllStringSubmatch(parts[len(parts)-1], -1) {
-			one := strings.Join(strings.Fields(m[1]), " ")
+		for _, one := range openQuestions(r.body) {
 			if !ownerPattern.MatchString(one) {
 				t.Errorf("%s: open question names no owner: %.70s", r.file, one)
 			}
