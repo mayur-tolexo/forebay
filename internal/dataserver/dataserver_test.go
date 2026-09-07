@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"os"
@@ -469,6 +470,20 @@ func (w wrapping) List(ctx context.Context, prefix, after string, limit int) ([]
 		return nil, fmt.Errorf("the wrapped driver cannot list")
 	}
 	return lister.List(ctx, prefix, after, limit)
+}
+
+// WriteObjectFrom forwards the other optional interface, for the same reason.
+//
+// A wrapper passes the wrapped driver's declaration through, so it has to
+// carry every interface that declaration implies. One that did not would be
+// refused when the backend is opened, and the whole of this file's fakes would
+// stop working the day a capability was added.
+func (w wrapping) WriteObjectFrom(ctx context.Context, object string, src io.ReadSeeker, size int64) error {
+	streamer, ok := w.Driver.(driver.Streamer)
+	if !ok {
+		return fmt.Errorf("the wrapped driver cannot take a stream")
+	}
+	return streamer.WriteObjectFrom(ctx, object, src, size)
 }
 
 // counting wraps a driver and counts round trips, optionally hiding that it
