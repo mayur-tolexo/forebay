@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mayur-tolexo/forebay/driver"
 	"net"
 	"os"
 	"sync"
@@ -54,6 +55,10 @@ type serving struct {
 	// into node labels. Held here because it needs both the tier and the
 	// backend, which is what this struct joins.
 	residency *residencyReporter
+	// backend is where a staged checkpoint is made durable. Kept because
+	// staging needs the same backend the reads come from: a checkpoint made
+	// durable somewhere else would not be readable through this node.
+	backend *driver.Backend
 }
 
 // Dropped reports how many cached blocks reclamation has taken back.
@@ -194,7 +199,7 @@ func serveReads(a *agent.Agent, opts servingOptions) (*serving, error) {
 	fmt.Fprintln(os.Stderr, "the tier's capacity is a lease this agent granted itself, which a control plane would otherwise do")
 
 	return &serving{
-		tier: tier, srv: srv, dropped: &dropped, residency: reporter,
+		tier: tier, srv: srv, dropped: &dropped, residency: reporter, backend: backend,
 		stop: func() {
 			cancel()
 			wg.Wait()

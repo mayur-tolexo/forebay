@@ -116,7 +116,8 @@ cannot offer them, however good it is at everything above.
 | Placement that follows the accelerator, using GPU, NUMA, PCIe and NIC topology | In progress | [0003](docs/rfcs/0003-topology-model.md) |
 | Rack-local fast tier | Designed | [0007](docs/rfcs/0007-fast-tier-data-path.md) |
 | Shard-aware prefetch driven by dataset manifests | In progress | [0011](docs/rfcs/0011-prefetch-and-dataset-manifests.md) |
-| Checkpoint fast acknowledgement with a stated durability policy | Designed | [0013](docs/rfcs/0013-checkpoint-path.md) |
+| Checkpoint fast acknowledgement with a stated durability policy | Built | [0013](docs/rfcs/0013-checkpoint-path.md) |
+| Checkpoint aggregation across ranks, and rack-level staging | Designed | [0013](docs/rfcs/0013-checkpoint-path.md) |
 | Datasets, versions, experiments and checkpoints as first-class objects | Designed | [0012](docs/rfcs/0012-dataset-object-model.md) |
 | GB per second per GPU, and GPU stall attributed to storage | Designed | [0017](docs/rfcs/0017-observability.md) |
 | Continuous autonomy across compute and storage signals | Designed | [0010](docs/rfcs/0010-autonomy-engine.md) |

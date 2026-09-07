@@ -359,6 +359,30 @@ func (m *Manager) Accounting() pool.Accounting {
 	return m.acct
 }
 
+// GuaranteedFree is how much more this node may promise not to take back.
+//
+// RFC-0013 asks it so a rank learns it cannot stage before it has stopped
+// computing, rather than by having a grant refused after it has. It is the
+// smaller of what the guaranteed share has left and what the device has left,
+// because a promise the node cannot fit on disk is not one it can keep.
+func (m *Manager) GuaranteedFree() pool.Bytes {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	limit := pool.Bytes(float64(m.acct.Capacity) * m.cfg.GuaranteedFraction)
+	share := limit - m.guaranteedTotal()
+	if free := m.acct.Free(); free < share {
+		share = free
+	}
+	if share < 0 {
+		// The accounting can be inconsistent, which Validate reports as a
+		// defect. Answering a negative here would read as a node that owes
+		// capacity rather than one with none to promise.
+		return 0
+	}
+	return share
+}
+
 // Leases returns the live leases in the order Reclaim would release them:
 // cheapest class first, oldest first within a class.
 func (m *Manager) Leases() []Lease {

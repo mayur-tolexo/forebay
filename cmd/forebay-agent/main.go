@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/mayur-tolexo/forebay/internal/agent"
+	"github.com/mayur-tolexo/forebay/internal/checkpoint"
 	"github.com/mayur-tolexo/forebay/internal/kubelet"
 	"github.com/mayur-tolexo/forebay/internal/lease"
 	"github.com/mayur-tolexo/forebay/internal/leaseapi"
@@ -720,6 +721,13 @@ func leaseToken(path string) (string, error) {
 	return token, nil
 }
 
+// stagingTerm is how long a staging lease runs before it expires.
+//
+// A backstop rather than a schedule. An upload that never finishes should
+// leave a lease an operator can see, and one that ran forever would be a node
+// that has promised capacity to a job that is gone.
+const stagingTerm = 6 * time.Hour
+
 // serveMetrics returns where it is listening as well as how to stop it. A
 // caller that asked for port zero cannot otherwise find out.
 func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness, reads *serving, a *agent.Agent, token string, mounts *volumes.Registry) (func(), string, error) {
@@ -760,6 +768,19 @@ func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness, 
 		// away.
 		mux.Handle("/volumes", volumes.Handler(mounts, token))
 		mux.Handle("/volumes/", volumes.Handler(mounts, token))
+		// Staging, when there is a backend to make a checkpoint durable in.
+		// Without one the node can hold bytes and never finish with them,
+		// which is a lease that never shrinks rather than a checkpoint.
+		if reads != nil && reads.backend != nil {
+			stager, err := checkpoint.New(checkpoint.Config{
+				Node: a, Store: reads.backend, Term: stagingTerm,
+			})
+			if err == nil {
+				mux.Handle("/checkpoints", checkpoint.Handler(stager, token))
+			} else {
+				fmt.Fprintln(os.Stderr, "forebay-agent: not staging checkpoints:", err)
+			}
+		}
 	}
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {

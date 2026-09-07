@@ -19,13 +19,33 @@ is lost.
 
 ## What of this is built
 
-**The vocabulary and the reservation rule, and no write path.** `internal/checkpoint` says what each
-acknowledgement means, refuses a staging request that cannot be reserved, and refuses one that would
-be staged into capacity somebody can take back.
+**The vocabulary, the reservation rule, and the write path.** `internal/checkpoint` says what each
+acknowledgement means, refuses a staging request that cannot be reserved, refuses one that would be
+staged into capacity somebody can take back, and then writes.
 
-Nothing writes. There is no aggregation across ranks, no rack-level staging and no upload. What
-exists is the rule that stops the failure this problem statement names, which is worth having before
-the path that could commit it.
+| Part of the design | State |
+| --- | --- |
+| Two acknowledgements and no third | Built. A word the document does not define is refused rather than treated as one of them |
+| The default is `durable` | Built. An unstated policy becomes the one that cannot lose the writer's work |
+| Staging takes a `guaranteed` lease | Built, and it is the only class staging accepts. Nothing downgrades it to what is available |
+| Reserved for the whole checkpoint, before the first byte | Built. The request carries its size and the node answers before anything is written, so a rank that cannot stage learns it before it has stopped computing |
+| Released when the bytes are durable, and not before | Built. An upload that fails leaves the lease held, because until it lands the staged copy is the only one |
+| A checkpoint larger than its reservation | Built. Reported as the framework's error rather than truncated to fit, because a checkpoint silently cut down is a restart that reads half a model |
+| A checkpoint larger than the node's guaranteed share | Refused by the lease manager, which caps that share, and answered as a conflict so the writer writes straight through |
+| Aggregation across ranks, and rack-level staging | **Not built,** and not designed here. It needs the rack tier RFC-0007 describes and does not have |
+
+It is served by the agent rather than by a command of its own, on the same guarded surface as the
+leases. Reserving capacity means granting a lease, the agent holds the node lock that makes it the
+authority on that, and a second process could not grant one without taking the lock away from the
+thing doing the reclaiming.
+
+The size arrives as a `Content-Length` rather than as a parameter, so there is one number and the
+body cannot disagree with it. A request without one is refused: reserving happens before the first
+byte, and a reservation needs a size.
+
+Uploading it required a change to [RFC-0006](0006-durable-backend-driver-contract.md). `write-object`
+takes the bytes as a slice, and a checkpoint already on a node's disk cannot be held in memory a
+second time, so the driver contract gained `write-stream`.
 
 ## Assumptions
 

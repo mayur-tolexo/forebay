@@ -354,6 +354,10 @@ func (a *Agent) releasing(leaseIDs []string) {
 // Accounting reports the node's current capacity split.
 func (a *Agent) Accounting() pool.Accounting { return a.leases.Accounting() }
 
+// GuaranteedFree is how much more the node may promise not to take back,
+// which is what a checkpoint asks before it writes a byte.
+func (a *Agent) GuaranteedFree() pool.Bytes { return a.leases.GuaranteedFree() }
+
 // Leases reports what the node is still holding, so a caller that could not
 // take something back can say what it was rather than guess at why.
 func (a *Agent) Leases() []lease.Lease { return a.leases.Leases() }
