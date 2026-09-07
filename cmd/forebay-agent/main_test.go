@@ -28,6 +28,7 @@ import (
 	"github.com/mayur-tolexo/forebay/internal/pool"
 	"github.com/mayur-tolexo/forebay/internal/residency"
 	"github.com/mayur-tolexo/forebay/internal/topology"
+	"github.com/mayur-tolexo/forebay/internal/volumes"
 )
 
 // withArgs runs the binary's entry point under a fresh flag set, so tests do
@@ -1648,7 +1649,7 @@ func TestTheLeaseEndpointIsNotServedWithoutAToken(t *testing.T) {
 	if err := metrics.Node(reg); err != nil {
 		t.Fatal(err)
 	}
-	stop, addr, err := serveMetrics("127.0.0.1:0", reg, nil, nil, agentFor(t), "")
+	stop, addr, err := serveMetrics("127.0.0.1:0", reg, nil, nil, agentFor(t), "", volumes.NewRegistry())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1665,7 +1666,7 @@ func TestTheLeaseEndpointIsNotServedWithoutAToken(t *testing.T) {
 // TestTheLeaseEndpointNeedsItsToken covers the guard once the endpoint exists.
 func TestTheLeaseEndpointNeedsItsToken(t *testing.T) {
 	const token = "s3cret"
-	stop, addr, err := serveMetrics("127.0.0.1:0", metrics.New(), nil, nil, agentFor(t), token)
+	stop, addr, err := serveMetrics("127.0.0.1:0", metrics.New(), nil, nil, agentFor(t), token, volumes.NewRegistry())
 	if err != nil {
 		t.Fatal(err)
 	}

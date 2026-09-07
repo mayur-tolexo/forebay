@@ -30,6 +30,7 @@ import (
 	"github.com/mayur-tolexo/forebay/internal/prefetch"
 	"github.com/mayur-tolexo/forebay/internal/topology"
 	"github.com/mayur-tolexo/forebay/internal/version"
+	"github.com/mayur-tolexo/forebay/internal/volumes"
 )
 
 func main() {
@@ -294,6 +295,15 @@ func run() error {
 		BorrowedDir: cfg.BorrowedDir,
 		Pools:       borrowedFS,
 	})
+	// The third input. The CSI node plugin posts what it was asked to mount,
+	// and the watch reads the total from the same registry: the two never
+	// meet, so something has to hold it between them.
+	//
+	// Always built, and served only where the lease token is. An empty
+	// registry contributes no shortfall, so a node nothing reports to reads
+	// the same as a node without the input at all.
+	mounts := volumes.NewRegistry()
+	sources = append(sources, volumes.NewSource(mounts))
 	// Read before anything is served, so a node configured with a token file
 	// it cannot read refuses to start rather than serving a lease endpoint
 	// nobody can reach and nobody notices is unreachable.
@@ -302,7 +312,7 @@ func run() error {
 		return err
 	}
 	if *metricsAddr != "" {
-		stopMetrics, _, err := serveMetrics(*metricsAddr, reg, ready, reads, a, token)
+		stopMetrics, _, err := serveMetrics(*metricsAddr, reg, ready, reads, a, token, mounts)
 		if err != nil {
 			return err
 		}
@@ -712,7 +722,7 @@ func leaseToken(path string) (string, error) {
 
 // serveMetrics returns where it is listening as well as how to stop it. A
 // caller that asked for port zero cannot otherwise find out.
-func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness, reads *serving, a *agent.Agent, token string) (func(), string, error) {
+func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness, reads *serving, a *agent.Agent, token string, mounts *volumes.Registry) (func(), string, error) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, "", fmt.Errorf("serving metrics on %s: %w", addr, err)
@@ -744,6 +754,12 @@ func serveMetrics(addr string, reg *metrics.Registry, ready *metrics.Readiness, 
 		mux.Handle("/leases", leaseapi.Handler(a, token))
 		mux.Handle("/leases/", leaseapi.Handler(a, token))
 		mux.Handle("/capacity", leaseapi.Handler(a, token))
+		// Under the same token as the leases, and for the same reason: what
+		// arrives here raises the shortfall this node reclaims against, so
+		// anything that could post to it could make the node throw its cache
+		// away.
+		mux.Handle("/volumes", volumes.Handler(mounts, token))
+		mux.Handle("/volumes/", volumes.Handler(mounts, token))
 	}
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
