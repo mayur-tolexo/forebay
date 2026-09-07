@@ -97,9 +97,9 @@ func decodeVolumeCapability(b []byte) (VolumeCapability, error) {
 				}
 				switch g.Number {
 				case 1:
-					m.FSType = g.String()
+					m.FSType = g.Text()
 				case 2:
-					m.Flags = append(m.Flags, g.String())
+					m.Flags = append(m.Flags, g.Text())
 				}
 				inner = more
 			}
@@ -160,7 +160,7 @@ func DecodeCreateVolume(b []byte) (CreateVolumeRequest, error) {
 		}
 		switch f.Number {
 		case 1:
-			r.Name = f.String()
+			r.Name = f.Text()
 		case 3:
 			c, err := decodeVolumeCapability(f.Bytes)
 			if err != nil {
@@ -207,7 +207,7 @@ func DecodeDeleteVolume(b []byte) (DeleteVolumeRequest, error) {
 			return r, err
 		}
 		if f.Number == 1 {
-			r.VolumeID = f.String()
+			r.VolumeID = f.Text()
 		}
 		b = rest
 	}
@@ -231,7 +231,7 @@ func DecodeValidate(b []byte) (ValidateRequest, error) {
 		}
 		switch f.Number {
 		case 1:
-			r.VolumeID = f.String()
+			r.VolumeID = f.Text()
 		case 2:
 			if err := protowire.StringMap(r.Context, f.Bytes); err != nil {
 				return r, err
@@ -287,9 +287,9 @@ func DecodeNodePublish(b []byte) (NodePublishRequest, error) {
 		}
 		switch f.Number {
 		case 1:
-			r.VolumeID = f.String()
+			r.VolumeID = f.Text()
 		case 4:
-			r.TargetPath = f.String()
+			r.TargetPath = f.Text()
 		case 5:
 			c, err := decodeVolumeCapability(f.Bytes)
 			if err != nil {
@@ -324,9 +324,9 @@ func DecodeNodeUnpublish(b []byte) (NodeUnpublishRequest, error) {
 		}
 		switch f.Number {
 		case 1:
-			r.VolumeID = f.String()
+			r.VolumeID = f.Text()
 		case 2:
-			r.TargetPath = f.String()
+			r.TargetPath = f.Text()
 		}
 		b = rest
 	}

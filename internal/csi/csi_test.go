@@ -497,7 +497,7 @@ func TestTheKubeletIsToldWhatThisPluginIsAndWhereToCallIt(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		fields[f.Number] = f.String()
+		fields[f.Number] = f.Text()
 		got = rest
 	}
 	for _, c := range []struct {

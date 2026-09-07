@@ -211,3 +211,28 @@ func TestAnOperatorCanSeeWhatTheNodeWasAskedFor(t *testing.T) {
 		t.Errorf("got %+v", got)
 	}
 }
+
+func TestAVolumeIdIsNotPartOfTheURL(t *testing.T) {
+	// The id comes from a volume's handle, which is whatever was written into
+	// the object. A question mark in it would make the rest of the id a query
+	// string, and the volume that went away would not be the one forgotten.
+	r := volumes.NewRegistry()
+	c, _ := serve(t, r)
+	for _, id := range []string{
+		"team/imagenet",
+		"team/im age",
+		"team/what?next=1",
+		"team/a#b",
+		"team/sub/deep",
+	} {
+		r.Published(id, 1<<20)
+		if err := c.Unpublished(t.Context(), id); err != nil {
+			t.Errorf("%q: %v", id, err)
+			continue
+		}
+		if count, _ := r.Requested(); count != 0 {
+			t.Errorf("%q did not survive the round trip, %d left", id, count)
+			r.Unpublished(id)
+		}
+	}
+}

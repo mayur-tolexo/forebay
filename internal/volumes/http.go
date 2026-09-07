@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -126,8 +127,16 @@ func (c *Client) Published(ctx context.Context, id string, size int64) error {
 }
 
 // Unpublished tells it the dataset is gone.
+//
+// The id is escaped a segment at a time. It comes from a volume's handle,
+// which is whatever was written into the object, so the slashes that name it
+// have to survive while anything else must not become part of the URL.
 func (c *Client) Unpublished(ctx context.Context, id string) error {
-	return c.send(ctx, http.MethodDelete, c.base+"/volumes/"+id, nil)
+	segments := strings.Split(id, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return c.send(ctx, http.MethodDelete, c.base+"/volumes/"+strings.Join(segments, "/"), nil)
 }
 
 // send makes one request and reads the outcome.

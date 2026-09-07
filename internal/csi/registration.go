@@ -80,7 +80,7 @@ func (r *Registration) notify(_ context.Context, req []byte) ([]byte, error) {
 		case 1:
 			registered = f.Bool()
 		case 2:
-			why = f.String()
+			why = f.Text()
 		}
 		req = rest
 	}

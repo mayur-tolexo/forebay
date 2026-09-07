@@ -178,7 +178,7 @@ func readMessage(r io.Reader) ([]byte, error) {
 	var head [5]byte
 	if _, err := io.ReadFull(r, head[:]); err != nil {
 		if errors.Is(err, io.EOF) {
-			return nil, Errorf(InvalidArgument, "the request carried no message")
+			return nil, Errorf(InvalidArgument, "the stream carried no message")
 		}
 		return nil, Errorf(InvalidArgument, "reading the message header: %v", err)
 	}

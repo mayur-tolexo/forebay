@@ -65,7 +65,7 @@ func decodeVolume(t *testing.T, b []byte) (id string, bytes int64, ctx map[strin
 				case 1:
 					bytes = g.Int64()
 				case 2:
-					id = g.String()
+					id = g.Text()
 				case 3:
 					if err := protowire.StringMap(ctx, g.Bytes); err != nil {
 						t.Fatalf("decoding the context: %v", err)
@@ -94,7 +94,7 @@ func decodeValidate(t *testing.T, b []byte) (confirmed bool, why string) {
 		case 1:
 			confirmed = true
 		case 2:
-			why = f.String()
+			why = f.Text()
 		}
 		b = rest
 	}
@@ -111,7 +111,7 @@ func decodeName(t *testing.T, b []byte) string {
 			t.Fatalf("decoding the reply: %v", err)
 		}
 		if f.Number == 1 {
-			name = f.String()
+			name = f.Text()
 		}
 		b = rest
 	}

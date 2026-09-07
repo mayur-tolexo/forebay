@@ -81,9 +81,9 @@ func TestDecodingWhatProtocEncoded(t *testing.T) {
 		}
 		switch f.Number {
 		case 1:
-			volumeID = f.String()
+			volumeID = f.Text()
 		case 4:
-			targetPath = f.String()
+			targetPath = f.Text()
 		case 5:
 			inner := f.Bytes
 			for len(inner) > 0 {
@@ -101,9 +101,9 @@ func TestDecodingWhatProtocEncoded(t *testing.T) {
 						}
 						switch h.Number {
 						case 1:
-							fsType = h.String()
+							fsType = h.Text()
 						case 2:
-							flags = append(flags, h.String())
+							flags = append(flags, h.Text())
 						}
 						m = next
 					}
@@ -206,7 +206,7 @@ func TestAFieldThisDoesNotKnowIsSkipped(t *testing.T) {
 			t.Fatalf("skipping: %v", err)
 		}
 		if f.Number == 1 {
-			found = f.String()
+			found = f.Text()
 		}
 		b = rest
 	}

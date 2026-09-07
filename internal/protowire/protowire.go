@@ -111,8 +111,13 @@ type Field struct {
 	Bytes []byte
 }
 
-// String reads a length-delimited field as a string.
-func (f Field) String() string { return string(f.Bytes) }
+// Text reads a length-delimited field as a string.
+//
+// Not called String, which would make a Field an fmt.Stringer: printing one
+// with %v would then show the empty string for every numeric field rather
+// than the field itself, which is the opposite of what a caller printing it
+// is trying to find out.
+func (f Field) Text() string { return string(f.Bytes) }
 
 // Bool reads a varint field as a boolean, the way protobuf defines it: zero is
 // false and everything else is true.
@@ -202,9 +207,9 @@ func StringMap(m map[string]string, entry []byte) error {
 		}
 		switch {
 		case f.Number == 1 && f.Wire == WireBytes:
-			k = f.String()
+			k = f.Text()
 		case f.Number == 2 && f.Wire == WireBytes:
-			v = f.String()
+			v = f.Text()
 		}
 		entry = rest
 	}
