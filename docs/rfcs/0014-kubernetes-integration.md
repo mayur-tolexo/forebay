@@ -17,8 +17,9 @@ believe they own the same bytes.
 
 ## What of this is built
 
-**The pod input, the dataset CRD, and the half of the controller that resolves one.** There is no
-CSI driver, and nothing yet grants a lease over a network.
+**The pod input, the dataset CRD, the half of the controller that resolves one, and the CSI driver
+in both halves.** A control plane grants leases over a network; what is not built is an operator
+that reconciles anything beyond a dataset's status.
 
 `Dataset` is the first CRD and it obeys the rule below: it carries what a user declares, an object
 in the durable store, and its status carries what the control plane observed. `forebay-controller`
@@ -87,7 +88,10 @@ The device comparison runs before any of that. It is two local calls, and settli
 means a node whose pools are on another device never asks the kubelet for a verdict that cannot
 change. A watch started without `--kubelet-host` says at startup that it is reactive.
 
-The CSI volume input is still missing, so the watch has two of the three inputs the design wants.
+The CSI volume input arrives from the node plugin, which posts what it was asked to mount to the
+agent. The two never meet on a schedule, so the agent holds a registry between them: the plugin
+sends events and the watch reads the total. An empty registry contributes no shortfall, so a node
+nothing reports to reads the same as a node without the input at all.
 
 ## Assumptions
 

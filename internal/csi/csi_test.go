@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mayur-tolexo/forebay/internal/csi"
 	"github.com/mayur-tolexo/forebay/internal/grpcwire"
@@ -471,5 +472,85 @@ func TestANodePluginNeedsToKnowWhereItIs(t *testing.T) {
 			t.Errorf("a node plugin was built with node=%q access=%q export=%q",
 				c.NodeID, c.Access, c.Export)
 		}
+	}
+}
+
+func TestTheKubeletIsToldWhatThisPluginIsAndWhereToCallIt(t *testing.T) {
+	// The kubelet watches a directory, asks whatever socket it finds what it
+	// is, and will not use a plugin whose type, name or version it does not
+	// recognise. Each of those is matched as a string.
+	s := grpcwire.NewServer()
+	csi.NewRegistration("/var/lib/kubelet/plugins/csi.forebay.io/csi.sock", nil).Register(s)
+
+	// Called by the literal name off the wire rather than through the
+	// constant. The kubelet calls this one, and a test that used the same
+	// constant the driver registered with would agree with any spelling,
+	// including a wrong one: the package is pluginregistration with no
+	// version in it, which is not the convention CSI's own services follow.
+	got, err := callServer(t, s, "/pluginregistration.Registration/GetInfo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := map[int]string{}
+	for len(got) > 0 {
+		f, rest, err := protowire.Next(got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields[f.Number] = f.String()
+		got = rest
+	}
+	for _, c := range []struct {
+		number int
+		want   string
+	}{
+		{1, "CSIPlugin"},
+		{2, csi.Name},
+		{3, "/var/lib/kubelet/plugins/csi.forebay.io/csi.sock"},
+		{4, "1.0.0"},
+	} {
+		if fields[c.number] != c.want {
+			t.Errorf("field %d was %q, want %q", c.number, fields[c.number], c.want)
+		}
+	}
+}
+
+func TestARefusedRegistrationIsReportedAndNotReturned(t *testing.T) {
+	// The kubelet is telling this side what happened. Answering with a
+	// failure would leave it retrying a call that is not the thing that went
+	// wrong, and the plugin would still be unusable.
+	type verdict struct {
+		registered bool
+		why        string
+	}
+	// Buffered and read with a timeout, so a driver that never passes the
+	// verdict on fails the test rather than hanging it.
+	seen := make(chan verdict, 1)
+	s := grpcwire.NewServer()
+	csi.NewRegistration("/csi/csi.sock", func(ok bool, reason string) {
+		seen <- verdict{ok, reason}
+	}).Register(s)
+
+	var req []byte
+	req = protowire.AppendBool(req, 1, false)
+	req = protowire.AppendString(req, 2, "no such driver name")
+	if _, err := callServer(t, s, "/pluginregistration.Registration/NotifyRegistrationStatus", req); err != nil {
+		t.Fatalf("the kubelet's own report was answered with an error: %v", err)
+	}
+
+	var got verdict
+	select {
+	case got = <-seen:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the kubelet's verdict never reached the driver")
+	}
+	registered, why := got.registered, got.why
+	if registered || why != "no such driver name" {
+		t.Errorf("got registered=%v why=%q", registered, why)
+	}
+	// An operator has to be able to tell a plugin that is running from one
+	// that is running and unusable.
+	if got := csi.RegistrationStatus(registered, why); !strings.Contains(got, "refused") {
+		t.Errorf("got %q", got)
 	}
 }

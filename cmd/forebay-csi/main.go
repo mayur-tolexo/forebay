@@ -49,6 +49,7 @@ func run() error {
 		agent       = flag.String("agent", "", "the node agent's address. Set it to report volume requests, which is the third input to the agent's pressure watch")
 		agentToken  = flag.String("agent-token-file", "", "file holding the token the node agent requires before it will accept a report")
 		timeout     = flag.Duration("timeout", 10*time.Second, "bounds one call to the API server or the agent")
+		regSocket   = flag.String("registration-socket", "", "a socket in the directory the kubelet watches for plugins. Set it on a node plugin to register with the kubelet directly, instead of running a registrar beside it")
 	)
 	flag.Parse()
 
@@ -120,6 +121,17 @@ func run() error {
 	done := make(chan error, 1)
 	go func() { done <- s.Serve(l) }()
 
+	if *regSocket != "" {
+		if !*nodePlugin {
+			return errors.New("--registration-socket registers a node plugin with the kubelet, and this is not serving one")
+		}
+		stopReg, err := serveRegistration(*regSocket, *socket)
+		if err != nil {
+			return err
+		}
+		defer stopReg()
+	}
+
 	select {
 	case err := <-done:
 		return err
@@ -133,6 +145,41 @@ func run() error {
 		}
 		return <-done
 	}
+}
+
+// serveRegistration answers the kubelet on a socket in the directory it
+// watches, which is what makes it use the plugin at all.
+//
+// A second server on a second socket, because the two are different surfaces:
+// the kubelet finds this one by watching a directory, and calls the driver on
+// the endpoint this one names.
+func serveRegistration(socket, endpoint string) (func(), error) {
+	if err := os.Remove(socket); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("clearing %s: %w", socket, err)
+	}
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		return nil, fmt.Errorf("listening on %s: %w", socket, err)
+	}
+	s := grpcwire.NewServer()
+	csi.NewRegistration(endpoint, func(registered bool, why string) {
+		// Printed either way. A plugin the kubelet refused is running and
+		// unusable, which looks exactly like one that is working until a pod
+		// waits forever for a volume.
+		fmt.Println(csi.RegistrationStatus(registered, why))
+	}).Register(s)
+
+	go func() {
+		if err := s.Serve(l); err != nil {
+			fmt.Fprintln(os.Stderr, "forebay-csi: registration:", err)
+		}
+	}()
+	fmt.Printf("offering %s to the kubelet on %s\n", csi.Name, socket)
+	return func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		s.Shutdown(shutdown)
+	}, nil
 }
 
 // apiClient builds the controller's connection to the cluster.

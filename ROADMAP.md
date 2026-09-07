@@ -83,7 +83,8 @@ orchestrator in the MVP, and the control plane's objects are Kubernetes objects.
 | --- | --- | --- |
 | CRDs as the primary API | Designed | [0014](docs/rfcs/0014-kubernetes-integration.md) |
 | Operator reconciling desired state | Designed | [0014](docs/rfcs/0014-kubernetes-integration.md) |
-| CSI driver for volumes and ephemeral volumes | Designed | [0014](docs/rfcs/0014-kubernetes-integration.md) |
+| CSI driver for volumes | Built | [0014](docs/rfcs/0014-kubernetes-integration.md) |
+| Ephemeral volumes over borrowed capacity | Not planned | [0014](docs/rfcs/0014-kubernetes-integration.md) |
 | Snapshots and clones through the Kubernetes API | Designed | [0012](docs/rfcs/0012-dataset-object-model.md) |
 | Node agent as a DaemonSet | In progress | [0004](docs/rfcs/0004-node-agent.md) |
 | Reclamation driven by scheduler signals | Designed | [0005](docs/rfcs/0005-capacity-pools-and-elastic-leases.md) |
@@ -307,7 +308,7 @@ as a duration and converted each pass against the rate the agent observes, corre
 agent itself gave back: without that correction a reclaim would read as the workload slowing down and
 the floor would shrink in the pass that had just proved it too small.
 
-What is left is most of it. One of the watch's three inputs is still missing, the CSI one. No Ceph
+What is left is most of it. The watch has all three of its inputs now. No Ceph
 driver exists, there is no peer fetch, and nothing an unmodified job can mount: the access layer is a
 spike that proves a client can read Forebay's bytes, not the layer. A control plane does propose
 leases now, which the nodes decide on, but it touches nothing a job reads through.

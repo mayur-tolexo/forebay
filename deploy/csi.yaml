@@ -1,0 +1,149 @@
+# The CSI driver, in the two halves RFC-0014 keeps apart.
+#
+# They are trusted differently. The controller reads Datasets from the API
+# server and runs once for the cluster; the node plugin runs on every node,
+# mounts, and holds no cluster credentials at all: the object it mounts is
+# handed to it in the volume context by the controller that resolved it.
+#
+# attachRequired is false because nothing is attached. A dataset is reached
+# over the network by whichever node wants it, so there is no per-node step
+# before a mount and a driver that claimed one would have the orchestrator
+# waiting for something that never happens.
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: csi.forebay.io
+spec:
+  attachRequired: false
+  podInfoOnMount: false
+  volumeLifecycleModes: [Persistent]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forebay-csi-controller
+  namespace: forebay-system
+---
+# Read-only on datasets, and nothing else. The controller resolves a name to an
+# object; the status is the operator's answer and this is not the operator, so
+# it never writes one.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: forebay-csi-controller
+rules:
+- apiGroups: ["forebay.io"]
+  resources: ["datasets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: forebay-csi-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: forebay-csi-controller
+subjects:
+- kind: ServiceAccount
+  name: forebay-csi-controller
+  namespace: forebay-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forebay-csi-controller
+  namespace: forebay-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: forebay-csi-controller}
+  template:
+    metadata:
+      labels: {app: forebay-csi-controller}
+    spec:
+      serviceAccountName: forebay-csi-controller
+      containers:
+      - name: controller
+        image: forebay/csi:latest
+        args:
+        - --controller
+        - --socket=/csi/csi.sock
+        volumeMounts:
+        - {name: socket, mountPath: /csi}
+      volumes:
+      - {name: socket, emptyDir: {}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forebay-csi-node
+  namespace: forebay-system
+---
+# The node plugin registers itself with the kubelet rather than running a
+# registrar beside it, which is one container fewer on every node and one
+# version fewer to keep in step with this one.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: forebay-csi-node
+  namespace: forebay-system
+spec:
+  selector:
+    matchLabels: {app: forebay-csi-node}
+  template:
+    metadata:
+      labels: {app: forebay-csi-node}
+    spec:
+      serviceAccountName: forebay-csi-node
+      hostNetwork: true
+      containers:
+      - name: node
+        image: forebay/csi:latest
+        args:
+        - --node
+        - --node-id=$(NODE_NAME)
+        - --socket=/var/lib/kubelet/plugins/csi.forebay.io/csi.sock
+        - --registration-socket=/var/lib/kubelet/plugins_registry/csi.forebay.io-reg.sock
+        - --access=$(FOREBAY_ACCESS)
+        - --export=forebay
+        # The agent is optional and the mount never waits on it: a report that
+        # does not arrive costs the watch an observation rather than costing a
+        # pod its volume.
+        - --agent=http://127.0.0.1:9099
+        - --agent-token-file=/etc/forebay/lease-token
+        env:
+        - name: FOREBAY_ACCESS
+          value: "forebay-access.forebay-system.svc"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef: {fieldPath: spec.nodeName}
+        securityContext:
+          # Privileged because it mounts. There is no narrower capability that
+          # allows mount(2) in a container the kubelet can also see through.
+          privileged: true
+        volumeMounts:
+        - name: plugins
+          mountPath: /var/lib/kubelet/plugins
+        - name: registration
+          mountPath: /var/lib/kubelet/plugins_registry
+        - name: pods
+          mountPath: /var/lib/kubelet/pods
+          # Bidirectional so a mount made in here is visible to the kubelet
+          # and to the pod that asked for it. Without it the mount lands in
+          # this container and the pod sees an empty directory.
+          mountPropagation: Bidirectional
+        - name: lease-token
+          mountPath: /etc/forebay
+          readOnly: true
+      volumes:
+      - name: plugins
+        hostPath: {path: /var/lib/kubelet/plugins, type: DirectoryOrCreate}
+      - name: registration
+        hostPath: {path: /var/lib/kubelet/plugins_registry, type: DirectoryOrCreate}
+      - name: pods
+        hostPath: {path: /var/lib/kubelet/pods, type: DirectoryOrCreate}
+      - name: lease-token
+        secret:
+          secretName: forebay-lease-token
+          optional: true
