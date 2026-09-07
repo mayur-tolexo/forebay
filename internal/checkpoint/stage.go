@@ -193,6 +193,14 @@ func (s *Stager) Stage(ctx context.Context, r Request, src io.Reader) (*Checkpoi
 		s.release(r.ID, "the checkpoint could not be staged")
 		return nil, err
 	}
+	if written == 0 {
+		// Also released. Holding capacity is for a staged checkpoint that is
+		// the only copy of itself, and nothing was staged: a writer that
+		// declared a size and sent no bytes would otherwise leave a lease
+		// nobody will ever finish with.
+		s.release(r.ID, "nothing was staged")
+		return nil, fmt.Errorf("%w: %s reserved %s and sent none", ErrNotStaged, r.ID, r.Bytes)
+	}
 
 	c := &Checkpoint{ack: ack, done: make(chan struct{})}
 	upload := func(ctx context.Context) {
@@ -227,9 +235,6 @@ func (s *Stager) Stage(ctx context.Context, r Request, src io.Reader) (*Checkpoi
 // so a staged checkpoint holds capacity and a file descriptor for as long as
 // the upload takes rather than for as long as the writer lives.
 func (s *Stager) durable(ctx context.Context, r Request, path string, written int64) error {
-	if written <= 0 {
-		return fmt.Errorf("%w for %s", ErrNotStaged, r.ID)
-	}
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("checkpoint: reading what was staged for %s: %w", r.ID, err)

@@ -4,7 +4,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -111,10 +110,4 @@ func statusFor(err error) int {
 	default:
 		return http.StatusInternalServerError
 	}
-}
-
-// Describe renders an outcome for a person, in the document's words.
-func (o Outcome) Describe() string {
-	return fmt.Sprintf("%s: %s survives %s and does not survive %s",
-		o.Ack, pool.Bytes(o.Bytes), o.Survives, o.Lost)
 }

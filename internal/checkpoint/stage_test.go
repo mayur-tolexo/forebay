@@ -547,3 +547,18 @@ func TestStagingWithoutTheTokenIsRefused(t *testing.T) {
 		t.Error("capacity was reserved for an unauthorised request")
 	}
 }
+
+func TestACheckpointThatSendsNoBytesHoldsNoCapacity(t *testing.T) {
+	// Holding capacity is for a staged checkpoint that is the only copy of
+	// itself. Nothing was staged here, so there is nothing to protect, and a
+	// writer that declared a size and sent none would otherwise leave a lease
+	// nobody will ever finish with.
+	n, s := newNode(t, 1<<20), newStore()
+	_, err := stager(t, n, s).Stage(t.Context(), request("rank-12", 4096), bytes.NewReader(nil))
+	if !errors.Is(err, checkpoint.ErrNotStaged) {
+		t.Fatalf("got %v, want nothing staged", err)
+	}
+	if held := n.holding(); len(held) != 0 {
+		t.Errorf("the node is holding %v for a checkpoint that sent nothing", held)
+	}
+}
