@@ -1,6 +1,7 @@
 package s3driver
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -485,5 +486,86 @@ func TestPagingInsideAPrefixDoesNotRepeat(t *testing.T) {
 	}
 	if got := strings.Join(seen, ""); got != "abc" {
 		t.Errorf("paging inside a prefix saw %q, want each name once", got)
+	}
+}
+
+// TestAStreamedRetryRewindsTheBody covers the one thing streaming adds to the
+// retry: a body that has already been written cannot be sent again from where
+// it stopped, because the signature covers the whole of it.
+func TestAStreamedRetryRewindsTheBody(t *testing.T) {
+	body := []byte("a checkpoint that takes two attempts to land")
+	var attempts int
+	var stored []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		got, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("attempt %d: reading body: %v", attempts, err)
+		}
+		// Verified on every attempt, including the one that is refused: a
+		// driver that resent the tail of a body would be signing the whole
+		// and sending part.
+		if h := r.Header.Get("x-amz-content-sha256"); h != sha256Hex(got) {
+			t.Errorf("attempt %d: payload hash %s does not match the %d bytes sent", attempts, h, len(got))
+		}
+		if attempts == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		stored = got
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	d, err := New(Config{
+		Endpoint: srv.URL, Bucket: "bucket", Region: "us-east-1",
+		AccessKey: "key", SecretKey: "secret", HTTPClient: srv.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.WriteObjectFrom(t.Context(), "runs/17/rank-0.ckpt", bytes.NewReader(body), int64(len(body))); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Errorf("took %d attempts, want 2", attempts)
+	}
+	if !bytes.Equal(stored, body) {
+		t.Errorf("stored %q, want %q", stored, body)
+	}
+}
+
+// TestAStreamedObjectDeclaringTheWrongSizeIsRefusedBeforeSending covers the
+// half of the check a store cannot do for us: a body shorter than its
+// Content-Length is a request the store hangs up on, which reads as a network
+// failure rather than as the caller's arithmetic.
+func TestAStreamedObjectDeclaringTheWrongSizeIsRefusedBeforeSending(t *testing.T) {
+	var sent int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	d, err := New(Config{
+		Endpoint: srv.URL, Bucket: "bucket", Region: "us-east-1",
+		AccessKey: "key", SecretKey: "secret", HTTPClient: srv.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("twelve bytes")
+	err = d.WriteObjectFrom(t.Context(), "o", bytes.NewReader(body), int64(len(body))+10)
+	if err == nil {
+		t.Fatal("a source shorter than its declared size was sent")
+	}
+	// Named as the caller's arithmetic, not merely an error. Sending it
+	// anyway also fails, because the transport refuses a body shorter than
+	// its Content-Length, and that failure reads as the network being down.
+	if !strings.Contains(err.Error(), "was declared 22 bytes and the source holds 12") {
+		t.Errorf("got %q, want it to name both sizes", err)
+	}
+	if sent != 0 {
+		t.Errorf("the store was contacted %d times for a request that could not be right", sent)
 	}
 }

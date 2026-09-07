@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 )
 
@@ -48,6 +49,14 @@ const (
 	// it: RFC-0008's FSAL serves an empty directory on a backend that does
 	// not declare this, since inventing entries is worse than showing none.
 	ListObjects Capability = "list-objects"
+	// WriteStream creates an object from a reader of known size.
+	//
+	// Separate from write-object because that one takes the bytes as a slice,
+	// and RFC-0013 stages a checkpoint on a node's disk and then uploads it:
+	// buffering it to satisfy the signature would spend the node's memory on
+	// a copy of something already on its disk, at the moment a training job
+	// has least to spare.
+	WriteStream Capability = "write-stream"
 )
 
 // Entry is one name under a prefix.
@@ -80,6 +89,33 @@ type Lister interface {
 	// millions: a caller that asked for everything would be asking for
 	// however much somebody put there.
 	List(ctx context.Context, prefix, after string, limit int) ([]Entry, error)
+}
+
+// Streamer is implemented by a driver that declares WriteStream.
+//
+// An interface rather than a method on Driver, for the same reason as Lister:
+// a driver that cannot do it does not carry one that returns an error, and one
+// that declares it without implementing this is refused by Open.
+type Streamer interface {
+	// WriteObjectFrom creates an immutable object of exactly size bytes,
+	// read from src, refusing to replace one that exists.
+	//
+	// A source holding any other number of bytes is refused rather than
+	// padded or truncated. The caller described an object, and one that is
+	// not what was described cannot be told from a whole one by the next
+	// reader.
+	//
+	// The source is a ReadSeeker rather than a Reader because a driver that
+	// signs its own requests has to hash the payload before sending it, so it
+	// reads the body twice. Re-reading a staged file from local disk is a
+	// second pass over a fast device; handing over a reader that cannot be
+	// rewound would force the driver to buffer, which is what this exists to
+	// avoid.
+	//
+	// The size is given rather than discovered. Every candidate backend wants
+	// a length up front, and a driver made to find it by reading to the end
+	// would be buffering again.
+	WriteObjectFrom(ctx context.Context, object string, src io.ReadSeeker, size int64) error
 }
 
 var (

@@ -32,6 +32,7 @@ is not built.
 | The conformance suite | Built, `driver/conformance`, and importable so a third party can demonstrate a driver without us reviewing it. It returns findings rather than only failing a test, so it can be run against a real backend outside `go test`, repeatedly, and it removes what it created wherever the backend allows |
 | S3 driver | Built, `driver/s3driver`, signing its own requests so the contract gains no dependency. It declares read-range, object-size, write-object and delete-object, and declines snapshot and clone rather than emulating them with a copy. It passes the conformance suite against a real S3-compatible store |
 | Ceph driver | **Not built.** It needs a Ceph cluster to develop against, which is [RFC-0018](0018-benchmark-and-falsification-suite.md)'s open question about what the suite runs against |
+| Streaming write | Built, `write-stream`, declared by both shipped drivers. It exists for RFC-0013, which stages a checkpoint on disk and uploads it, and cannot hold one in memory to do so |
 | Anything calling a driver | **Built.** The read path misses to the driver for a block the tier does not hold, asks it how large an object is to fetch a tail, and the controller asks it the same to resolve a dataset |
 
 `driver/filedriver` serves objects from a directory. It exists so the contract has something real to
@@ -99,6 +100,7 @@ technologies can be made to do in general.
 | `compress-on-request` | Forebay can ask the backend to compress a given object | yes | no |
 | `topology-hint` | Placement can be influenced, such as by failure domain | yes | no |
 | `list-objects` | Enumerate one level of names under a prefix | yes | yes |
+| `write-stream` | Create an immutable object from a reader of known size, without holding it in memory | yes | yes |
 
 `list-objects` was added because a namespace cannot be built without it. RFC-0008's FSAL serves a
 directory, and a backend that cannot be enumerated leaves it serving an empty one: a dataloader
@@ -112,6 +114,31 @@ same shape, or a namespace built on one would not work on the other.
 
 It is paged, and a listing with no limit is refused. A prefix may hold millions, and a caller that
 meant all of them has to say how much at a time.
+
+`write-stream` was added because `write-object` takes the object as a slice, and RFC-0013's whole
+premise is checkpoints that are too large to hold twice. A checkpoint is staged on a node's disk and
+then uploaded, and buffering it in memory to satisfy the signature would spend the node's RAM on a
+copy of something already on its disk, at the moment a training job needs that RAM least.
+
+The source is an `io.ReadSeeker` rather than an `io.Reader`. A driver that signs its own requests has
+to hash the payload before it sends it, so it must read the body twice, and re-reading a staged file
+from local disk costs a second pass over a device that was chosen for being fast. Handing the driver
+a reader it cannot rewind would force it to buffer, which is the thing this capability exists to
+avoid.
+
+The size is passed rather than discovered. Every candidate backend wants a length up front — S3
+requires `Content-Length` and refuses a chunked body without a different signing scheme — and a
+driver made to find it by reading to the end would be buffering again.
+
+The source must hold exactly the size declared, and a driver refuses any other
+number rather than padding or truncating to fit. The caller described an object,
+and one that is not what was described cannot be told from a whole one by the
+next reader. Both directions are the same mistake and both are refused, with
+nothing left under the name.
+
+It does not replace `write-object`. A small object is one call and one allocation either way, and a
+driver that only ever wrote from a reader would make every caller open a file to write eight bytes.
+A driver may declare either, both, or neither.
 
 Unlike every other operation it is an optional interface rather than a method every driver carries,
 so a driver that cannot enumerate does not implement one that returns an error. A driver declaring

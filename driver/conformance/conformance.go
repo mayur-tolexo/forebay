@@ -326,5 +326,63 @@ func declared(b *driver.Backend, s *session) []error {
 			found = append(found, errors.New("the object survived a delete the driver said it did"))
 		}
 	}
+	return append(found, streamed(b, s)...)
+}
+
+// streamed exercises write-stream, which exists so a caller with the object on
+// disk never has to hold it in memory.
+//
+// The size is checked both ways. A driver that wrote fewer bytes than it was
+// told leaves an object nothing can tell from a whole one, and a driver that
+// accepted a wrong size has agreed to something it did not store.
+func streamed(b *driver.Backend, s *session) []error {
+	var found []error
+	ctx := context.Background()
+	if !b.Supports(driver.WriteStream) {
+		// Checked at the backend rather than at the driver. Streaming is an
+		// optional interface, so a driver that does not declare it has no
+		// method to call and the refusal is the backend's to give.
+		err := b.WriteObjectFrom(ctx, s.scratch(5), bytes.NewReader([]byte("x")), 1)
+		if !errors.Is(err, driver.ErrNotSupported) {
+			return []error{fmt.Errorf("write-stream is not declared and the backend answered %v, which a caller cannot tell from a transient failure", err)}
+		}
+		return nil
+	}
+	body := []byte("streamed by the conformance suite, without being held")
+	object := s.scratch(5)
+	s.made = append(s.made, object)
+
+	if err := b.WriteObjectFrom(ctx, object, bytes.NewReader(body), int64(len(body))); err != nil {
+		return append(found, fmt.Errorf("write-stream is declared but failed: %w", err))
+	}
+	got, err := b.ReadRange(ctx, object, 0, int64(len(body)))
+	if err != nil {
+		return append(found, fmt.Errorf("reading back what was streamed: %w", err))
+	}
+	if !bytes.Equal(got, body) {
+		found = append(found, fmt.Errorf("streamed %q and read back %q", body, got))
+	}
+	if b.Supports(driver.ObjectSize) {
+		if size, err := b.SizeOf(ctx, object); err == nil && size != int64(len(body)) {
+			found = append(found, fmt.Errorf("streamed %d bytes and the object holds %d", len(body), size))
+		}
+	}
+
+	// A size that does not match what the reader holds has to be refused
+	// rather than stored: an object shorter than it was declared is the
+	// silent truncation this capability would otherwise make easy.
+	for _, c := range []struct {
+		name    string
+		object  string
+		declare int64
+	}{
+		{"shorter than", s.scratch(6), int64(len(body)) + 64},
+		{"longer than", s.scratch(7), int64(len(body)) - 8},
+	} {
+		if err := b.WriteObjectFrom(ctx, c.object, bytes.NewReader(body), c.declare); err == nil {
+			s.made = append(s.made, c.object)
+			found = append(found, fmt.Errorf("a source %s its declared size was accepted", c.name))
+		}
+	}
 	return found
 }

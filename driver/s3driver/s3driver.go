@@ -15,6 +15,7 @@ package s3driver
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/xml"
 	"errors"
@@ -112,7 +113,7 @@ func (d *Driver) Declare() driver.Declaration {
 		Contract: 1,
 		Capabilities: []driver.Capability{
 			driver.ReadRange, driver.ObjectSize, driver.WriteObject, driver.DeleteObject,
-			driver.ListObjects,
+			driver.ListObjects, driver.WriteStream,
 		},
 	}
 }
@@ -286,6 +287,77 @@ func (d *Driver) WriteObject(ctx context.Context, object string, data []byte) er
 	}
 	defer resp.Body.Close()
 	return errorFor(resp)
+}
+
+// WriteObjectFrom puts an object whose bytes come from a reader.
+//
+// The whole of the difficulty is the signature. SigV4 signs a hash of the
+// payload, so the body has to be read before it can be sent, and the
+// alternative is the chunked signing scheme, which is a second signing
+// implementation for one caller. Reading it twice from the local disk it is
+// staged on is a second pass over a device chosen for being fast, and costs
+// nothing that matters next to holding the object in memory.
+func (d *Driver) WriteObjectFrom(ctx context.Context, object string, src io.ReadSeeker, size int64) error {
+	if err := checkObject(object); err != nil {
+		return err
+	}
+	payload, read, err := hashFrom(src)
+	if err != nil {
+		return err
+	}
+	if read != size {
+		// Refused before anything is sent. A body shorter than its
+		// Content-Length is a request the store hangs up on, and one longer
+		// is an object that is not what the caller described.
+		return fmt.Errorf("s3driver: %s was declared %d bytes and the source holds %d", object, size, read)
+	}
+
+	u := *d.endpoint
+	u.Path = "/" + d.bucket + "/" + object
+
+	var last error
+	for attempt := 0; ; attempt++ {
+		// Rewound each attempt rather than relying on the transport to do it.
+		// A retry that resent a body already written would send whatever was
+		// left of it, under a signature for the whole.
+		if _, err := src.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("s3driver: rewinding %s: %w", object, err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), src)
+		if err != nil {
+			return fmt.Errorf("s3driver: %w", err)
+		}
+		req.ContentLength = size
+
+		resp, err := d.do(req, payload)
+		switch {
+		case err != nil:
+			last = err
+		case !transient(resp.StatusCode):
+			defer resp.Body.Close()
+			return errorFor(resp)
+		default:
+			last = fmt.Errorf("s3driver: PUT %s: %s", object, resp.Status)
+			drain(resp)
+		}
+		if attempt+1 >= d.attempts {
+			return fmt.Errorf("%w (after %d attempts)", last, d.attempts)
+		}
+		if err := pause(ctx, d.backoff<<attempt); err != nil {
+			return err
+		}
+	}
+}
+
+// hashFrom reads a source to its end and reports the payload hash and how many
+// bytes it held.
+func hashFrom(src io.Reader) (string, int64, error) {
+	h := sha256.New()
+	n, err := io.Copy(h, src)
+	if err != nil {
+		return "", 0, fmt.Errorf("s3driver: reading what is to be written: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
 // DeleteObject removes one.

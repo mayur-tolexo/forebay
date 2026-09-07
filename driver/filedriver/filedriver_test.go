@@ -1,6 +1,7 @@
 package filedriver_test
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -165,5 +166,77 @@ func TestListingAnObjectIsAnEmptyLevel(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Errorf("listing an object gave %d entries, want 0", len(entries))
+	}
+}
+
+func TestStreamingWritesWithoutHoldingTheObject(t *testing.T) {
+	// The point of the capability: a caller with the bytes on disk hands over
+	// a reader, and the object arrives whole under a key that names levels.
+	root := t.TempDir()
+	d, err := filedriver.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("a checkpoint staged on a node and then made durable")
+	if err := d.WriteObjectFrom(t.Context(), "runs/17/rank-0.ckpt", bytes.NewReader(body), int64(len(body))); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.ReadRange(t.Context(), "runs/17/rank-0.ckpt", 0, int64(len(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Errorf("read back %q", got)
+	}
+}
+
+func TestAStreamedObjectOfTheWrongSizeLeavesNothingBehind(t *testing.T) {
+	// A partial object under the name the caller asked for is worse than
+	// none: the next reader cannot tell it from a whole one. Both directions
+	// are the same mistake, so both are refused.
+	root := t.TempDir()
+	d, err := filedriver.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("sixteen bytes...")
+	for _, c := range []struct {
+		name    string
+		declare int64
+	}{
+		{"shorter than declared", int64(len(body)) + 1},
+		{"longer than declared", int64(len(body)) - 1},
+	} {
+		object := "runs/" + c.name
+		if err := d.WriteObjectFrom(t.Context(), object, bytes.NewReader(body), c.declare); err == nil {
+			t.Errorf("%s was accepted", c.name)
+		}
+		if _, err := d.SizeOf(t.Context(), object); err == nil {
+			t.Errorf("%s left an object behind", c.name)
+		}
+	}
+}
+
+func TestAStreamedObjectIsFlushedBeforeItIsAcknowledged(t *testing.T) {
+	// This driver is the durable side of a checkpoint. An acknowledgement the
+	// page cache could still lose is exactly the acknowledgement RFC-0013
+	// refuses to offer, so the flush is not optional and not deferred.
+	var flushed int
+	restore := filedriver.SyncFile(func(f *os.File) error {
+		flushed++
+		return f.Sync()
+	})
+	defer restore()
+
+	d, err := filedriver.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("state to survive the node")
+	if err := d.WriteObjectFrom(t.Context(), "runs/17/rank-0.ckpt", bytes.NewReader(body), int64(len(body))); err != nil {
+		t.Fatal(err)
+	}
+	if flushed != 1 {
+		t.Errorf("the object was flushed %d times, want once", flushed)
 	}
 }

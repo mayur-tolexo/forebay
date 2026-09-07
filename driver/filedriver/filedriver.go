@@ -47,7 +47,7 @@ func (d *Driver) Declare() driver.Declaration {
 		Contract: 1,
 		Capabilities: []driver.Capability{
 			driver.ReadRange, driver.ObjectSize, driver.WriteObject, driver.DeleteObject,
-			driver.ListObjects,
+			driver.ListObjects, driver.WriteStream,
 		},
 	}
 }
@@ -198,6 +198,74 @@ func (d *Driver) WriteObject(ctx context.Context, object string, data []byte) er
 		return fmt.Errorf("filedriver: %w", err)
 	}
 	return f.Close()
+}
+
+// WriteObjectFrom copies an object in from a reader without holding it.
+//
+// The size is checked against what arrived rather than trusted. A caller that
+// said one number and sent another has written an object whose length is not
+// what anything else in the system believes, and a short checkpoint that
+// reports success is the failure RFC-0013 exists to prevent.
+func (d *Driver) WriteObjectFrom(ctx context.Context, object string, src io.ReadSeeker, size int64) error {
+	p, err := d.path(object)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+		return fmt.Errorf("filedriver: %w", err)
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
+	if err != nil {
+		return fmt.Errorf("filedriver: %w", err)
+	}
+	// One byte past the declared size, so a source holding more is caught
+	// rather than truncated to fit. A caller that said the wrong number has
+	// an object that is not what it described either way, and the short and
+	// the long case are the same mistake.
+	n, err := io.Copy(f, io.LimitReader(src, size+1))
+	if err != nil {
+		f.Close()
+		os.Remove(p)
+		return fmt.Errorf("filedriver: %w", err)
+	}
+	if n != size {
+		// Removed, not left wrong. A partial object under the name the caller
+		// asked for is worse than none: the next reader cannot tell it from a
+		// whole one.
+		f.Close()
+		os.Remove(p)
+		return fmt.Errorf("filedriver: %s was declared %d bytes and the source holds %s",
+			object, size, atLeast(n, size))
+	}
+	// Flushed before the write is acknowledged. This driver is the durable
+	// side of a checkpoint, and an acknowledgement the page cache could still
+	// lose is the acknowledgement RFC-0013 refuses to offer.
+	if err := syncFile(f); err != nil {
+		f.Close()
+		os.Remove(p)
+		return fmt.Errorf("filedriver: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(p)
+		return fmt.Errorf("filedriver: %w", err)
+	}
+	return ctx.Err()
+}
+
+// syncFile flushes a file to the device.
+//
+// A variable so a test can see that it was called. Whether the bytes reached
+// the platter is not something a test can observe, and dropping the call is
+// something an edit can do silently, so what is pinned is the call.
+var syncFile = func(f *os.File) error { return f.Sync() }
+
+// atLeast renders how much a source held, saying "more than" when the read
+// stopped one byte past the declared size rather than at the source's end.
+func atLeast(read, size int64) string {
+	if read > size {
+		return fmt.Sprintf("more than %d", size)
+	}
+	return fmt.Sprintf("%d", read)
 }
 
 // DeleteObject removes one.

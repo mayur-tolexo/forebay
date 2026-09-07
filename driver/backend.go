@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"sync/atomic"
 )
@@ -18,8 +19,9 @@ type Backend struct {
 	driver Driver
 	// lister is set when the driver both declares and implements listing.
 	// Held rather than asserted per call, since the answer cannot change.
-	lister  Lister
-	declare Declaration
+	lister   Lister
+	streamer Streamer
+	declare  Declaration
 	// denied holds the capabilities this credential turned out not to have.
 	//
 	// RFC-0016 makes a capability a property of the credential rather than of
@@ -55,6 +57,14 @@ func Open(d Driver) (*Backend, error) {
 				ErrNotSupported, ListObjects)
 		}
 		b.lister = lister
+	}
+	if decl.Supports(WriteStream) {
+		streamer, ok := d.(Streamer)
+		if !ok {
+			return nil, fmt.Errorf("%w: declares %s and does not implement Streamer",
+				ErrNotSupported, WriteStream)
+		}
+		b.streamer = streamer
 	}
 	return b, nil
 }
@@ -157,6 +167,18 @@ func (b *Backend) WriteObject(ctx context.Context, object string, data []byte) e
 		return refuse(WriteObject)
 	}
 	return b.narrow(WriteObject, b.driver.WriteObject(ctx, object, data))
+}
+
+// WriteObjectFrom creates an immutable object from a reader, if this backend
+// can take one without being handed the whole thing.
+func (b *Backend) WriteObjectFrom(ctx context.Context, object string, src io.ReadSeeker, size int64) error {
+	if !b.Supports(WriteStream) || b.streamer == nil {
+		return refuse(WriteStream)
+	}
+	if size < 0 {
+		return fmt.Errorf("driver: an object of %d bytes is not one", size)
+	}
+	return b.narrow(WriteStream, b.streamer.WriteObjectFrom(ctx, object, src, size))
 }
 
 // DeleteObject removes one.
